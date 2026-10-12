@@ -149,6 +149,9 @@ Ajustes hechos al probar el lector con descriptivos reales (procesados fuera del
 - Se aceptan dos estructuras: `Descriptivos\<Área>\archivo.pdf` (el área es la carpeta) y `Descriptivos\archivo.pdf`. En la segunda, el área se toma de `entrada\areas.csv` (columnas `archivo;area`). El script crea ese archivo con todos los documentos y la columna `area` vacía, y agrega los nuevos en cada construcción sin tocar lo ya escrito.
 - Un documento sin área queda en «Sin Área» con un código provisional (`D-SAR-NN`) y la construcción termina en REQUIERE REVISIÓN. Los códigos provisionales no se conservan: al escribir el área, el documento recibe su código definitivo sin dejar filas `RETIRADO`.
 
+- Un documento y sus copias (`archivo (1).pdf`) ocupan una sola fila en `areas.csv`, y se convierte el archivo que se llama igual que la fila del inventario (el original), no la copia.
+- Un PDF con páginas escaneadas que no se pudieron leer (no hay Tesseract instalado) es un **problema**, no solo un aviso: su texto no está en el corpus aunque la cobertura diga 100 %.
+
 Código: `cli._lista_desde_carpeta`, `inventario.parsear_lista`, `inventario.leer_areas`, `inventario.actualizar_plantilla_areas`, `inventario.leer_base` y `publicacion.validar_publicacion`.
 
 Resultado en el piloto (10 descriptivos reales, dos variantes de plantilla): cobertura 100 % en todos; nombre, reporta a, propósito, versión y vigencia en los 9 digitales. El escaneado (OCR) no trae “Reporta a” ni funciones legibles: conviene usar la versión digital.

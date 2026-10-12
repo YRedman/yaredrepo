@@ -6,6 +6,7 @@ from typing import Dict, List
 
 from pathlib import Path
 
+from ..comun.texto import nfc
 from .entradas import clave_archivo, clave_ruta, partes_ruta
 from .lote import Grupo
 
@@ -39,6 +40,15 @@ def _indice_por_ruta(entradas, raiz):
     return por_ruta
 
 
+def _mismo_nombre(candidatos, archivo):
+    """Entre un archivo y sus copias ('x.pdf', 'x (1).pdf'), el que se llama igual que la fila del inventario."""
+    objetivo = nfc(archivo).strip().lower()
+    for p in candidatos:
+        if nfc(p.name).strip().lower() == objetivo:
+            return p
+    return candidatos[0]
+
+
 def asignar_archivos(inventario, entradas, tipo_filtro=None, dep_filtro=None, raiz=None):
     """Relaciona cada fila del inventario con su archivo adjunto.
 
@@ -66,8 +76,9 @@ def asignar_archivos(inventario, entradas, tipo_filtro=None, dep_filtro=None, ra
                 continue
             k = clave_archivo(f["archivo"])
             if k in por_clave:
-                asignados.setdefault((t, dep), {})[f["codigo"]] = por_clave[k][0]
-                por_nombre.add(str(por_clave[k][0]))
+                p = _mismo_nombre(por_clave[k], f["archivo"])
+                asignados.setdefault((t, dep), {})[f["codigo"]] = p
+                por_nombre.add(str(p))
     cuenta = collections.Counter(str(p) for m in asignados.values() for p in m.values() if str(p) in por_nombre)
     ambiguos = [p for p, n in cuenta.items() if n > 1]
     if ambiguos and not (tipo_filtro and dep_filtro):

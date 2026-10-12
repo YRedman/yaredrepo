@@ -8,8 +8,11 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from tests import ayuda  # noqa: F401
-from corpus_org.comun.esquema import AREA_SIN_ASIGNAR
+from corpus_org.comun.archivos import escribir_csv
+from corpus_org.comun.esquema import AREA_SIN_ASIGNAR, AVISO_ESCANEADO, COLUMNAS_INDICE
 from corpus_org.conversion import cli as conversion_cli
+from corpus_org.conversion.asignacion import asignar_archivos
+from corpus_org.conversion.publicacion import validar_publicacion
 from corpus_org.conversion.inventario import actualizar_plantilla_areas, leer_base, parsear_lista
 
 try:
@@ -110,6 +113,28 @@ class ConstruirSinListaTest(unittest.TestCase):
             self.assertEqual(inv["Comprador.docx"], ("D-COM-01", "ACTIVO"))
             self.assertEqual(inv["Cotizador.docx"], ("D-SAR-01", "ACTIVO"))
             self.assertIn("Cotizador.docx;", (entrada / "areas.csv").read_text(encoding="utf-8-sig"))
+
+
+class CopiasYEscaneadosTest(unittest.TestCase):
+    def test_se_convierte_el_original_y_no_la_copia(self):
+        fila = {"codigo": "D-SAR-01", "tipo": "Descriptivo", "codigo_departamento": "SAR", "archivo": "Jefe.pdf",
+                "ruta_original": r"C:\e\Descriptivos\Jefe.pdf"}
+        for orden in ((Path("e/Descriptivos/Jefe (1).pdf"), Path("e/Descriptivos/Jefe.pdf")),
+                      (Path("e/Descriptivos/Jefe.pdf"), Path("e/Descriptivos/Jefe (1).pdf"))):
+            a = asignar_archivos([fila], list(orden))
+            self.assertEqual(a.asignados[("D", "SAR")]["D-SAR-01"].name, "Jefe.pdf")
+
+    def test_escaneado_sin_texto_es_problema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pub = Path(tmp)
+            filas = [{"codigo": "D-COM-01", "cobertura": "100.0 %", "avisos_estructura": "1",
+                      "detalle_avisos": AVISO_ESCANEADO + ": 1, 2"},
+                     {"codigo": "D-COM-02", "cobertura": "100.0 %", "avisos_estructura": "0"}]
+            escribir_csv(pub / "indice_corpus.csv", COLUMNAS_INDICE, filas)
+            (pub / "D_COM.md").write_text("## [D-COM-01] A\n\n## [D-COM-02] B\n", encoding="utf-8")
+            v = validar_publicacion(pub, muestra=0)
+        self.assertEqual(v.estado, "REQUIERE REVISIÓN")
+        self.assertTrue(any("escaneadas" in x and "D-COM-01" in x and "D-COM-02" not in x for x in v.problemas))
 
 
 if __name__ == "__main__":

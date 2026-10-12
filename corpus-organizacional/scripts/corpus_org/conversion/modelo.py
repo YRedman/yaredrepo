@@ -9,6 +9,8 @@ import collections
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
+from ..comun.esquema import AVISO_ESCANEADO
+
 
 def bloque_h(nivel, texto):
     return {"k": "h", "nivel": nivel, "texto": texto}
@@ -109,7 +111,7 @@ class DocumentoConvertido:
         if d.paginas_ocr:
             avisos.append("OCR en páginas " + ", ".join(map(str, d.paginas_ocr)) + ": revisar contra el original")
         if d.paginas_escaneadas_sin_ocr:
-            avisos.append("páginas escaneadas sin texto: " + ", ".join(map(str, d.paginas_escaneadas_sin_ocr)))
+            avisos.append(AVISO_ESCANEADO + ": " + ", ".join(map(str, d.paginas_escaneadas_sin_ocr)))
         return avisos
 
     def motivos_consola(self):

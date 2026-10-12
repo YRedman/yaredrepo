@@ -11,7 +11,7 @@ from typing import Dict, List
 
 from .. import VERSION
 from ..comun.archivos import escribir_csv, leer_csv, leer_texto
-from ..comun.esquema import (AREA_SIN_ASIGNAR, ARCHIVO_AREAS_DOCUMENTOS, ARCHIVO_AREAS_EXTRA, ARCHIVO_CATALOGO, ARCHIVO_HUELLAS, ARCHIVO_INDICE,
+from ..comun.esquema import (AREA_SIN_ASIGNAR, AVISO_ESCANEADO, ARCHIVO_AREAS_DOCUMENTOS, ARCHIVO_AREAS_EXTRA, ARCHIVO_CATALOGO, ARCHIVO_HUELLAS, ARCHIVO_INDICE,
                              ARCHIVO_INVENTARIO, ARCHIVO_KPIS, ARCHIVO_REVISADOS, ARCHIVO_REVISION, COLUMNAS_INDICE,
                              PATRON_CODIGO, PREFIJO_DIC, PREFIJO_REPORTE, estado_no_publicable, inventario_activo)
 from ..comun.markdown import esc_celda
@@ -176,7 +176,7 @@ def validar_publicacion(publicado, duplicados=(), revisados=frozenset(), muestra
     sin_texto = sorted(cod_indice - cod_md)
     if sin_texto:
         v.problemas.append("Filas del índice sin texto Markdown: " + ", ".join(sin_texto))
-    bajos, agregadas, no_publicables = [], [], []
+    bajos, agregadas, no_publicables, escaneados = [], [], [], []
     revision = collections.OrderedDict()
     for f in filas:
         c = (f.get("codigo") or "").upper()
@@ -187,6 +187,8 @@ def validar_publicacion(publicado, duplicados=(), revisados=frozenset(), muestra
             v.problemas.append(f"Cobertura no interpretable: {c} = {f.get('cobertura')}")
         if (f.get("palabras_agregadas") or "").strip():
             agregadas.append(f"{c} ({f['palabras_agregadas'][:60]})")
+        if AVISO_ESCANEADO in (f.get("detalle_avisos") or ""):
+            escaneados.append(c)
         if (f.get("avisos_estructura") or "0").strip() not in ("", "0"):
             revision[c] = (f.get("detalle_avisos") or "")[:200]
         if estado_no_publicable(f.get("estado_documental", "")):
@@ -195,6 +197,10 @@ def validar_publicacion(publicado, duplicados=(), revisados=frozenset(), muestra
         v.problemas.append("Texto del original que no aparece en el Markdown (cobertura < 100 %): " + ", ".join(bajos))
     if agregadas:
         v.problemas.append("Palabras que no están en el original (posible texto corrupto): " + "; ".join(agregadas))
+    if escaneados:
+        v.problemas.append(f"Documentos con páginas escaneadas que no se pudieron leer ({len(escaneados)}; su texto no "
+                           "está en el corpus): instale Tesseract con el idioma español y pytesseract, o use la "
+                           "versión digital. " + ", ".join(escaneados))
     if no_publicables:
         v.avisos.append("Excluidos de las consultas por su estado documental: " + ", ".join(no_publicables))
     resto = sorted(c for c in cod_indice if c not in revision and not c.startswith("C-"))

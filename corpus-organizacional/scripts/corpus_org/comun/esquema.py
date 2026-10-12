@@ -48,6 +48,8 @@ ARCHIVO_REVISION = "revision_visual.csv"
 # Area de cada documento que no esta en una carpeta de area (entrada\Descriptivos\archivo.pdf).
 ARCHIVO_AREAS_DOCUMENTOS = "areas.csv"
 AREA_SIN_ASIGNAR = "Sin Área"
+# Aviso de un PDF con paginas escaneadas que no se pudieron leer (no hay OCR): su texto no esta en el corpus.
+AVISO_ESCANEADO = "páginas escaneadas sin texto"
 PREFIJO_DIC = "DIC_"
 PREFIJO_REPORTE = "REPORTE_"
 COLUMNAS_INVENTARIO = ["codigo", "tipo", "codigo_departamento", "departamento", "archivo", "ruta_original",
