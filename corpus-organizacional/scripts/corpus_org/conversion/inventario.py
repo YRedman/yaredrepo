@@ -154,17 +154,26 @@ def leer_areas(path):
 def actualizar_plantilla_areas(path, filas):
     """Agrega a areas.csv los archivos sin carpeta de area que todavia no estan, con el area vacia.
 
-    Conserva las areas ya escritas. Devuelve cuantos archivos se agregaron.
+    Un documento y sus copias ("archivo (1).pdf") ocupan una sola fila: la del original, o la que ya
+    tiene el area escrita. Conserva las areas ya escritas. Devuelve cuantos archivos se agregaron.
     """
     existentes = leer_csv(path) if path.is_file() else []
-    claves = {clave_documento(r.get("archivo") or "") for r in existentes}
-    nuevas = [{"archivo": f["archivo"], "area": ""} for f in filas
-              if f.get("sin_area") and clave_documento(f["archivo"]) not in claves]
-    if nuevas or not path.is_file():
-        filas_csv = [{"archivo": r.get("archivo", ""), "area": r.get("area") or r.get("área") or ""}
-                     for r in existentes] + nuevas
-        escribir_csv(path, ["archivo", "area"], sorted(filas_csv, key=lambda r: norm(r["archivo"])))
-    return len(nuevas)
+    por_clave = collections.OrderedDict()
+    for r in existentes:
+        fila = {"archivo": (r.get("archivo") or "").strip(), "area": (r.get("area") or r.get("área") or "").strip()}
+        k = clave_documento(fila["archivo"])
+        previa = por_clave.get(k)
+        if previa is None or (not previa["area"] and (fila["area"] or _es_copia(previa["archivo"]))):
+            por_clave[k] = dict(fila, area=fila["area"] or (previa or {}).get("area", ""))
+    agregados = 0
+    for f in sorted(filas, key=lambda f: (_es_copia(f["archivo"]), f["archivo"])):
+        k = clave_documento(f["archivo"])
+        if f.get("sin_area") and k not in por_clave:
+            por_clave[k] = {"archivo": f["archivo"], "area": ""}
+            agregados += 1
+    if agregados or not path.is_file() or len(por_clave) != len(existentes):
+        escribir_csv(path, ["archivo", "area"], sorted(por_clave.values(), key=lambda r: norm(r["archivo"])))
+    return agregados
 
 
 def leer_catalogo_codigos(path):

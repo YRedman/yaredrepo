@@ -17,9 +17,9 @@ from .asignacion import asignar_archivos, grupos_a_convertir
 from .configuracion import EXT_RECONOCIDAS, EXT_TEXTO
 from .entradas import buscar_entradas, entrada_por_defecto, localizar, partes_ruta
 from .huella import huella
-from .inventario import (RE_CODIGO_DEP, actualizar_plantilla_areas, candidatos_codigo, construir_inventario,
-                         inventario_provisional, leer_areas, leer_base, leer_catalogo_codigos, parsear_lista,
-                         tipo_de_carpeta)
+from .inventario import (RE_CODIGO_DEP, actualizar_plantilla_areas, candidatos_codigo, clave_documento,
+                         construir_inventario, inventario_provisional, leer_areas, leer_base,
+                         leer_catalogo_codigos, parsear_lista, tipo_de_carpeta)
 from .lote import Grupo, OpcionesConversion, procesar_grupo
 from .publicacion import (MUESTRA_REVISION, escribir_huellas, escribir_resumen_construccion, leer_revisados,
                           limpiar_generados, publicar_corpus, validar_publicacion)
@@ -59,7 +59,7 @@ def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None, incl
                           "o Descriptivos\\archivo.pdf con el área en areas.csv.")
     if any("sin_area" in f for f in filas):
         agregados = actualizar_plantilla_areas(Path(ruta_areas), filas)
-        sin_area = sum(1 for f in filas if f.get("sin_area"))
+        sin_area = len({clave_documento(f["archivo"]) for f in filas if f.get("sin_area")})
         if agregados:
             print(f"Se agregaron {agregados} archivos a {ruta_areas}: escriba el área de cada uno en la columna 'area'.")
         if sin_area:

@@ -10,7 +10,7 @@ from pathlib import Path
 from tests import ayuda  # noqa: F401
 from corpus_org.comun.esquema import AREA_SIN_ASIGNAR
 from corpus_org.conversion import cli as conversion_cli
-from corpus_org.conversion.inventario import leer_base, parsear_lista
+from corpus_org.conversion.inventario import actualizar_plantilla_areas, leer_base, parsear_lista
 
 try:
     from tests.fixtures_casos import descriptivo
@@ -40,6 +40,18 @@ class ListaPlanaTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             filas, _ = parsear_lista(_lista(tmp, r"Descriptivos\Procesos Industriales\Operador.pdf"))
         self.assertEqual((filas[0]["tipo"], filas[0]["departamento"]), ("D", "Procesos Industriales"))
+
+    def test_copias_ocupan_una_fila_de_areas_csv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "areas.csv"
+            # plantilla de una version anterior: con la copia y el original en filas separadas
+            p.write_text("archivo;area\nJefe (1).pdf;Compras\nJefe.pdf;\nAnalista (2).pdf;\n", encoding="utf-8")
+            filas = [{"archivo": n, "sin_area": True} for n in
+                     ("Jefe.pdf", "Jefe (1).pdf", "Analista.pdf", "Analista (2).pdf", "Nuevo (1).pdf", "Nuevo.pdf")]
+            agregados = actualizar_plantilla_areas(p, filas)
+            texto = p.read_text(encoding="utf-8-sig")
+        self.assertEqual(agregados, 1)
+        self.assertEqual(texto.splitlines(), ["archivo;area", "Analista (2).pdf;", "Jefe (1).pdf;Compras", "Nuevo.pdf;"])
 
     def test_codigos_provisionales_no_se_conservan(self):
         with tempfile.TemporaryDirectory() as tmp:
