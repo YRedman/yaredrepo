@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 
 import docx
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 
 def _tabla(d, filas):
@@ -55,6 +57,44 @@ def procedimiento(path, objetivo, pasos, diagrama=False):
     d.save(path)
 
 
+def _numeracion_decimal(d, num_id="77"):
+    """Agrega al documento una lista numerada '1.', '2.'... (como la numeracion automatica de Word)."""
+    numbering = d.part.numbering_part.element
+    absn = OxmlElement("w:abstractNum")
+    absn.set(qn("w:abstractNumId"), num_id)
+    lvl = OxmlElement("w:lvl")
+    lvl.set(qn("w:ilvl"), "0")
+    for tag, val in (("w:start", "1"), ("w:numFmt", "decimal"), ("w:lvlText", "%1.")):
+        e = OxmlElement(tag)
+        e.set(qn("w:val"), val)
+        lvl.append(e)
+    absn.append(lvl)
+    numbering.insert(0, absn)
+    num = OxmlElement("w:num")
+    num.set(qn("w:numId"), num_id)
+    an = OxmlElement("w:abstractNumId")
+    an.set(qn("w:val"), num_id)
+    num.append(an)
+    numbering.append(num)
+    return num_id
+
+
+def procedimiento_titulos_numerados(path):
+    """Titulos 'Heading 1' cuyo numero lo pone Word (no esta en el texto del parrafo)."""
+    d = docx.Document()
+    num_id = _numeracion_decimal(d)
+    for texto in ("Objetivo", "Alcance", "Desarrollo del proceso"):
+        p = d.add_heading(texto, 1)
+        numpr = OxmlElement("w:numPr")
+        for tag, val in (("w:ilvl", "0"), ("w:numId", num_id)):
+            e = OxmlElement(tag)
+            e.set(qn("w:val"), val)
+            numpr.append(e)
+        p._p.get_or_add_pPr().append(numpr)
+        d.add_paragraph(f"Texto de {texto.lower()}.")
+    d.save(path)
+
+
 def generar(base):
     """Crea <base>/entrada (con lista.txt) y <base>/contexto. Devuelve (entrada, contexto)."""
     base = Path(base)
@@ -88,6 +128,7 @@ def generar(base):
                    ("Entregar la mercancía a Almacén", "coordinadores de logística")], diagrama=True)
     shutil.copy(pc / "Compra de insumos.docx", pc / "Compra de insumos (1).docx")
     (pc / "~$mpra de insumos.docx").write_bytes(b"bloqueo de Word")
+    procedimiento_titulos_numerados(pa / "Control de inventario.docx")
     procedimiento(pa / "Recepcion de mercancia.docx", "Recibir mercancía.",
                   [("Recibir la mercancía enviada por Compras", "Jefe de Almacén"),
                    ("Archivar el comprobante", "Asistente Administrativo")])
@@ -103,7 +144,10 @@ def generar(base):
 
 
 def generar_pdf(base):
-    """PDF con ligaduras en celdas y con un diagrama de formas. Devuelve la carpeta o None sin LibreOffice."""
+    """PDF con ligaduras en celdas, un diagrama de formas y una tabla de 60 filas partida entre paginas.
+
+    Devuelve la carpeta o None si no hay LibreOffice.
+    """
     soffice = shutil.which("soffice") or shutil.which("libreoffice")
     if not soffice:
         return None
@@ -123,6 +167,16 @@ def generar_pdf(base):
         for r in p.runs:
             r.font.name = "Carlito"   # fuente con ligaduras fi, fl, ffi
     d.save(fuente / "Ligaduras.docx")
+    # tabla de 60 filas con dos celdas largas: LibreOffice la parte entre dos paginas y sus filas
+    # ("Analista de Procesos") quedan arriba en ambas, como si fueran un encabezado repetido
+    d = docx.Document()
+    d.add_heading("3. Desarrollo del proceso", 1)
+    filas = [["No.", "Actividad", "Responsable"]]
+    for i in range(1, 61):
+        largo = (" " + "Texto largo que ocupa varias líneas. " * 8).rstrip() if i in (24, 25) else ""
+        filas.append([str(i), f"Actividad número {i}.{largo}", "Analista de Procesos"])
+    _tabla(d, filas).style = "Table Grid"
+    d.save(fuente / "Tabla partida.docx")
     html = ("<html><body><h1>4. Diagrama de flujo</h1>"
             + "".join(f'<p style="border:1px solid black;padding:8px;width:200px">{x}</p>'
                       for x in ["Inicio", "Recibir solicitud", "Evaluar", "Aprobar", "Fin"])

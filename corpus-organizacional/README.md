@@ -81,7 +81,17 @@ La v2.1 se desarrolló en paralelo a partir de la misma v2.0 y corrigió otros p
 | 22 | Roles fuera del patrón “Jefe/Gerente…” | “comité de compras” o “coordinadores de logística” en la columna Responsable no aparecían | Toda celda de esa columna es un rol | `participacion.rol_sin_descriptivo` |
 | 23 | Contexto transcrito a mano | Un contexto en `.md` o `.csv` detenía `construir` | Extractor de texto (Markdown simple y CSV), solo para el modo contexto | `extractores/texto.py` |
 
-Pendiente de la comparación (no incluido en esta versión): comandos `briefing` y `kpis`, `areas_extra.csv`, códigos congelados con `--base`, avisos de estructura y revisión visual, huellas SHA-256, numeración automática de títulos en Word, y la tabla de PDF partida entre páginas que pierde filas (falla igual en la v2.1).
+## v3.2: exactitud de tablas PDF y títulos de Word
+
+| # | Problema | Ejemplo | Corrección | Dónde |
+|---|---|---|---|---|
+| 24 | Filas de tabla tomadas como encabezado de página | En una tabla de 60 filas partida entre dos páginas, “Analista de Procesos” y “Actividad número #” aparecían arriba en ambas páginas y se trataron como encabezado repetido. El título “3. Desarrollo del proceso”, la cabecera y las filas 1–3 terminaban en “Datos de encabezado y pie”, y el índice marcaba el desarrollo como `[NO ESPECIFICADO]` | Un encabezado o pie repetido debe aparecer **una sola vez por página y a la misma altura** (±4 pt). Las filas de una tabla se repiten varias veces o a otra altura | `pdf._repetidas` |
+| 25 | Pérdida silenciosa de texto en la zona de encabezado | Las filas 26–32 de la página 2 se borraban y la verificación seguía diciendo 100 %, porque descontaba del original todo lo marcado como encabezado (446 de 446 palabras; el documento tiene 523) | Solo se descarta como encabezado lo que coincide con el encabezado guardado de la primera página. El resto queda como contenido y el reporte lo avisa | `pdf._sin_texto_unico` |
+| 26 | Numeración automática de Word en títulos | “2. Alcance” salía como “Alcance” | El número de Word se calcula también para los títulos | `word._bloque_texto` |
+
+Resultado en el caso de prueba de la v2.1: 60 de 60 filas, en orden, en una sola tabla (antes 48).
+
+Pendiente de la comparación (no incluido en esta versión): comandos `briefing` y `kpis`, `areas_extra.csv`, códigos congelados con `--base`, avisos de estructura y revisión visual, y huellas SHA-256.
 
 Otras mejoras:
 

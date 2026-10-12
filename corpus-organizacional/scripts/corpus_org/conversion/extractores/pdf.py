@@ -22,6 +22,7 @@ RE_CID = re.compile(r"\(cid:\d+\)")
 ZONA_SUPERIOR = 0.22      # fraccion de la altura donde se buscan encabezados repetidos
 ZONA_INFERIOR = 0.84      # fraccion de la altura a partir de la cual se buscan pies repetidos
 MIN_REPETICION = 0.6      # fraccion de paginas en que debe repetirse un encabezado, pie o logo
+TOLERANCIA_ALTURA = 4.0   # puntos: un encabezado o pie repetido esta siempre a la misma altura
 DPI_OCR = 300
 
 
@@ -112,33 +113,49 @@ def _corte_superior(page, fondo_texto):
     return enc[1] + 0.3
 
 
+def _posiciones_por_zona(lineas, h):
+    """{clave: [posiciones]} de las lineas de la zona superior e inferior de una pagina.
+
+    La posicion es la distancia al borde de su zona (arriba para el encabezado, abajo para el pie),
+    asi se compara bien aunque las paginas tengan alturas distintas.
+    """
+    sup, inf = collections.defaultdict(list), collections.defaultdict(list)
+    for l in lineas:
+        k = _clave_rep(l["texto"])
+        if len(re.findall(r"[a-z]", k)) < 3:
+            continue  # numeros sueltos (filas de tabla, numeros de pagina sin texto)
+        if l["y1"] <= ZONA_SUPERIOR * h:
+            sup[k].append(l["y0"])
+        elif l["y0"] >= ZONA_INFERIOR * h:
+            inf[k].append(h - l["y1"])
+    return sup, inf
+
+
+def _repetidas(zonas, ref, minimo):
+    """Claves que se repiten como encabezado o pie: en ``minimo`` paginas, una sola vez por pagina,
+    siempre a la misma altura y presentes en la pagina de referencia.
+
+    Una fila de tabla que continua en la pagina siguiente tambien se repite ("Analista de Procesos",
+    "Actividad numero #"), pero aparece varias veces por pagina o a otra altura; un encabezado real no.
+    """
+    posiciones = collections.defaultdict(list)
+    for zona in zonas:
+        for k, ys in zona.items():
+            if len(ys) == 1:
+                posiciones[k].append(ys[0])
+    return {k for k, ys in posiciones.items()
+            if len(ys) >= minimo and k in zonas[ref] and max(ys) - min(ys) <= TOLERANCIA_ALTURA}
+
+
 def _detectar_encabezados(paginas_lineas, alturas):
     """Claves de las lineas repetidas en la parte superior e inferior (encabezado y pie)."""
     n = len(paginas_lineas)
     if n < 2:
         return set(), set()
     minimo = max(2, math.ceil(MIN_REPETICION * n))
-    cuenta_sup, cuenta_inf = collections.Counter(), collections.Counter()
-    primera_sup, primera_inf = set(), set()
     ref = next((i for i, ls in enumerate(paginas_lineas) if sum(l["chars"] for l in ls) >= 25), 0)
-    for i, lineas in enumerate(paginas_lineas):
-        h = alturas[i]
-        vistas_sup, vistas_inf = set(), set()
-        for l in lineas:
-            k = _clave_rep(l["texto"])
-            if len(re.findall(r"[a-z]", k)) < 3:
-                continue  # numeros sueltos (filas de tabla, numeros de pagina sin texto)
-            if l["y1"] <= ZONA_SUPERIOR * h:
-                vistas_sup.add(k)
-            elif l["y0"] >= ZONA_INFERIOR * h:
-                vistas_inf.add(k)
-        cuenta_sup.update(vistas_sup)
-        cuenta_inf.update(vistas_inf)
-        if i == ref:
-            primera_sup, primera_inf = vistas_sup, vistas_inf
-    sup = {k for k, c in cuenta_sup.items() if c >= minimo and k in primera_sup}
-    inf = {k for k, c in cuenta_inf.items() if c >= minimo and k in primera_inf}
-    return sup, inf
+    zonas = [_posiciones_por_zona(lineas, alturas[i]) for i, lineas in enumerate(paginas_lineas)]
+    return (_repetidas([z[0] for z in zonas], ref, minimo), _repetidas([z[1] for z in zonas], ref, minimo))
 
 
 def _encabezado_por_patron(lineas, h):
@@ -385,6 +402,7 @@ class _ExtraccionPDF:
         self.ocr_pendiente = []    # (pagina, lineas, altura)
         self.cortes = []           # (corte_sup, corte_inf) de paginas con encabezado
         self.encabezado_guardado = False
+        self.claves_guardadas = set()
         self.ocr_idioma = None
         self.paginas_lineas = [_lineas_pagina(p, fitz) for p in doc_pdf]
         self.alturas = [p.rect.height for p in doc_pdf]
@@ -512,11 +530,30 @@ class _ExtraccionPDF:
         if enc_lineas:
             if not self.encabezado_guardado:
                 self._guardar_encabezado(page, enc_lineas, corte_sup, corte_inf, w, h)
+                self.claves_guardadas = {_clave_rep(l["texto"]) for l in enc_lineas}
+            else:
+                enc_lineas = self._sin_texto_unico(i, enc_lineas)
             for l in enc_lineas:
                 self.d.crudo_encabezado.update(tokens(l["texto"]))
         if sup or inf:
             self.cortes.append((corte_sup if sup else None, corte_inf if inf else None))
         return corte_sup, corte_inf, enc_lineas
+
+    def _sin_texto_unico(self, i, enc_lineas):
+        """Deja como contenido las lineas de la zona de encabezado o pie que no estan en el encabezado guardado.
+
+        El encabezado se guarda una sola vez (el de la primera pagina) y en las demas paginas se descarta.
+        Una linea que no se parece a ninguna de las guardadas no es un encabezado repetido: si se
+        descartara, su texto desapareceria del corpus sin que la verificacion lo notara.
+        """
+        unicas = [l for l in enc_lineas if len(re.findall(r"[a-z]", _clave_rep(l["texto"]))) >= 3
+                  and _clave_rep(l["texto"]) not in self.claves_guardadas]
+        if unicas:
+            ids = {id(l) for l in unicas}
+            self.d.notas.append(f"Página {i + 1}: {len(unicas)} líneas en la zona de encabezado o pie no coinciden "
+                                "con el encabezado de la primera página; se conservaron como contenido.")
+            return [l for l in enc_lineas if id(l) not in ids]
+        return enc_lineas
 
     @staticmethod
     def _fondo_encabezado(sup, lineas, h, w):

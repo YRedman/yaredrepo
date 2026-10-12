@@ -364,11 +364,13 @@ class _ConversionDocx:
 
     def _bloque_texto(self, texto, nombre, numpr, outline, bold):
         nivel = _nivel_estilo(nombre, outline)
+        # El numero automatico de Word no esta en el texto del parrafo: se calcula con la numeracion
+        # del documento (tambien para los titulos, para que "2. Alcance" no quede como "Alcance").
+        marcador = self.ctx.marcador_lista(numpr[0], numpr[1]) if numpr is not None else None
         if nivel:
-            return bloque_h(min(nivel, 3), texto)
+            return bloque_h(min(nivel, 3), (marcador + " " + texto) if marcador and marcador != "-" else texto)
         clave = clave_titulo(texto)
         corto = es_titulo_corto(texto)
-        marcador = self.ctx.marcador_lista(numpr[0], numpr[1]) if numpr is not None else None
         if es_seccion_conocida(clave) and corto and len(clave.split()) <= 6 and (
                 bold or numpr is not None or len(texto.split()) <= 5):
             t = (marcador + " " + texto) if marcador and marcador != "-" else texto
