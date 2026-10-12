@@ -15,6 +15,7 @@ from ..comun.esquema import (AREA_SIN_ASIGNAR, ARCHIVO_AREAS_DOCUMENTOS, ARCHIVO
 from ..comun.texto import norm
 from .asignacion import asignar_archivos, grupos_a_convertir
 from .configuracion import EXT_RECONOCIDAS, EXT_TEXTO
+from .extractores.ocr import diagnostico
 from .copilot import ARCHIVO_INSTRUCCIONES, MAX_ARCHIVOS, exportar_copilot
 from .entradas import buscar_entradas, entrada_por_defecto, localizar, partes_ruta
 from .huella import huella
@@ -393,12 +394,26 @@ def modo_copilot(args):
     print(f"Instrucciones del agente: {raiz / ARCHIVO_INSTRUCCIONES}")
 
 
+def modo_diagnostico(args):
+    """Comprueba PyMuPDF, pytesseract, Pillow, Tesseract y el idioma español."""
+    print(f"DIAGNÓSTICO · convertir.py v{VERSION}")
+    lineas = diagnostico()
+    for ok, texto in lineas:
+        print(("OK     " if ok else "FALTA  ") + texto)
+    if all(ok for ok, _ in lineas):
+        print("\nTodo listo: las páginas escaneadas se leerán con OCR.")
+    else:
+        print("\nSin OCR las páginas escaneadas quedan sin texto (el resultado será REQUIERE REVISIÓN).")
+        sys.exit(1)
+
+
 # ---------------------------------------------------------------------------
 # Argumentos
 # ---------------------------------------------------------------------------
 
 MODOS = {"inventario": modo_inventario, "convertir": modo_convertir, "contexto": modo_contexto,
-         "construir": modo_construir, "copilot": modo_copilot}
+         "construir": modo_construir, "copilot": modo_copilot,
+         "diagnostico": modo_diagnostico}
 
 
 def crear_parser():

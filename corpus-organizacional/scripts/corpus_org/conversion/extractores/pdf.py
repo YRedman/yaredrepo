@@ -12,6 +12,7 @@ from ...comun.texto import limpiar_celda, nfc, norm, numeros, tokens, unir
 from ..modelo import DocumentoExtraido
 from .base import Extractor
 from ..secciones import clave_titulo, es_seccion_conocida
+from .ocr import configurar_pytesseract, idioma_ocr
 from .maquetacion import RE_NUM_INICIO, agrupar_filas, bloques_desde_items
 
 RE_PATRON_ENC = re.compile(r"(p[aá]gina\s*\d+\s*(de|/)\s*\d+|\bversi[oó]n\s*:|\brevisi[oó]n\s*:|c[oó]digo\s*:|"
@@ -444,7 +445,7 @@ def _texto_zona(page, fitz, lineas, rect):
 
 def _ocr_lineas(page, idioma):
     """OCR de una pagina escaneada; devuelve lineas con posicion (en puntos PDF)."""
-    import pytesseract
+    pytesseract = configurar_pytesseract()
     from PIL import Image
     pix = page.get_pixmap(dpi=DPI_OCR)
     img = Image.open(io.BytesIO(pix.tobytes("png")))
@@ -477,15 +478,7 @@ def _ocr_lineas(page, idioma):
 
 
 def _idioma_ocr():
-    try:
-        import pytesseract
-        langs = pytesseract.get_languages(config="")
-    except Exception:
-        return None
-    for idioma in ("spa", "eng"):
-        if idioma in langs:
-            return idioma
-    return None
+    return idioma_ocr()
 
 
 MAX_SUELTAS_ENTRE_TABLAS = 3

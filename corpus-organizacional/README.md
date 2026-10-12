@@ -156,6 +156,10 @@ Código: `cli._lista_desde_carpeta`, `inventario.parsear_lista`, `inventario.lee
 
 Resultado en el piloto (10 descriptivos reales, dos variantes de plantilla): cobertura 100 % en todos; nombre, reporta a, propósito, versión y vigencia en los 9 digitales. El escaneado (OCR) no trae “Reporta a” ni funciones legibles: conviene usar la versión digital.
 
+## OCR de PDF escaneados (Tesseract)
+
+Las páginas escaneadas se leen con Tesseract. `python scripts/convertir.py diagnostico` comprueba PyMuPDF, pytesseract, Pillow, Tesseract y el idioma español. El ejecutable se busca en `TESSERACT_CMD`, en el PATH y en las carpetas de instalación de Windows (`Program Files`, `Program Files (x86)` y `%LOCALAPPDATA%\Programs`), así que no hace falta editar el PATH. Código: `conversion/extractores/ocr.py`.
+
 ## Paquete para Copilot
 
 Copilot no ejecuta `corpus.py` y acepta pocos archivos de conocimiento. Al terminar, `construir` escribe:
