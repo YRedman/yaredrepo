@@ -12,4 +12,7 @@ def extractor_para(path, verificacion_cruzada=True):
     if ext == ".docx":
         from .word import ExtractorDocx
         return ExtractorDocx()
+    if ext in (".md", ".csv", ".txt"):
+        from .texto import ExtractorTexto
+        return ExtractorTexto()
     raise RuntimeError("Formato no soportado (.doc). Guárdelo como .docx o PDF.")

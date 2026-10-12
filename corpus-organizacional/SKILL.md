@@ -6,7 +6,7 @@ description: >-
 
 # Corpus organizacional
 
-> Compatible con `convertir.py` v3.0 y `corpus.py` v3.0.
+> Compatible con `convertir.py` v3.1 y `corpus.py` v3.1.
 
 Este skill consulta exclusivamente el corpus publicado. Los documentos son la fuente de verdad; el índice sirve para localizar, contar y filtrar, pero los datos sustantivos se confirman en el Markdown original.
 
@@ -14,7 +14,7 @@ Este skill consulta exclusivamente el corpus publicado. Los documentos son la fu
 
 - `salida_corpus/publicado/D_<ÁREA>.md`: descriptivos publicados.
 - `salida_corpus/publicado/P_<ÁREA>.md`: procedimientos publicados.
-- `salida_corpus/publicado/contexto.md`: organigrama, glosario y contexto, con códigos `C-CTX-NN`.
+- `salida_corpus/publicado/contexto.md`: organigrama, glosario y contexto, con códigos `C-CTX-NN`. El contexto puede venir en PDF, Word o transcrito a mano en `.md`, `.csv` o `.txt` (por ejemplo, capturas de un tablero).
 - `salida_corpus/publicado/indice_corpus.csv`: índice maestro consolidado, una fila por documento.
 - `salida_corpus/publicado/inventario_maestro.csv`: documentos que deberían existir.
 - `salida_corpus/publicado/catalogo.csv`: resumen de áreas y cantidades, cuando esté disponible.
@@ -32,7 +32,7 @@ Compatibilidad: `corpus.py` busca primero la ruta indicada por `CORPUS_DATOS`, l
 - `D-XXX-NN` es un descriptivo; `P-XXX-NN` es un procedimiento; `C-CTX-NN` es contexto.
 - Las líneas que empiezan con `>` son metadatos de conversión, no texto original.
 - `[NO ESPECIFICADO]` significa que el original no trae el campo.
-- `[DIAGRAMA O IMAGEN...]`, `[CELDA COMBINADA]`, `[TEXTO OCR...]` e `[IMAGEN OMITIDA]` son marcas de conversión.
+- `[DIAGRAMA: la sección «…» no se transcribe…]`, `[DIAGRAMA O IMAGEN...]`, `[CELDA COMBINADA]`, `[TEXTO OCR...]` e `[IMAGEN OMITIDA]` son marcas de conversión. El contenido de un diagrama no está en el corpus: remite a la página del original.
 - La sección “Datos de encabezado y pie” conserva código interno, versión y otros datos del encabezado original.
 - `Versión`, `Estado documental`, `Fecha de vigencia`, `Propietario` y `Responsable` se usan solo cuando aparecen explícitamente en el original.
 - Un estado vacío no significa “Vigente” ni “No vigente”. Se reporta `[NO ESPECIFICADO]`.
@@ -55,6 +55,8 @@ El modo `construir` genera:
 - `RESUMEN_CONSTRUCCION.md`: estado `LISTO PARA PUBLICAR` o `REQUIERE REVISIÓN`.
 
 Si el resumen indica `REQUIERE REVISIÓN`, no presentes el corpus como completo sin explicar los problemas detectados.
+
+Inventario: se ignoran los archivos temporales o del sistema (`~$…`, `Thumbs.db`, `desktop.ini`). Si el mismo documento está en `.docx` y `.pdf`, o hay una copia `(1)`, se inventaría una sola vez (preferencia `.docx`) y se avisa; `--incluir-duplicados` conserva todos. Los archivos se emparejan por su ruta `Tipo/Departamento/Archivo`, así dos áreas pueden tener un archivo con el mismo nombre.
 
 ## 4. Herramienta de consulta
 
@@ -84,8 +86,9 @@ python scripts/corpus.py <comando> <argumentos>
 - Si el script responde `AVISO: '<texto>' se interpretó como el área ...`, menciona esa interpretación en la respuesta.
 - Si responde `NO ENCONTRADO`, indica qué revisaste y muestra las alternativas disponibles.
 - Las coincidencias “probable”, los verbos detectados y las actividades extraídas son ayudas automáticas. Confírmalas con `doc`; si se usan sin confirmación, marca `[Inferido]`.
-- Las “menciones parecidas a varios puestos” de `participacion` no se asignaron a ningún puesto. No elijas uno: confírmalo con `doc` o déjalo como punto a validar.
-- El rol y el verbo se calculan con la oración donde aparece el puesto o el área, no con toda la línea.
+- Las “menciones parecidas a varios puestos” de `participacion` no se asignaron a ningún puesto. No elijas uno: confírmalo con `doc` o déjalo como punto a validar. Un puesto con el mismo nombre en varias áreas se asigna al área del documento que lo menciona; si el documento es de otra área, queda en esa lista.
+- Toda celda de la columna “Responsable” es un rol: si no coincide con un descriptivo aparece en “Puestos o roles … sin descriptivo”.
+- El rol y el verbo se calculan con la oración donde aparece el puesto o el área, no con toda la línea; si hay varios verbos se toma el más cercano a la mención. “Aprueba” y “Revisa o verifica” son roles distintos; una firma o una liberación no cuentan como aprobación.
 - `relaciones` identifica menciones explícitas. La ausencia de una mención no demuestra que la relación no exista.
 - Si el script falla, lee primero `indice_corpus.csv` y luego el Markdown correspondiente. Usa `DIC_*.csv` solo si no existe el índice consolidado.
 

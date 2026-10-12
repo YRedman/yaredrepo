@@ -54,6 +54,8 @@ class Analisis:
     actividades: List[str] = field(default_factory=list)
     codigos_citados: List[str] = field(default_factory=list)
     secciones_excluidas: List[str] = field(default_factory=list)
+    secciones_diagrama: List[str] = field(default_factory=list)
+    notas: List[str] = field(default_factory=list)
     excluidos: collections.Counter = field(default_factory=collections.Counter)
     metadatos: Metadatos = field(default_factory=Metadatos)
 

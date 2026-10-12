@@ -5,4 +5,4 @@
 - ``corpus_org.consulta``: consulta el corpus publicado (``scripts/corpus.py``).
 """
 
-VERSION = "3.0"
+VERSION = "3.1"

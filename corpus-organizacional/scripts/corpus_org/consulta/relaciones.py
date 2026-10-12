@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from ..comun.esquema import area_de
-from ..comun.texto import oracion_con, sin_acentos
+from ..comun.texto import sin_acentos
 from .areas import patrones_area
 from .puestos import DetectorPuestos
 from .roles import verbo
@@ -52,10 +52,10 @@ class AnalizadorRelaciones:
                         via, frase = "área", frase_area
                     else:
                         if puestos is None:
-                            puestos = [m for m in self.detector.detectar(l) if m.asignada]
+                            puestos = [m for m in self.detector.detectar(l, origen) if m.asignada]
                         m = next((m for m in puestos if m.puesto.area == d), None)
                         if m:
                             via, frase = f"puesto {m.puesto.nombre} ({m.puesto.codigo}, {m.etiqueta})", m.frase
                     if via:
-                        res.append(Mencion(c, d, sec, via, verbo(oracion_con(l, frase)), l))
+                        res.append(Mencion(c, d, sec, via, verbo(l, frase), l))
         return res

@@ -10,7 +10,7 @@ from ..comun.archivos import escribir_csv
 from ..comun.esquema import (COLUMNAS_INDICE, NO_ESPECIFICADO, PREFIJO_DIC, PREFIJO_REPORTE, RE_MARCAS,
                              SEPARADOR_LISTA, TIPOS, TIPOS_PLURAL)
 from ..comun.texto import recortar_palabras, tokens
-from .analisis import analizar
+from .analisis import analizar, avisar_nombre_puesto
 from .extractores import extractor_para
 from .modelo import DocumentoConvertido
 from .render import render_documento
@@ -65,6 +65,8 @@ def convertir_documento(path, fila, grupo, opciones):
     doc = extractor_para(path, opciones.verificacion_cruzada).extraer(path)
     bloques, analisis = analizar(doc, grupo.tipo)
     titulo = os.path.splitext(fila["archivo"])[0]
+    if grupo.tipo == "D":
+        avisar_nombre_puesto(analisis, titulo)
     md, cuerpo = render_documento(doc, bloques, analisis, fila["codigo"], grupo.tipo,
                                   "" if grupo.es_contexto else grupo.departamento, fila["archivo"], titulo)
     v = verificar(doc, bloques, analisis, cuerpo)

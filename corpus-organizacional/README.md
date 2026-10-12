@@ -18,7 +18,7 @@ scripts/
       texto.py, archivos.py, markdown.py, errores.py
     conversion/
       configuracion.py           Títulos de sección, etiquetas y campos clave (editable)
-      extractores/               Un extractor por formato (pdf.py, word.py) + maquetacion.py
+      extractores/               Un extractor por formato (pdf.py, word.py, texto.py) + maquetacion.py
       analisis.py                Secciones, campos, actividades y códigos citados
       metadatos.py               Versión, estado, vigencia, propietario... (solo con etiqueta explícita)
       render.py, verificacion.py, reportes.py
@@ -64,6 +64,25 @@ Todos se reprodujeron con el corpus de `tests/fixtures_corpus.py` y quedaron cub
 | 12 | La `ficha` comparaba subcadenas. | La sección “Comisiones” se mostraba como “misión”. Además, la cabecera de una segunda tabla se contaba como un paso más. | Se compara al inicio de palabra y cada tabla reinicia su cabecera. |
 | 13 | Un área sin nombre coincidía con cualquier búsqueda parcial (`"" in texto`). | Daba un `AMBIGUO` espurio. | Las áreas sin nombre se ignoran en la búsqueda por parecido. Cuando se elige un área por parecido, se avisa con `AVISO: se interpretó como…`. |
 
+## v3.1: correcciones tomadas de la v2.1
+
+La v2.1 se desarrolló en paralelo a partir de la misma v2.0 y corrigió otros problemas de lectura. Se compararon ambas versiones con los corpus de prueba de cada una y se portaron sus correcciones a esta estructura. Ninguna versión resolvía todo por sí sola.
+
+| # | Problema | Ejemplo | Corrección | Dónde |
+|---|---|---|---|---|
+| 14 | Archivos fantasma en el inventario | `~$mpra de insumos.docx` (bloqueo de Word) y `Compra de insumos (1).docx` recibían código | Se ignoran los temporales y del sistema. El mismo documento en .docx/.pdf o con copia `(1)` se inventaría una vez (preferencia .docx) y se avisa (`--incluir-duplicados` para conservarlos) | `inventario.py`, `entradas.py` |
+| 15 | Mismo nombre de archivo en dos áreas | “Asistente Administrativo” de Compras y de Almacén quedaban sin convertir | Emparejamiento por ruta `Tipo/Departamento/Archivo` (la de `lista.txt`); por nombre solo si los adjuntos llegan sin carpetas | `asignacion.py` |
+| 16 | Etiquetas de descriptivos no reconocidas | “Jefe directo”, “Depende de”, “Puestos a su cargo”, “Actividades principales” | Etiquetas y secciones nuevas en `configuracion.py` | `configuracion.py` |
+| 17 | Tabla horizontal leída como vertical | `nombre_puesto = "Departamento"`, `reporta_a = "Salario"` | Se reconoce la fila de etiquetas con la fila de valores debajo, y un valor que es una etiqueta conocida nunca se acepta | `analisis._campos_por_etiqueta` |
+| 18 | Ligaduras rotas en celdas de PDF | “eficiencia” salía como “efci encia” y el reporte avisaba palabras inexistentes | El texto de cada celda se rehace con las palabras de la página (`get_text("words")`) | `extractores/pdf.py` |
+| 19 | Diagramas transcritos como texto | Cajas sueltas (“Inicio”, “¿Aprobada?”) se leían como contenido | Las secciones “Diagrama…” se sustituyen por `[DIAGRAMA: la sección «…» no se transcribe; ver página N]`. Un diagrama dibujado con formas en PDF genera una nota en el reporte | `analisis._sustituir_diagramas`, `pdf._formas_con_texto` |
+| 20 | Puestos homónimos | El “Asistente Administrativo” de Almacén se asignaba al de Compras y creaba una relación falsa | Se resuelve con el área del documento que menciona; si no alcanza, queda como ambiguo | `puestos.elegir` |
+| 21 | Verbos y roles | “aprobación” no contaba como Aprueba; “registrar la firma” sí | Se reconoce `aprob*`; `firm` y `liber` dejan de ser aprobación; Aprueba y Revisa son roles distintos; se toma el verbo más cercano a la mención | `roles.py` |
+| 22 | Roles fuera del patrón “Jefe/Gerente…” | “comité de compras” o “coordinadores de logística” en la columna Responsable no aparecían | Toda celda de esa columna es un rol | `participacion.rol_sin_descriptivo` |
+| 23 | Contexto transcrito a mano | Un contexto en `.md` o `.csv` detenía `construir` | Extractor de texto (Markdown simple y CSV), solo para el modo contexto | `extractores/texto.py` |
+
+Pendiente de la comparación (no incluido en esta versión): comandos `briefing` y `kpis`, `areas_extra.csv`, códigos congelados con `--base`, avisos de estructura y revisión visual, huellas SHA-256, numeración automática de títulos en Word, y la tabla de PDF partida entre páginas que pierde filas (falla igual en la v2.1).
+
 Otras mejoras:
 
 - Los archivos PDF y ZIP ahora se cierran siempre.
@@ -77,4 +96,6 @@ Otras mejoras:
 python -m unittest discover -s tests -t .      # o: python -m pytest tests
 ```
 
-Las pruebas de integración generan un corpus sintético. Necesitan `pymupdf`, `lxml`, `python-docx` y `reportlab`; si falta alguna de esas bibliotecas, se omiten.
+Las pruebas de integración generan corpus sintéticos (`tests/fixtures_corpus.py`, `tests/fixtures_casos.py`). Necesitan `pymupdf`, `lxml`, `python-docx` y `reportlab`, y las de PDF además LibreOffice (`soffice`); si falta alguno, esas pruebas se omiten.
+
+Los datos del cliente (documentos, materiales de contexto y corpus generado) no se versionan: `.gitignore` excluye `contexto/`, `entrada/`, `salida_corpus/` y `publicado/`.

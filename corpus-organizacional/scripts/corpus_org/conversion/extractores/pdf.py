@@ -178,9 +178,43 @@ def _quitar_vacias(filas, ncol):
     return filas
 
 
-def _tabla_desde_fitz(t):
+def _palabras_celda(palabras, bbox):
+    """Texto de una celda armado con las palabras de ``get_text("words")`` cuyo centro cae en la celda."""
+    x0, y0, x1, y1 = bbox
+    sel = sorted((w for w in palabras
+                  if x0 - 1 <= (w[0] + w[2]) / 2 <= x1 + 1 and y0 - 1 <= (w[1] + w[3]) / 2 <= y1 + 1),
+                 key=lambda w: (w[5], w[6], w[7]))
+    lineas, clave = [], None
+    for w in sel:
+        if (w[5], w[6]) != clave:
+            lineas.append([])
+            clave = (w[5], w[6])
+        lineas[-1].append(w[4])
+    return "\n".join(" ".join(l) for l in lineas)
+
+
+def _datos_por_palabras(datos, filas_bbox, palabras):
+    """Rehace cada celda con ``get_text("words")``.
+
+    ``Table.extract()`` puede romper ligaduras ("eficiencia" -> "efci encia"); las palabras de la pagina
+    no. Si una celda queda vacia se conserva el texto de ``extract()``.
+    """
+    nuevos = []
+    for i, fila in enumerate(datos):
+        nueva = []
+        for j, v in enumerate(fila):
+            bb = filas_bbox[i][j] if i < len(filas_bbox) and j < len(filas_bbox[i]) else None
+            texto = _palabras_celda(palabras, bb) if v is not None and bb is not None else ""
+            nueva.append(texto if texto.strip() else v)
+        nuevos.append(nueva)
+    return nuevos
+
+
+def _tabla_desde_fitz(t, palabras=None):
     datos = t.extract()
     filas_bbox = [r.cells for r in t.rows]
+    if palabras is not None:
+        datos = _datos_por_palabras(datos, filas_bbox, palabras)
     ncol = max((len(r) for r in datos), default=0)
     filas = []
     for i, fila in enumerate(datos):
@@ -193,6 +227,44 @@ def _tabla_desde_fitz(t):
     primera = next((r for r in filas_bbox if r), None)
     xs = [round(c[0]) for c in primera if c is not None] if primera else []
     return filas, xs
+
+
+def _formas_con_texto(page, lineas, rect_tablas, w, h):
+    """Lineas de texto dentro de formas vectoriales (cajas, rombos, elipses) que no son tablas.
+
+    Indica un diagrama dibujado con formas: su texto se extrae como lineas sueltas sin orden.
+    Devuelve 0 si hay menos de 3 formas con texto.
+    """
+    formas = []
+    try:
+        dibujos = page.get_drawings()
+    except Exception:
+        return 0
+    for dr in dibujos:
+        r = dr.get("rect")
+        if r is None:
+            continue
+        area = abs(r)
+        if area < 400 or area > 0.5 * w * h or r.width < 15 or r.height < 10:
+            continue
+        items = dr.get("items", [])
+        if not ({it[0] for it in items} & {"re", "qu", "c"}) and len(items) < 3:
+            continue
+        cx, cy = (r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2
+        if any(t.x0 - 1 <= cx <= t.x1 + 1 and t.y0 - 1 <= cy <= t.y1 + 1 for t in rect_tablas):
+            continue
+        formas.append(r)
+    if len(formas) < 3:
+        return 0
+    dentro, con_texto = 0, set()
+    for l in lineas:
+        cx, cy = (l["x0"] + l["x1"]) / 2, (l["y0"] + l["y1"]) / 2
+        for k, r in enumerate(formas):
+            if r.x0 <= cx <= r.x1 and r.y0 <= cy <= r.y1 and (r.x1 - r.x0) < 0.9 * w:
+                dentro += 1
+                con_texto.add(k)
+                break
+    return dentro if len(con_texto) >= 3 else 0
 
 
 def _dentro(l, r, margen=1):
@@ -395,7 +467,7 @@ class _ExtraccionPDF:
                 self.items.append((i, f["y0"], f["x0"], f))
 
     def _marca(self, pagina, y, x, texto):
-        self.items.append((pagina, y, x, {"tipo": "marca", "texto": texto}))
+        self.items.append((pagina, y, x, {"tipo": "marca", "texto": texto, "pagina": pagina}))
 
     # -- paginas con texto ----------------------------------------------------
 
@@ -405,6 +477,11 @@ class _ExtraccionPDF:
         corte_sup, corte_inf, enc_lineas = self._encabezado_y_pie(i, page, lineas, h, w)
         tablas = self._tablas(i, page, self.fitz.Rect(0, corte_sup, w, corte_inf))
         self._contenido(i, lineas, enc_lineas, tablas)
+        ids_enc = {id(l) for l in enc_lineas}
+        en_formas = _formas_con_texto(page, [l for l in lineas if id(l) not in ids_enc], [r for r, _, _ in tablas], w, h)
+        if en_formas:
+            self.d.notas.append(f"Página {i + 1}: posible diagrama vectorial ({en_formas} líneas de texto dentro de "
+                                "formas); su texto quedó como líneas sueltas: revisar contra el original.")
         self._imagenes_contenido(i, corte_sup, corte_inf, w, h)
         # texto crudo de verificacion (motor principal, pagina completa, sin encabezado ni pie)
         crudo = re.sub(r"(\w)-\n(?=[a-záéíóúüñ])", r"\1", page.get_text("text"))
@@ -469,8 +546,9 @@ class _ExtraccionPDF:
     def _tablas(self, i, page, clip):
         tablas = []
         try:
+            palabras = page.get_text("words")
             for t in page.find_tables(clip=clip).tables:
-                filas, xs = _tabla_desde_fitz(t)
+                filas, xs = _tabla_desde_fitz(t, palabras)
                 if not filas or (len(filas) == 1 and len(filas[0]) == 1):
                     continue  # vacia o recuadro simple: se trata como texto
                 tablas.append((self.fitz.Rect(t.bbox), filas, xs))
@@ -519,7 +597,8 @@ class _ExtraccionPDF:
                 d.notas.append(f"Página {i + 1}: {len(sueltas)} líneas dentro de una tabla no quedaron en sus celdas; "
                                "se agregaron como texto junto a la tabla.")
             d.lineas_diag += [(i + 1, "tabla", l["texto"]) for l in propias]
-            self.items.append((i, r.y0, r.x0, {"tipo": "tabla", "filas": filas, "xs": xs, "y0": r.y0, "y1": r.y1}))
+            self.items.append((i, r.y0, r.x0, {"tipo": "tabla", "filas": filas, "xs": xs, "y0": r.y0, "y1": r.y1,
+                                               "pagina": i}))
         for f in agrupar_filas(contenido):
             f["pagina"] = i
             self.items.append((i, f["y0"], f["x0"], f))

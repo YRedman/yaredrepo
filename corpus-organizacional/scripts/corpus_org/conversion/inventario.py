@@ -12,9 +12,11 @@ from ..comun.archivos import leer_csv, leer_texto
 from ..comun.errores import CorpusError
 from ..comun.esquema import TIPOS
 from ..comun.texto import nfc, norm, sin_acentos
-from .configuracion import EXT_RECONOCIDAS, PALABRAS_VACIAS_DEP
+from .configuracion import EXT_RECONOCIDAS, PALABRAS_VACIAS_DEP, PREFERENCIA_EXT
+from .entradas import es_archivo_ignorado, partes_ruta
 
 RE_CODIGO_DEP = re.compile(r"^[A-Z0-9]{3}$")
+RE_SUFIJO_COPIA = re.compile(r"\s*\(\d+\)$|\s*-\s*copia(\s*\(\d+\))?$|\s*copy$", re.I)
 
 
 @dataclass
@@ -70,8 +72,11 @@ def parsear_lista(path):
         l = linea.strip().strip('"').strip("'").strip()
         if not l:
             continue
-        partes = [p for p in re.split(r"[\\/]+", l) if p]
+        partes = partes_ruta(l)
         nombre = partes[-1] if partes else l
+        if es_archivo_ignorado(nombre):
+            ignoradas.append((l, "archivo temporal o del sistema"))
+            continue
         if os.path.splitext(nombre)[1].lower() not in EXT_RECONOCIDAS:
             ignoradas.append((l, "no es PDF ni Word"))
             continue
@@ -85,6 +90,42 @@ def parsear_lista(path):
         filas.append({"tipo": tipo, "departamento": nfc(partes[-2]).strip(), "archivo": nfc(nombre).strip(),
                       "ruta": l})
     return filas, ignoradas
+
+
+def clave_documento(nombre):
+    """Identidad de un documento sin extension ni sufijo de copia: 'Compra (1).pdf' -> 'compra'."""
+    return norm(RE_SUFIJO_COPIA.sub("", os.path.splitext(nfc(nombre))[0]))
+
+
+def _es_copia(nombre):
+    return bool(RE_SUFIJO_COPIA.search(os.path.splitext(nombre)[0]))
+
+
+def quitar_duplicados(filas, incluir=False):
+    """Un mismo documento en .docx y .pdf, o una copia '(1)', se inventaria una sola vez.
+
+    Se conserva el original (sin sufijo de copia) en el formato preferido (.docx). Con ``incluir``
+    se conservan todos. Devuelve (filas, avisos).
+    """
+    grupos = collections.OrderedDict()
+    for f in filas:
+        grupos.setdefault((f["tipo"], norm(f["departamento"]), clave_documento(f["archivo"])), []).append(f)
+    salida, avisos = [], []
+    for (tipo, _dep, _doc), lista_f in grupos.items():
+        if len(lista_f) == 1:
+            salida += lista_f
+            continue
+        if incluir:
+            salida += lista_f
+            avisos.append("Posible duplicado conservado (--incluir-duplicados): "
+                          + ", ".join(f["archivo"] for f in lista_f))
+            continue
+        lista_f.sort(key=lambda f: (_es_copia(f["archivo"]),
+                                    PREFERENCIA_EXT.get(os.path.splitext(f["archivo"])[1].lower(), 9), f["archivo"]))
+        salida.append(lista_f[0])
+        avisos.append(f"Duplicado en {TIPOS[tipo]}/{lista_f[0]['departamento']}: se usa «{lista_f[0]['archivo']}» "
+                      f"y se descarta {', '.join('«' + f['archivo'] + '»' for f in lista_f[1:])}")
+    return salida, avisos
 
 
 def leer_catalogo_codigos(path):
@@ -121,8 +162,9 @@ def ancho_numeracion(cantidad):
     return 3 if cantidad > 99 else 2
 
 
-def construir_inventario(filas, ignoradas, codigos_fijados=None):
+def construir_inventario(filas, ignoradas, codigos_fijados=None, incluir_duplicados=False):
     inv = Inventario(ignoradas=ignoradas, rutas_validas=len(filas))
+    filas, inv.avisos = quitar_duplicados(filas, incluir_duplicados)
     deps = collections.OrderedDict()
     for f in sorted(filas, key=lambda f: norm(f["departamento"])):
         deps.setdefault(norm(f["departamento"]), f["departamento"])
@@ -159,8 +201,10 @@ def construir_inventario(filas, ignoradas, codigos_fijados=None):
 
 def inventario_provisional(entradas, tipo, codigo_dep, departamento):
     """Inventario con los archivos adjuntos de UN departamento (orden alfabetico), sin lista.txt."""
-    docs = sorted((p for p in entradas if p.suffix.lower() in EXT_RECONOCIDAS),
-                  key=lambda p: (norm(os.path.splitext(p.name)[0]), p.name))
+    filas = [{"tipo": tipo, "departamento": departamento, "archivo": p.name, "path": p}
+             for p in entradas if p.suffix.lower() in EXT_RECONOCIDAS]
+    filas, _avisos = quitar_duplicados(filas)
+    docs = sorted((f["path"] for f in filas), key=lambda p: (norm(os.path.splitext(p.name)[0]), p.name))
     ancho = ancho_numeracion(len(docs))
     return [{"codigo": f"{tipo}-{codigo_dep}-{i:0{ancho}d}", "tipo": TIPOS[tipo], "codigo_departamento": codigo_dep,
              "departamento": departamento, "archivo": p.name} for i, p in enumerate(docs, 1)]
