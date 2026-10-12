@@ -1,6 +1,7 @@
 """Asignacion de los archivos adjuntos a las filas del inventario y armado de grupos de conversion."""
 
 import collections
+import re
 from dataclasses import dataclass, field
 from typing import Dict, List
 
@@ -9,6 +10,8 @@ from pathlib import Path
 from ..comun.texto import nfc
 from .entradas import clave_archivo, clave_ruta, partes_ruta
 from .lote import Grupo
+
+RE_COPIA = re.compile(r"\s*\(\d+\)$")
 
 
 @dataclass
@@ -41,12 +44,18 @@ def _indice_por_ruta(entradas, raiz):
 
 
 def _mismo_nombre(candidatos, archivo):
-    """Entre un archivo y sus copias ('x.pdf', 'x (1).pdf'), el que se llama igual que la fila del inventario."""
-    objetivo = nfc(archivo).strip().lower()
+    """Entre un archivo y sus copias ('x.pdf', 'x (1).pdf'), el que se llama igual que la fila del inventario.
+
+    Se comparan los nombres con los espacios normalizados (el inventario es un CSV y no conserva espacios
+    dobles). Si ninguno coincide, se prefiere el que no tiene sufijo de copia.
+    """
+    def comparable(nombre):
+        return re.sub(r"\s+", " ", nfc(nombre)).strip().lower()
+    objetivo = comparable(archivo)
     for p in candidatos:
-        if nfc(p.name).strip().lower() == objetivo:
+        if comparable(p.name) == objetivo:
             return p
-    return candidatos[0]
+    return sorted(candidatos, key=lambda p: (bool(RE_COPIA.search(p.stem)), p.name))[0]
 
 
 def asignar_archivos(inventario, entradas, tipo_filtro=None, dep_filtro=None, raiz=None):

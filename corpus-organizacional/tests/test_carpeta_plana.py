@@ -124,6 +124,15 @@ class CopiasYEscaneadosTest(unittest.TestCase):
             a = asignar_archivos([fila], list(orden))
             self.assertEqual(a.asignados[("D", "SAR")]["D-SAR-01"].name, "Jefe.pdf")
 
+    def test_original_con_espacios_dobles(self):
+        """El inventario (CSV) guarda «5. Soporte .pdf» aunque el archivo se llame «5.  Soporte .pdf»."""
+        fila = {"codigo": "D-TIN-07", "tipo": "Descriptivo", "codigo_departamento": "TIN",
+                "archivo": "5. Soporte Técnico .pdf", "ruta_original": r"C:\e\Descriptivos\5. Soporte Técnico .pdf"}
+        copia, original = Path("e/Descriptivos/5.  Soporte Técnico  (2).pdf"), Path("e/Descriptivos/5.  Soporte Técnico .pdf")
+        for orden in ((copia, original), (original, copia)):
+            a = asignar_archivos([fila], list(orden))
+            self.assertEqual(a.asignados[("D", "TIN")]["D-TIN-07"], original)
+
     def test_escaneado_sin_texto_es_problema(self):
         with tempfile.TemporaryDirectory() as tmp:
             pub = Path(tmp)
