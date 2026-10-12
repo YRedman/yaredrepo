@@ -22,6 +22,14 @@ def buscar_alias(clave, tabla):
     return None
 
 
+def etiqueta_exacta(texto, tabla, max_palabras=5):
+    """Campo si el texto ES una etiqueta de ``tabla`` (igual tras normalizar, con o sin ':')."""
+    c = clave_titulo(texto or "")
+    if not c or len(c.split()) > max_palabras:
+        return None
+    return next((campo for alias, campo in tabla if c == alias), None)
+
+
 def es_excluida(clave):
     return any(clave == a or clave.startswith(a + " ") for a in SECCIONES_EXCLUIDAS)
 

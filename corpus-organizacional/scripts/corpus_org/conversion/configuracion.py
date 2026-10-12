@@ -6,6 +6,12 @@ aqui; no hace falta tocar el codigo de extraccion (principio abierto/cerrado).
 
 EXT_SOPORTADAS = {".pdf", ".docx"}
 EXT_RECONOCIDAS = {".pdf", ".docx", ".doc"}
+# Transcripciones manuales (Markdown, CSV, texto): solo se aceptan como material de contexto.
+EXT_TEXTO = {".md", ".csv", ".txt"}
+# Archivos del sistema o temporales que nunca son documentos (bloqueos de Word, miniaturas...).
+ARCHIVOS_IGNORADOS = r"^(~\$|\.~lock|\._)|^(thumbs\.db|desktop\.ini|\.ds_store)$"
+# Si el mismo documento existe en varios formatos se usa el de menor valor.
+PREFERENCIA_EXT = {".docx": 0, ".pdf": 1, ".doc": 2}
 
 # Secciones que no se incluyen en el corpus (titulo normalizado, sin numeracion).
 SECCIONES_EXCLUIDAS = [
@@ -40,18 +46,32 @@ SECCIONES_D = [
     ("proposito del puesto", "proposito"), ("objetivo del puesto", "proposito"), ("mision del puesto", "proposito"),
     ("objetivo general", "proposito"), ("proposito", "proposito"), ("objetivo", "proposito"), ("mision", "proposito"),
     ("funciones y responsabilidades", "funciones"), ("funciones principales", "funciones"),
+    ("principales funciones", "funciones"), ("funciones especificas", "funciones"),
+    ("descripcion de funciones", "funciones"), ("responsabilidades del puesto", "funciones"),
+    ("actividades principales", "funciones"), ("principales actividades", "funciones"),
     ("funciones", "funciones"), ("responsabilidades", "funciones"), ("actividades", "funciones"),
 ]
 SECCIONES_POR_TIPO = {"P": SECCIONES_P, "D": SECCIONES_D}
 
-# Etiquetas de datos generales del descriptivo (en tablas "Etiqueta | Valor" o lineas "Etiqueta: valor").
+# Etiquetas de datos generales del descriptivo: tablas "Etiqueta | Valor", tablas horizontales (fila de
+# etiquetas + fila de valores) o lineas "Etiqueta: valor". CAMPO_OTRO = etiqueta conocida que no se indexa;
+# sirve para que su valor (o la etiqueta misma) nunca se tome como dato de otro campo.
+CAMPO_OTRO = "_otro"
 ETIQUETAS_D = [
     ("nombre del puesto", "nombre_puesto"), ("titulo del puesto", "nombre_puesto"),
-    ("denominacion del puesto", "nombre_puesto"), ("puesto", "nombre_puesto"), ("cargo", "nombre_puesto"),
-    ("reporta a", "reporta_a"), ("reporta", "reporta_a"), ("jefe inmediato", "reporta_a"),
-    ("supervisor inmediato", "reporta_a"),
+    ("denominacion del puesto", "nombre_puesto"), ("nombre del cargo", "nombre_puesto"),
+    ("titulo del cargo", "nombre_puesto"), ("denominacion del cargo", "nombre_puesto"),
+    ("puesto", "nombre_puesto"), ("cargo", "nombre_puesto"),
+    ("reporta directamente a", "reporta_a"), ("reporta a", "reporta_a"), ("reporta", "reporta_a"),
+    ("jefe inmediato superior", "reporta_a"), ("jefe inmediato", "reporta_a"), ("jefe directo", "reporta_a"),
+    ("superior inmediato", "reporta_a"), ("supervisor inmediato", "reporta_a"), ("depende de", "reporta_a"),
+    ("dependencia jerarquica", "reporta_a"), ("puesto superior", "reporta_a"),
     ("supervisa a", "supervisa_a"), ("supervisa", "supervisa_a"), ("puestos que supervisa", "supervisa_a"),
+    ("puestos a su cargo", "supervisa_a"), ("personal a cargo", "supervisa_a"), ("subordinados", "supervisa_a"),
     ("area", "area"), ("departamento", "area"), ("gerencia", "area"), ("direccion", "area"),
+    ("unidad organizativa", "area"), ("unidad", "area"),
+    ("salario", CAMPO_OTRO), ("sueldo", CAMPO_OTRO), ("banda salarial", CAMPO_OTRO), ("nivel", CAMPO_OTRO),
+    ("ubicacion", CAMPO_OTRO), ("sede", CAMPO_OTRO), ("codigo", CAMPO_OTRO), ("fecha", CAMPO_OTRO),
 ]
 
 CAMPOS_CLAVE = {

@@ -58,6 +58,8 @@ def _detalle(r):
     if a.secciones_excluidas:
         l.append(f"- Secciones no incluidas por configuración: {', '.join(a.secciones_excluidas)} "
                  f"({sum(a.excluidos.values())} palabras)")
+    if a.secciones_diagrama:
+        l.append(f"- Secciones de diagrama no transcritas: {', '.join(a.secciones_diagrama)}")
     l.append(f"- Tablas: {d.tablas} · diagramas o imágenes grandes: {len(d.diagramas)} · "
              f"imágenes pequeñas omitidas: {d.imagenes_omitidas}")
     if d.paginas_ocr:
@@ -72,7 +74,7 @@ def _detalle(r):
         l.append("- Datos del puesto: " + " · ".join(f"{k}: {x}" for k, x in campos.items()))
     if a.faltantes:
         l.append(f"- Campos clave no especificados: {', '.join(a.faltantes)}")
-    l += [f"- Nota: {n}" for n in d.notas]
+    l += [f"- Nota: {n}" for n in d.notas + a.notas]
     return l
 
 

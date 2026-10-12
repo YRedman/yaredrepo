@@ -13,12 +13,17 @@ from ..comun.esquema import (ARCHIVO_CATALOGO, ARCHIVO_INVENTARIO, ARCHIVO_RESUM
                              COLUMNAS_INVENTARIO, tipo_desde_texto)
 from ..comun.texto import norm
 from .asignacion import asignar_archivos, grupos_a_convertir
+from .configuracion import EXT_RECONOCIDAS, EXT_TEXTO
 from .entradas import buscar_entradas, entrada_por_defecto, localizar
 from .huella import huella
 from .inventario import (RE_CODIGO_DEP, candidatos_codigo, construir_inventario, inventario_provisional,
                          leer_catalogo_codigos, parsear_lista)
 from .lote import Grupo, OpcionesConversion, procesar_grupo
 from .publicacion import escribir_resumen_construccion, limpiar_generados, publicar_corpus, validar_publicacion
+
+
+# Archivos de control que pueden estar junto al contexto y no son material de contexto.
+ARCHIVOS_NO_CONTEXTO = ("lista", "inventario_maestro", "catalogo")
 
 
 def carpeta_salida(args):
@@ -36,7 +41,7 @@ def _opciones(args):
 # inventario
 # ---------------------------------------------------------------------------
 
-def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None):
+def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None, incluir_duplicados=False):
     """Lee lista.txt y escribe inventario_maestro.csv y catalogo.csv en ``salida``."""
     lista = localizar(nombre_lista, entrada)
     if not lista:
@@ -50,7 +55,7 @@ def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None):
         if not cat:
             raise CorpusError(f"No encontré el catálogo '{nombre_catalogo}'.")
         fijados = leer_catalogo_codigos(cat)
-    inv = construir_inventario(filas, ignoradas, fijados)
+    inv = construir_inventario(filas, ignoradas, fijados, incluir_duplicados)
     escribir_csv(salida / ARCHIVO_INVENTARIO, COLUMNAS_INVENTARIO, inv.documentos)
     escribir_csv(salida / ARCHIVO_CATALOGO, COLUMNAS_CATALOGO, inv.catalogo)
     return inv
@@ -58,11 +63,11 @@ def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None):
 
 def modo_inventario(args):
     salida = carpeta_salida(args)
-    inv = generar_inventario(args.entrada, salida, args.lista, args.catalogo)
+    inv = generar_inventario(args.entrada, salida, args.lista, args.catalogo, args.incluir_duplicados)
     d = sum(1 for f in inv.documentos if f["tipo"] == "Descriptivo")
     print(f"INVENTARIO · convertir.py v{VERSION} · huella {huella()}")
     print()
-    print(f"Rutas leídas: {inv.rutas_validas + len(inv.ignoradas)} · documentos válidos: {inv.rutas_validas} · "
+    print(f"Rutas leídas: {inv.rutas_validas + len(inv.ignoradas)} · documentos válidos: {len(inv.documentos)} · "
           f"ignoradas: {len(inv.ignoradas)}")
     print(f"Descriptivos: {d} · Procedimientos: {len(inv.documentos) - d} · Departamentos: {len(inv.departamentos)}")
     print()
@@ -143,7 +148,7 @@ def ejecutar_conversion(args):
     salida = carpeta_salida(args)
     entradas = buscar_entradas(Path(args.entrada), salida)
     inventario, tipo_filtro, dep_filtro = _inventario_para_convertir(args, entradas)
-    asignacion = asignar_archivos(inventario, entradas, tipo_filtro, dep_filtro)
+    asignacion = asignar_archivos(inventario, entradas, tipo_filtro, dep_filtro, raiz=args.entrada)
     if asignacion.ambiguos and not (tipo_filtro and dep_filtro):
         print("AVISO: estos archivos tienen el mismo nombre en más de un departamento o tipo. "
               "Vuelve a ejecutar indicando --tipo y --dep:")
@@ -183,10 +188,12 @@ def modo_convertir(args):
 def ejecutar_contexto(args):
     salida = carpeta_salida(args)
     excluir = {norm(x) for x in (args.excluir or [])}
-    entradas = sorted((p for p in buscar_entradas(Path(args.entrada), salida) if norm(p.name) not in excluir),
+    entradas = buscar_entradas(Path(args.entrada), salida, EXT_RECONOCIDAS | EXT_TEXTO)
+    entradas = sorted((p for p in entradas
+                       if norm(p.name) not in excluir and not norm(p.name).startswith(ARCHIVOS_NO_CONTEXTO)),
                       key=lambda p: norm(p.name))
     if not entradas:
-        raise CorpusError("No encontré PDF ni Word adjuntos para el contexto.")
+        raise CorpusError("No encontré PDF, Word, .md, .csv ni .txt para el contexto.")
     filas, mapa = [], {}
     for i, p in enumerate(entradas, 1):
         cod = f"C-CTX-{i:02d}"
@@ -239,7 +246,7 @@ def modo_construir(args):
         if not localizar(args.lista, entrada):
             raise CorpusError("Para construir se necesita inventario_maestro.csv o lista.txt.")
         modo_inventario(argparse.Namespace(entrada=str(entrada), salida=str(control), lista=args.lista,
-                                           catalogo=args.catalogo))
+                                           catalogo=args.catalogo, incluir_duplicados=args.incluir_duplicados))
 
     # 2) Conversion de descriptivos y procedimientos.
     comunes = dict(salida=str(control), sin_verificacion_cruzada=args.sin_verificacion_cruzada,
@@ -288,6 +295,8 @@ def crear_parser():
         if nombre in ("inventario", "construir"):
             sp.add_argument("--lista", default="lista.txt")
             sp.add_argument("--catalogo", default=None, help="catalogo.csv editado con los códigos de departamento.")
+            sp.add_argument("--incluir-duplicados", action="store_true",
+                            help="Conserva el mismo documento en .pdf y .docx o sus copias '(1)'.")
         if nombre in ("convertir", "construir"):
             sp.add_argument("--inventario", default=ARCHIVO_INVENTARIO)
         if nombre == "convertir":

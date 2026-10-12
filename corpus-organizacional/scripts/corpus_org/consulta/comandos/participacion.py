@@ -1,13 +1,24 @@
 import collections
+import re
 
 from ...comun.errores import CorpusError
 from ...comun.esquema import area_de
 from ...comun.texto import oracion_con, recortar_palabras as recortar
 from ..puestos import DetectorPuestos
-from ..roles import rol
+from ..roles import es_columna_responsable, rol
 from .base import Comando
 
 MAX_FILAS = 150
+
+
+def rol_sin_descriptivo(celda):
+    """Texto de una celda de la columna Responsable que no coincide con ningun descriptivo.
+
+    Toda celda de esa columna es un rol aunque no empiece con 'Jefe', 'Gerente'... ("comprador",
+    "Comité de compras", "analistas").
+    """
+    t = celda.replace("[CELDA COMBINADA]", "").strip()
+    return t if re.search(r"[A-Za-zÁÉÍÓÚÑáéíóúñ]{3}", t) and len(t.split()) <= 8 else ""
 
 
 class Participacion(Comando):
@@ -27,7 +38,13 @@ class Participacion(Comando):
         sin_desc, ambiguas = collections.OrderedDict(), collections.OrderedDict()
         for c in cods:
             for sec, col, texto, linea in cp.celdas(c):
-                for m in detector.detectar(texto):
+                menciones = detector.detectar(texto, area_de(c))
+                if not menciones and es_columna_responsable(col):
+                    rol_libre = rol_sin_descriptivo(texto)
+                    if rol_libre:
+                        sin_desc.setdefault(rol_libre, set()).add(c)
+                    continue
+                for m in menciones:
                     if m.tipo == "sin descriptivo":
                         sin_desc.setdefault(m.frase, set()).add(c)
                         continue

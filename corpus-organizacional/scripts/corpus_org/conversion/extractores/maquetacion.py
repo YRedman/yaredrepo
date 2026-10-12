@@ -149,7 +149,7 @@ def tablas_sin_bordes(items):
             j += 1
         if multiples >= 2:
             filas = [f + [""] * (len(cols) - len(f)) for f in filas]
-            salida.append({"tipo": "tabla", "filas": filas, "sin_bordes": True})
+            salida.append({"tipo": "tabla", "filas": filas, "sin_bordes": True, "pagina": it.get("pagina")})
             k = j
         else:
             salida.append(it)
@@ -234,9 +234,9 @@ def bloques_desde_items(items):
             cerrar()
             previo = None
             if it["tipo"] == "tabla":
-                bloques.append({"k": "tabla", "filas": it["filas"]})
+                bloques.append({"k": "tabla", "filas": it["filas"], "pagina": it.get("pagina")})
             else:
-                bloques.append({"k": "marca", "texto": it["texto"]})
+                bloques.append({"k": "marca", "texto": it["texto"], "pagina": it.get("pagina")})
             continue
         texto = it["texto"].strip()
         if not texto:
@@ -255,6 +255,7 @@ def bloques_desde_items(items):
                 texto = it["marcador"] + " " + texto
             actual = bloque_h(nivel, texto)
             actual["ocr"] = it.get("ocr", False)
+            actual["pagina"] = it.get("pagina")
             previo = dict(it, es_titulo=True)
             continue
         if it.get("vineta") is not None or it.get("marcador"):
@@ -262,14 +263,14 @@ def bloques_desde_items(items):
             marcador = "-" if it.get("vineta") is not None else it["marcador"]
             xv = it.get("vineta") if it.get("vineta") is not None else (it.get("x_marcador") or it["x0"])
             actual = {"k": "li", "marcador": marcador, "texto": texto, "x_texto": it["x0"], "x_vineta": xv,
-                      "ocr": it.get("ocr", False)}
+                      "ocr": it.get("ocr", False), "pagina": it.get("pagina")}
             previo = it
             continue
         m = RE_NUM_INICIO.match(texto)
         if m and re.match(r"^\d{1,2}[\.\)]$|^[a-z]\)$", m.group(1)) and not it["bold"]:
             cerrar()
             actual = {"k": "li", "marcador": m.group(1), "texto": m.group(2), "x_texto": it["x0"],
-                      "x_vineta": it["x0"], "ocr": it.get("ocr", False)}
+                      "x_vineta": it["x0"], "ocr": it.get("ocr", False), "pagina": it.get("pagina")}
             previo = it
             continue
         if actual is not None and actual["k"] in ("p", "li") and previo is not None \
@@ -279,7 +280,7 @@ def bloques_desde_items(items):
             previo = it
             continue
         cerrar()
-        actual = {"k": "p", "texto": texto, "ocr": it.get("ocr", False)}
+        actual = {"k": "p", "texto": texto, "ocr": it.get("ocr", False), "pagina": it.get("pagina")}
         previo = it
     cerrar()
     _asignar_niveles_lista(bloques)

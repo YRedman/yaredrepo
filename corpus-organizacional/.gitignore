@@ -1,2 +1,10 @@
 __pycache__/
 *.pyc
+
+# Datos del cliente: nunca se versionan (materiales de contexto, documentos y corpus generado)
+contexto/
+entrada/
+salida/
+salida_corpus/
+publicado/
+datos/

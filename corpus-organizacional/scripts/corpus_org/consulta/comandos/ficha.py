@@ -11,7 +11,7 @@ from .base import Comando
 SECCIONES_FICHA = {
     "P": ["macroproceso", "objetivo", "proposito", "alcance", "responsab", "politica", "desarrollo", "descripcion del",
           "referencia", "distribucion", "entrenamiento", "anexo", "formato"],
-    "D": ["datos generales", "identificacion", "proposito", "objetivo", "mision", "funcion", "responsab",
+    "D": ["datos generales", "identificacion", "proposito", "objetivo", "mision", "funcion", "actividad", "responsab",
           "relacion", "requisito", "competencia", "perfil", "condicion"],
 }
 SECCIONES_DESARROLLO = ("desarrollo", "descripcion del")

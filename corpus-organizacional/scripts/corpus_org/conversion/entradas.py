@@ -5,10 +5,16 @@ import re
 from pathlib import Path
 
 from ..comun.texto import nfc, norm
-from .configuracion import EXT_RECONOCIDAS
+from .configuracion import ARCHIVOS_IGNORADOS, EXT_RECONOCIDAS
 
 CARPETAS_ADJUNTOS = ("/mnt/data", "/mnt/user-data/uploads")
 EXT_ENTRADA = EXT_RECONOCIDAS | {".csv", ".txt"}
+RE_IGNORADOS = re.compile(ARCHIVOS_IGNORADOS, re.I)
+
+
+def es_archivo_ignorado(nombre):
+    """Archivos temporales o del sistema (~$doc.docx, Thumbs.db...) que nunca son documentos."""
+    return bool(RE_IGNORADOS.search(nombre))
 
 
 def entrada_por_defecto():
@@ -23,6 +29,18 @@ def entrada_por_defecto():
     return os.getcwd()
 
 
+def partes_ruta(ruta):
+    """Partes de una ruta escrita con / o con \\ (las de lista.txt vienen de Windows)."""
+    return [p for p in re.split(r"[\\/]+", str(ruta or "")) if p]
+
+
+def clave_ruta(partes):
+    """(tipo, departamento, archivo) comparables a partir de las tres ultimas partes de una ruta."""
+    if len(partes) < 3:
+        return None
+    return norm(partes[-3])[:5], norm(partes[-2]), norm(nfc(partes[-1]))
+
+
 def clave_archivo(nombre):
     """Nombre comparable: sin acentos ni mayusculas y sin el sufijo ' (1)' de las copias."""
     base, ext = os.path.splitext(nfc(nombre))
@@ -30,8 +48,8 @@ def clave_archivo(nombre):
     return norm(base) + ext.lower()
 
 
-def buscar_entradas(entrada, salida):
-    """PDF y Word dentro de ``entrada`` (recursivo), sin la carpeta de salida ni archivos temporales."""
+def buscar_entradas(entrada, salida, extensiones=EXT_RECONOCIDAS):
+    """Documentos dentro de ``entrada`` (recursivo), sin la carpeta de salida ni archivos temporales."""
     archivos = []
     salida = Path(salida).resolve()
     for raiz, dirs, nombres in os.walk(entrada):
@@ -39,7 +57,7 @@ def buscar_entradas(entrada, salida):
         dirs[:] = [x for x in dirs if not x.startswith(".") and x not in ("node_modules", "__pycache__")
                    and (r / x).resolve() != salida]
         for n in nombres:
-            if os.path.splitext(n)[1].lower() in EXT_RECONOCIDAS and not n.startswith("~$"):
+            if os.path.splitext(n)[1].lower() in extensiones and not es_archivo_ignorado(n):
                 archivos.append(r / n)
     return archivos
 
