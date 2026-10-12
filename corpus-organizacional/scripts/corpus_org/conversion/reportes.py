@@ -50,6 +50,11 @@ def _detalle(r):
                 l.append(f"  - Ejemplo (página {p}, {z}): \"{v.ejemplos[(p, z)]}\"")
     if v.agregadas:
         l.append(f"- Palabras que no están en el original: {', '.join(v.agregadas[:25])}")
+    if v.numeros_faltan:
+        l.append(f"- Números del original que no aparecen completos: {', '.join(list(v.numeros_faltan)[:15])}")
+    if r.avisos:
+        l.append(f"- AVISOS DE ESTRUCTURA (revisar visualmente): {len(r.avisos)}")
+        l += [f"  - {x}" for x in r.avisos]
     if v.cruz:
         l.append(f"- Palabras que solo detectó el segundo motor (pdfplumber): {', '.join(v.cruz[:25])}")
     l.append(f"- Títulos de sección detectados: {' | '.join(a.titulos) or '(ninguno)'}")

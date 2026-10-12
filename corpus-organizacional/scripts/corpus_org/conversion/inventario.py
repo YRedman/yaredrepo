@@ -10,7 +10,7 @@ from typing import Dict, List
 
 from ..comun.archivos import leer_csv, leer_texto
 from ..comun.errores import CorpusError
-from ..comun.esquema import TIPOS
+from ..comun.esquema import INVENTARIO_ACTIVO, INVENTARIO_RETIRADO, TIPOS
 from ..comun.texto import nfc, norm, sin_acentos
 from .configuracion import EXT_RECONOCIDAS, PALABRAS_VACIAS_DEP, PREFERENCIA_EXT
 from .entradas import es_archivo_ignorado, partes_ruta
@@ -144,9 +144,9 @@ def leer_catalogo_codigos(path):
     return codigos
 
 
-def _asignar_codigos(departamentos, fijados):
+def _asignar_codigos(departamentos, fijados, reservados=()):
     codigos = dict(fijados)
-    usados = set(codigos.values())
+    usados = set(codigos.values()) | set(reservados)
     for k, nombre in departamentos.items():
         if k in codigos:
             continue
@@ -162,30 +162,97 @@ def ancho_numeracion(cantidad):
     return 3 if cantidad > 99 else 2
 
 
-def construir_inventario(filas, ignoradas, codigos_fijados=None, incluir_duplicados=False):
+@dataclass
+class InventarioBase:
+    """Inventario anterior cuyos codigos se conservan (codigos estables entre construcciones)."""
+    documentos: Dict[tuple, dict] = field(default_factory=dict)   # (tipo, depto, documento) -> fila
+    departamentos: Dict[str, str] = field(default_factory=dict)   # depto normalizado -> codigo
+    maximos: collections.Counter = field(default_factory=collections.Counter)   # (tipo, codigo_dep) -> mayor numero
+
+
+def _tipo_inventario(fila):
+    return "P" if (fila.get("tipo") or "").lower().startswith("p") else "D"
+
+
+def leer_base(path):
+    base = InventarioBase()
+    for f in leer_csv(path):
+        t = _tipo_inventario(f)
+        dep = (f.get("departamento") or "").strip()
+        cod_dep = (f.get("codigo_departamento") or "").strip().upper()
+        if dep and cod_dep:
+            base.departamentos.setdefault(norm(dep), cod_dep)
+        try:
+            n = int(f["codigo"].rsplit("-", 1)[1])
+        except (KeyError, ValueError, IndexError):
+            continue
+        base.maximos[(t, cod_dep)] = max(base.maximos[(t, cod_dep)], n)
+        base.documentos[(t, norm(dep), clave_documento(f.get("archivo", "")))] = f
+    return base
+
+
+def _fila(codigo, tipo, cod_dep, departamento, f, obs):
+    return {"codigo": codigo, "tipo": TIPOS[tipo], "codigo_departamento": cod_dep, "departamento": departamento,
+            "archivo": f["archivo"], "ruta_original": f["ruta"], "observaciones": obs,
+            "estado_inventario": INVENTARIO_ACTIVO}
+
+
+def construir_inventario(filas, ignoradas, codigos_fijados=None, incluir_duplicados=False, base=None):
+    """Inventario maestro a partir de las rutas de lista.txt.
+
+    Con ``base`` (el inventario anterior) los codigos no cambian: cada documento conserva el suyo, los
+    nuevos se numeran despues del mayor codigo de su grupo y los que ya no estan quedan RETIRADOS
+    (su codigo queda reservado y no se reutiliza). Sin ``base`` se numera en orden alfabetico.
+    """
+    base = base or InventarioBase()
     inv = Inventario(ignoradas=ignoradas, rutas_validas=len(filas))
     filas, inv.avisos = quitar_duplicados(filas, incluir_duplicados)
     deps = collections.OrderedDict()
     for f in sorted(filas, key=lambda f: norm(f["departamento"])):
         deps.setdefault(norm(f["departamento"]), f["departamento"])
     inv.departamentos = deps
-    codigos = _asignar_codigos(deps, codigos_fijados or {})
+    fijados = dict(codigos_fijados or {})
+    for k, cod in base.departamentos.items():
+        if k in deps and k not in fijados:
+            fijados[k] = cod
+    codigos = _asignar_codigos(deps, fijados, reservados=set(base.departamentos.values()))
     grupos = collections.defaultdict(list)
     for f in filas:
         grupos[(f["tipo"], norm(f["departamento"]))].append(f)
+    nuevos, vistos = [], set()
     for (tipo, kdep), lista_f in sorted(grupos.items(), key=lambda kv: (kv[0][0] != "D", codigos[kv[0][1]])):
         lista_f.sort(key=lambda f: (norm(os.path.splitext(f["archivo"])[0]), f["archivo"]))
         for n, c in collections.Counter(norm(f["archivo"]) for f in lista_f).items():
             if c > 1:
                 inv.avisos.append(f"Archivo repetido en {TIPOS[tipo]}/{deps[kdep]}: {n}")
-        ancho = ancho_numeracion(len(lista_f))
-        for i, f in enumerate(lista_f, 1):
-            obs = ""
-            if f["archivo"].lower().endswith(".doc"):
-                obs = "Formato .doc antiguo: guardarlo como .docx o PDF antes de convertir"
-            inv.documentos.append({"codigo": f"{tipo}-{codigos[kdep]}-{i:0{ancho}d}", "tipo": TIPOS[tipo],
-                                   "codigo_departamento": codigos[kdep], "departamento": deps[kdep],
-                                   "archivo": f["archivo"], "ruta_original": f["ruta"], "observaciones": obs})
+        cod_dep = codigos[kdep]
+        siguiente = base.maximos[(tipo, cod_dep)]
+        ancho = ancho_numeracion(max(len(lista_f), siguiente))
+        for f in lista_f:
+            obs = "Formato .doc antiguo: guardarlo como .docx o PDF antes de convertir" \
+                if f["archivo"].lower().endswith(".doc") else ""
+            clave = (tipo, kdep, clave_documento(f["archivo"]))
+            if clave in base.documentos:
+                codigo = base.documentos[clave]["codigo"]
+                vistos.add(clave)
+            else:
+                siguiente += 1
+                codigo = f"{tipo}-{cod_dep}-{siguiente:0{ancho}d}"
+                if base.documentos:
+                    nuevos.append(codigo)
+                    obs = (obs + "; " if obs else "") + "NUEVO respecto del inventario base"
+            inv.documentos.append(_fila(codigo, tipo, cod_dep, deps[kdep], f, obs))
+    retirados = []
+    for clave, f in base.documentos.items():
+        if clave not in vistos:
+            retirados.append(f["codigo"])
+            inv.documentos.append(dict(f, estado_inventario=INVENTARIO_RETIRADO,
+                                       observaciones="RETIRADO: no está en la lista actual; el código queda reservado"))
+    if nuevos:
+        inv.avisos.append(f"Documentos nuevos (códigos agregados al final): {', '.join(nuevos)}")
+    if retirados:
+        inv.avisos.append(f"Documentos del inventario base que ya no están (códigos reservados): {', '.join(retirados)}")
+    inv.documentos.sort(key=lambda f: (f["codigo"][0] != "D", f["codigo"]))
     for a, b in itertools.combinations(list(deps), 2):
         if difflib.SequenceMatcher(None, a, b).ratio() >= 0.85:
             inv.avisos.append(f"Nombres de departamento muy parecidos (¿son el mismo?): '{deps[a]}' y '{deps[b]}'")

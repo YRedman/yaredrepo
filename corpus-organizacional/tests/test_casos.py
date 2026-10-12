@@ -11,7 +11,7 @@ from unittest import mock
 
 from tests import ayuda  # noqa: F401
 from corpus_org.consulta import cli as consulta_cli
-from corpus_org.consulta.comandos.participacion import rol_sin_descriptivo
+from corpus_org.consulta.participacion import rol_sin_descriptivo
 from corpus_org.consulta.puestos import DetectorPuestos, Puesto
 from corpus_org.consulta.roles import rol, verbo
 from corpus_org.conversion import cli as conversion_cli
@@ -208,7 +208,7 @@ def _construir(base):
     with redirect_stdout(io.StringIO()) as out:
         try:
             conversion_cli.main(["construir", "--entrada", str(base / "entrada"), "--contexto", str(base / "contexto"),
-                                 "--sin-verificacion-cruzada"])
+                                 "--sin-verificacion-cruzada", "--muestra-revision", "0"])
             codigo = 0
         except SystemExit as e:
             codigo = e.code

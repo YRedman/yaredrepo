@@ -6,7 +6,7 @@ import re
 import zipfile
 
 from ...comun.esquema import MARCA_COMBINADA
-from ...comun.texto import norm, tokens
+from ...comun.texto import norm, numeros, tokens
 from ..modelo import DocumentoExtraido, bloque_h
 from ..secciones import clave_titulo, es_seccion_conocida, es_titulo_corto, profundidad_numeracion
 from .base import Extractor
@@ -412,9 +412,11 @@ class ExtractorDocx(Extractor):
             d.bloques = conv.bloques
             d.encabezado = self._encabezados_y_pies(z, ctx, d)
             # texto crudo independiente (regex sobre el XML)
-            d.crudo = collections.Counter(tokens(_crudo_docx_xml(z.read("word/document.xml"))))
+            crudo = _crudo_docx_xml(z.read("word/document.xml"))
             if "word/footnotes.xml" in z.namelist():
-                d.crudo.update(tokens(_crudo_docx_xml(z.read("word/footnotes.xml"))))
+                crudo += " " + _crudo_docx_xml(z.read("word/footnotes.xml"))
+            d.crudo = collections.Counter(tokens(crudo))
+            d.numeros = numeros(crudo)
             d.paginas = self._paginas(ctx)
         return d
 

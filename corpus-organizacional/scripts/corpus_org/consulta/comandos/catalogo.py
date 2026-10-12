@@ -28,6 +28,7 @@ class Catalogo(Comando):
         s.linea(f"CATÁLOGO · corpus.py v{VERSION}")
         s.linea(f"Áreas: {len(cp.areas)} · Descriptivos: {sum(len(a.descriptivos) for a in cp.areas.values())} · "
                 f"Procedimientos: {sum(len(a.procedimientos) for a in cp.areas.values())}")
+        s.linea(f"Cobertura: {cp.cobertura()} · corpus completo: {'sí' if cp.completo else 'no'}")
         s.linea()
         s.tabla(cab, filas)
         ctx_docs = cp.contexto()
@@ -39,6 +40,11 @@ class Catalogo(Comando):
         if alternos:
             s.linea("Nombres alternos (del glosario): "
                     + "; ".join(f"{cod}: {', '.join(v)}" for cod, v in alternos.items()))
+        if cp.kpis:
+            s.linea(f"Indicadores (KPIs): {len(cp.kpis)} · consultar con: kpis")
+        if cp.extra:
+            s.linea("Áreas o entidades sin documentos propios: "
+                    + "; ".join(f"{e.nombre} ({e.tipo})" for e in cp.extra))
         if cp.excluidos:
             s.linea(f"Documentos no vigentes excluidos: {len(cp.excluidos)} "
                     "(para incluirlos: CORPUS_INCLUIR_NO_VIGENTES=1).")

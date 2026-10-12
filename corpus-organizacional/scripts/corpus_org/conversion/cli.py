@@ -9,17 +9,19 @@ from pathlib import Path
 from .. import VERSION
 from ..comun.archivos import escribir_csv, leer_csv
 from ..comun.errores import CorpusError
-from ..comun.esquema import (ARCHIVO_CATALOGO, ARCHIVO_INVENTARIO, ARCHIVO_RESUMEN, COLUMNAS_CATALOGO,
-                             COLUMNAS_INVENTARIO, tipo_desde_texto)
+from ..comun.esquema import (ARCHIVO_AREAS_EXTRA, ARCHIVO_CATALOGO, ARCHIVO_INVENTARIO, ARCHIVO_KPIS,
+                             ARCHIVO_RESUMEN, COLUMNAS_CATALOGO, COLUMNAS_INVENTARIO, inventario_activo,
+                             tipo_desde_texto)
 from ..comun.texto import norm
 from .asignacion import asignar_archivos, grupos_a_convertir
 from .configuracion import EXT_RECONOCIDAS, EXT_TEXTO
 from .entradas import buscar_entradas, entrada_por_defecto, localizar
 from .huella import huella
 from .inventario import (RE_CODIGO_DEP, candidatos_codigo, construir_inventario, inventario_provisional,
-                         leer_catalogo_codigos, parsear_lista)
+                         leer_base, leer_catalogo_codigos, parsear_lista)
 from .lote import Grupo, OpcionesConversion, procesar_grupo
-from .publicacion import escribir_resumen_construccion, limpiar_generados, publicar_corpus, validar_publicacion
+from .publicacion import (MUESTRA_REVISION, escribir_huellas, escribir_resumen_construccion, leer_revisados,
+                          limpiar_generados, publicar_corpus, validar_publicacion)
 
 
 # Archivos de control que pueden estar junto al contexto y no son material de contexto.
@@ -41,8 +43,11 @@ def _opciones(args):
 # inventario
 # ---------------------------------------------------------------------------
 
-def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None, incluir_duplicados=False):
-    """Lee lista.txt y escribe inventario_maestro.csv y catalogo.csv en ``salida``."""
+def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None, incluir_duplicados=False, base=None):
+    """Lee lista.txt y escribe inventario_maestro.csv y catalogo.csv en ``salida``.
+
+    ``base`` es un inventario anterior: sus codigos se conservan (codigos estables).
+    """
     lista = localizar(nombre_lista, entrada)
     if not lista:
         raise CorpusError(f"No encontré la lista de archivos '{nombre_lista}'. Adjúntala al chat.")
@@ -55,7 +60,13 @@ def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None, incl
         if not cat:
             raise CorpusError(f"No encontré el catálogo '{nombre_catalogo}'.")
         fijados = leer_catalogo_codigos(cat)
-    inv = construir_inventario(filas, ignoradas, fijados, incluir_duplicados)
+    inventario_base = None
+    if base:
+        ruta_base = localizar(base, entrada)
+        if not ruta_base:
+            raise CorpusError(f"No encontré el inventario base '{base}'.")
+        inventario_base = leer_base(ruta_base)
+    inv = construir_inventario(filas, ignoradas, fijados, incluir_duplicados, inventario_base)
     escribir_csv(salida / ARCHIVO_INVENTARIO, COLUMNAS_INVENTARIO, inv.documentos)
     escribir_csv(salida / ARCHIVO_CATALOGO, COLUMNAS_CATALOGO, inv.catalogo)
     return inv
@@ -63,13 +74,16 @@ def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None, incl
 
 def modo_inventario(args):
     salida = carpeta_salida(args)
-    inv = generar_inventario(args.entrada, salida, args.lista, args.catalogo, args.incluir_duplicados)
-    d = sum(1 for f in inv.documentos if f["tipo"] == "Descriptivo")
+    inv = generar_inventario(args.entrada, salida, args.lista, args.catalogo, args.incluir_duplicados,
+                             getattr(args, "base", None))
+    activos = inventario_activo(inv.documentos)
+    d = sum(1 for f in activos if f["tipo"] == "Descriptivo")
     print(f"INVENTARIO · convertir.py v{VERSION} · huella {huella()}")
     print()
-    print(f"Rutas leídas: {inv.rutas_validas + len(inv.ignoradas)} · documentos válidos: {len(inv.documentos)} · "
-          f"ignoradas: {len(inv.ignoradas)}")
-    print(f"Descriptivos: {d} · Procedimientos: {len(inv.documentos) - d} · Departamentos: {len(inv.departamentos)}")
+    print(f"Rutas leídas: {inv.rutas_validas + len(inv.ignoradas)} · documentos válidos: {len(activos)} · "
+          f"ignoradas: {len(inv.ignoradas)}" + (" · códigos estables desde el inventario base"
+                                                 if getattr(args, "base", None) else ""))
+    print(f"Descriptivos: {d} · Procedimientos: {len(activos) - d} · Departamentos: {len(inv.departamentos)}")
     print()
     print("| Departamento | Código | Descriptivos | Procedimientos |")
     print("|---|---|---|---|")
@@ -114,6 +128,7 @@ def _inventario_para_convertir(args, entradas):
     inventario = leer_csv(inv_path)
     if not inventario or "codigo" not in inventario[0]:
         raise CorpusError("El inventario no tiene la columna 'codigo'. ¿Es el archivo correcto?")
+    inventario = inventario_activo(inventario)
     return inventario, tipo_filtro, dep_filtro
 
 
@@ -223,8 +238,61 @@ def modo_contexto(args):
 # construir
 # ---------------------------------------------------------------------------
 
+def _inventario_para_construir(args, entrada, control):
+    """Con lista.txt el inventario se regenera conservando los codigos del anterior (si existe);
+    sin lista.txt se usa el inventario adjunto tal cual."""
+    base_control = control / ARCHIVO_INVENTARIO
+    previo = localizar(args.inventario, entrada) or (base_control if base_control.is_file() else None)
+    if localizar(args.lista, entrada):
+        base = None
+        if previo:
+            base = control / "inventario_base.csv"
+            if Path(previo).resolve() != base.resolve():
+                shutil.copy2(previo, base)
+        modo_inventario(argparse.Namespace(entrada=str(entrada), salida=str(control), lista=args.lista,
+                                           catalogo=args.catalogo, incluir_duplicados=args.incluir_duplicados,
+                                           base=str(base) if base else None))
+    elif previo:
+        if Path(previo).resolve() != base_control.resolve():
+            shutil.copy2(previo, base_control)
+        cat = localizar(args.catalogo, entrada) if args.catalogo else None
+        if cat:
+            shutil.copy2(cat, control / ARCHIVO_CATALOGO)
+    else:
+        raise CorpusError("Para construir se necesita lista.txt o inventario_maestro.csv.")
+
+
+def unir_csv(rutas, destino):
+    """Une varios CSV con las mismas columnas (la primera fila de cada uno es el encabezado)."""
+    cabecera, filas = None, []
+    for p in rutas:
+        r = leer_csv(p)
+        if r:
+            cabecera = cabecera or list(r[0].keys())
+            filas += r
+    if cabecera:
+        escribir_csv(destino, cabecera, filas)
+
+
+def _datos_de_contexto(contexto, control):
+    """Copia a control/ los datos estructurados del contexto: kpi*.csv (unidos en kpis.csv) y areas_extra.csv.
+
+    Devuelve los nombres de archivo que no son material de contexto (no se convierten a contexto.md).
+    """
+    kpis = sorted(p for p in contexto.iterdir() if p.suffix.lower() == ".csv" and norm(p.name).startswith("kpi"))
+    if kpis:
+        unir_csv(kpis, control / ARCHIVO_KPIS)
+    extra = [p for p in contexto.iterdir() if norm(p.name) == ARCHIVO_AREAS_EXTRA]
+    if extra:
+        shutil.copy2(extra[0], control / ARCHIVO_AREAS_EXTRA)
+    return [p.name for p in extra]
+
+
 def modo_construir(args):
-    """Inventario, conversion, contexto opcional, publicacion y validacion en una sola orden."""
+    """Inventario, conversion, contexto opcional, publicacion, validacion y huellas en una sola orden.
+
+    Termina con 0 (LISTO PARA PUBLICAR), 2 (REQUIERE REVISIÓN) o 3 (PENDIENTE DE REVISIÓN VISUAL).
+    """
     entrada = Path(args.entrada).resolve()
     raiz_salida = Path(args.salida).resolve() if args.salida else entrada / "salida_corpus"
     control, publicado = raiz_salida / "control", raiz_salida / "publicado"
@@ -235,18 +303,8 @@ def modo_construir(args):
         raise CorpusError(f"La carpeta de contexto no existe: {contexto}")
     limpiar_generados(control)
 
-    # 1) Inventario: reutiliza uno existente o lo genera desde lista.txt.
-    inventario_origen = localizar(args.inventario, entrada)
-    if inventario_origen:
-        shutil.copy2(inventario_origen, control / ARCHIVO_INVENTARIO)
-        cat = localizar(args.catalogo, entrada) if args.catalogo else None
-        if cat:
-            shutil.copy2(cat, control / ARCHIVO_CATALOGO)
-    else:
-        if not localizar(args.lista, entrada):
-            raise CorpusError("Para construir se necesita inventario_maestro.csv o lista.txt.")
-        modo_inventario(argparse.Namespace(entrada=str(entrada), salida=str(control), lista=args.lista,
-                                           catalogo=args.catalogo, incluir_duplicados=args.incluir_duplicados))
+    # 1) Inventario (codigos estables si ya habia uno).
+    _inventario_para_construir(args, entrada, control)
 
     # 2) Conversion de descriptivos y procedimientos.
     comunes = dict(salida=str(control), sin_verificacion_cruzada=args.sin_verificacion_cruzada,
@@ -255,12 +313,17 @@ def modo_construir(args):
                                            tipo=None, dep=None, departamento=None, **comunes))
 
     # 3) Contexto opcional, en carpeta separada para no convertir documentos operativos como contexto.
+    errores_contexto = []
     if contexto is not None:
-        ejecutar_contexto(argparse.Namespace(entrada=str(contexto), excluir=[], **comunes))
+        no_contexto = _datos_de_contexto(contexto, control)
+        res = ejecutar_contexto(argparse.Namespace(entrada=str(contexto), excluir=no_contexto, **comunes))
+        errores_contexto = [f"{r.codigo} {r.archivo}: {r.estado} {r.error}".strip() for r in res.documentos if not r.ok]
 
-    # 4) Publicacion limpia, indice maestro y validacion automatica.
+    # 4) Publicacion limpia, indice maestro, validacion y huellas.
     publicados, duplicados = publicar_corpus(control, publicado)
-    validacion = validar_publicacion(publicado, duplicados)
+    validacion = validar_publicacion(publicado, duplicados, leer_revisados(raiz_salida, control, entrada),
+                                     args.muestra_revision, errores_contexto, control)
+    escribir_huellas(publicado)
     resumen_path = raiz_salida / ARCHIVO_RESUMEN
     escribir_resumen_construccion(resumen_path, validacion, publicados)
     print("\nCONSTRUIR CORPUS · convertir.py v" + VERSION)
@@ -270,10 +333,14 @@ def modo_construir(args):
     print(f"Resumen: {resumen_path}")
     for x in validacion.problemas:
         print("ERROR: " + x)
+    if validacion.revision_visual:
+        pendientes = list(validacion.revision_visual.items())
+        print(f"REVISIÓN VISUAL PENDIENTE ({len(pendientes)}): "
+              + ", ".join(f"{c} ({m[:50]})" for c, m in pendientes[:15]))
     for x in validacion.avisos:
         print("AVISO: " + x)
-    if not validacion.listo:
-        sys.exit(2)
+    if validacion.codigo_salida:
+        sys.exit(validacion.codigo_salida)
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +364,9 @@ def crear_parser():
             sp.add_argument("--catalogo", default=None, help="catalogo.csv editado con los códigos de departamento.")
             sp.add_argument("--incluir-duplicados", action="store_true",
                             help="Conserva el mismo documento en .pdf y .docx o sus copias '(1)'.")
+        if nombre == "inventario":
+            sp.add_argument("--base", default=None,
+                            help="Inventario anterior: sus códigos se conservan (los nuevos van al final).")
         if nombre in ("convertir", "construir"):
             sp.add_argument("--inventario", default=ARCHIVO_INVENTARIO)
         if nombre == "convertir":
@@ -309,6 +379,8 @@ def crear_parser():
         if nombre == "construir":
             sp.add_argument("--contexto", default=None,
                             help="Carpeta separada con organigrama, glosario y otros materiales de contexto.")
+            sp.add_argument("--muestra-revision", type=float, default=MUESTRA_REVISION,
+                            help="Fracción de documentos sin avisos que se revisan visualmente (0 = ninguno).")
         if nombre in ("convertir", "contexto", "construir"):
             sp.add_argument("--sin-verificacion-cruzada", action="store_true")
             sp.add_argument("--tiempo-max", type=float, default=0,

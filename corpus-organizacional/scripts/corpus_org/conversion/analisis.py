@@ -1,12 +1,13 @@
 """Analisis de un documento extraido: secciones, campos clave, actividades y codigos citados."""
 
+import collections
 import difflib
 import re
 
 from ..comun.esquema import MARCA_COMBINADA
-from ..comun.texto import norm, tokens
-from .configuracion import (BLOQUES_INICIALES_METADATOS, CAMPO_OTRO, CAMPOS_CLAVE, COLUMNAS_ACTIVIDAD, ETIQUETAS_D,
-                            SECCIONES_P, SECCIONES_POR_TIPO)
+from ..comun.texto import norm, numeros, tokens
+from .configuracion import (BLOQUES_INICIALES_METADATOS, CAMPO_OTRO, CAMPOS_CLAVE, COLUMNAS_ACTIVIDAD,
+                            COLUMNAS_RESPONSABLE, ETIQUETAS_D, SECCIONES_P, SECCIONES_POR_TIPO)
 from .metadatos import extraer_metadatos
 from .modelo import Analisis
 from .secciones import buscar_alias, clave_titulo, es_excluida, etiqueta_exacta
@@ -40,7 +41,15 @@ def analizar(doc, tipo):
     a.metadatos = extraer_metadatos(doc.encabezado, iniciales)
     a.actividades = _actividades(secciones) if tipo == "P" else []
     a.codigos_citados = _codigos_citados(doc.encabezado, bloques, a.metadatos.codigo_interno)
+    a.avisos += avisos_de_estructura(bloques, len(doc.diagramas))
     return bloques, a
+
+
+def _excluir(a, b):
+    """Registra el texto de un bloque que se omite a proposito (no cuenta como faltante en la verificacion)."""
+    texto = texto_bloque(b)
+    a.excluidos.update(tokens(texto))
+    a.excluidos_numeros.update(numeros(texto))
 
 
 def _es_titulo_diagrama(b):
@@ -77,7 +86,7 @@ def _sustituir_diagramas(bloques, a):
                 diag = None
             else:
                 if b["k"] != "marca":
-                    a.excluidos.update(tokens(texto_bloque(b)))
+                    _excluir(a, b)
                 diag["paginas"].add(b.get("pagina"))
                 continue
         salida.append(b)
@@ -100,7 +109,7 @@ def _separar_secciones(bloques, tipo, a):
             if es_excluida(clave):
                 excluyendo = True
                 a.secciones_excluidas.append(b["texto"])
-                a.excluidos.update(tokens(b["texto"]))
+                _excluir(a, b)
                 continue
             excluyendo = False
             actual = [b["texto"], buscar_alias(clave, tabla_secciones) if tabla_secciones else None, []]
@@ -108,7 +117,7 @@ def _separar_secciones(bloques, tipo, a):
             resultado.append(b)
             continue
         if excluyendo:
-            a.excluidos.update(tokens(texto_bloque(b)))
+            _excluir(a, b)
             continue
         resultado.append(b)
         if actual is not None:
@@ -187,25 +196,46 @@ def _campos_por_etiqueta(bloques, campos):
                 _guardar(campos, buscar_alias(clave_titulo(m.group(1)), ETIQUETAS_D), m.group(2))
 
 
-def _actividades(secciones):
-    """Actividades documentadas: items de lista y celdas de la columna 'Actividad' en el desarrollo.
+def _columna(cabecera, prefijos):
+    """Indice de la primera columna cuya cabecera empieza con alguno de ``prefijos`` (en orden de preferencia)."""
+    for prefijo in prefijos:
+        j = next((j for j, c in enumerate(cabecera) if c.startswith(prefijo)), None)
+        if j is not None:
+            return j
+    return None
 
-    Las vinetas de otras secciones (alcance, politicas, referencias...) no son actividades.
+
+def _actividades_de_tabla(filas):
+    cabecera = [norm(c) for c in filas[0]]
+    ia = _columna(cabecera, COLUMNAS_ACTIVIDAD)
+    if ia is None:
+        return []
+    ir = _columna(cabecera, COLUMNAS_RESPONSABLE)
+    actividades = []
+    for f in filas[1:]:
+        if ia >= len(f) or f[ia].endswith(MARCA_COMBINADA):
+            continue   # una celda combinada repite la actividad de arriba
+        actividad = f[ia].strip()
+        if not actividad:
+            continue
+        responsable = f[ir].replace(MARCA_COMBINADA, "").strip() if ir is not None and ir < len(f) else ""
+        actividades.append(actividad + (f" (Responsable: {responsable})" if responsable else ""))
+    return actividades
+
+
+def _actividades(secciones):
+    """Actividades documentadas en la seccion de desarrollo de un procedimiento.
+
+    Si el desarrollo tiene tablas, son sus filas (columna Actividad/Descripcion...) con su responsable;
+    si no, sus vinetas. Las vinetas de otras secciones (alcance, politicas, referencias) nunca son actividades.
     """
     actividades = []
     for _titulo, campo, bloques in secciones:
         if campo != "desarrollo":
             continue
-        for b in bloques:
-            if b["k"] == "li" and b.get("texto", "").strip():
-                actividades.append(b["texto"].strip())
-            elif b["k"] == "tabla" and b["filas"]:
-                cols = [j for j, c in enumerate(b["filas"][0]) if norm(c).startswith(COLUMNAS_ACTIVIDAD)]
-                for f in b["filas"][1:]:
-                    for j in cols:
-                        valor = f[j].replace(MARCA_COMBINADA, "").strip() if j < len(f) else ""
-                        if valor and not f[j].endswith(MARCA_COMBINADA):
-                            actividades.append(valor)
+        desde_tablas = [a for b in bloques if b["k"] == "tabla" and len(b["filas"]) >= 2
+                        for a in _actividades_de_tabla(b["filas"])]
+        actividades += desde_tablas or [b["texto"].strip() for b in bloques if b["k"] == "li" and b.get("texto", "").strip()]
     return actividades
 
 
@@ -228,5 +258,39 @@ def avisar_nombre_puesto(analisis, titulo_archivo):
     parecido = difflib.SequenceMatcher(None, " ".join(sorted(ta)), " ".join(sorted(tb))).ratio()
     if not tb or tb <= ta or ta <= tb or parecido >= 0.6:
         return
-    analisis.notas.append(f"El nombre del puesto leído «{puesto}» no se parece al archivo «{titulo_archivo}»: "
-                          "revisar la tabla de datos generales.")
+    analisis.avisos.append(f"nombre del puesto leído «{puesto}» no se parece al archivo «{titulo_archivo}»: "
+                           "revisar la tabla de datos generales")
+
+
+def _pagina(b):
+    p = b.get("pagina")
+    return f"p.{p + 1}" if isinstance(p, int) else "documento"
+
+
+def avisos_de_estructura(bloques, imagenes_grandes):
+    """Senales de que la estructura pudo leerse mal aunque el texto este completo.
+
+    - tabla con filas sin primera celda (fila partida que quedo como fila nueva);
+    - parrafos largos repetidos (contenido duplicado por la conversion);
+    - documento cuyo contenido esta sobre todo en imagenes (hay que transcribirlo a mano).
+    """
+    avisos = []
+    for b in bloques:
+        if b["k"] == "tabla" and len(b["filas"]) >= 4:
+            datos = b["filas"][1:]
+            if sum(1 for f in datos if f and f[0].strip()) >= 0.8 * len(datos):
+                huerfanas = [f for f in datos if f and not f[0].strip()
+                             and any(c.strip() and not c.endswith(MARCA_COMBINADA) for c in f[1:])]
+                if huerfanas:
+                    avisos.append(f"{_pagina(b)}: {len(huerfanas)} filas de tabla sin primera celda "
+                                  "(posible fila partida)")
+    cuenta = collections.Counter(norm(b["texto"]) for b in bloques
+                                 if b["k"] in ("p", "li") and len(b.get("texto", "")) >= 40)
+    repetidos = [t for t, n in cuenta.items() if n > 1]
+    if repetidos:
+        avisos.append(f"{len(repetidos)} párrafos repetidos (posible duplicado de conversión): «{repetidos[0][:60]}…»")
+    palabras = sum(len(tokens(texto_bloque(b))) for b in bloques if b["k"] != "marca")
+    if imagenes_grandes >= 3 and palabras < 40 * imagenes_grandes:
+        avisos.append(f"el contenido está sobre todo en imágenes ({imagenes_grandes} imágenes, {palabras} palabras): "
+                      "transcribirlo a mano (.md o .csv) si es relevante")
+    return avisos

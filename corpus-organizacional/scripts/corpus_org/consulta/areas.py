@@ -9,13 +9,15 @@ from ..comun.markdown import celdas
 from ..comun.texto import norm, patron_frase, sin_acentos
 
 RE_PREFIJO_AREA = re.compile(r"^(departamento|gerencia|direccion|area|unidad)\s+(de|del)\s+")
-# Un alias tomado del glosario debe parecer una sigla: 'RRHH', 'TI', 'R.H.', 'SST'.
-# Asi una fila como "| Responsable | Compras |" no convierte 'Responsable' en nombre del area.
-RE_SIGLA = re.compile(r"^[A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9&./-]{1,9}$")
+# Un alias tomado del glosario debe parecer una sigla: 'RRHH', 'TI', 'R.H.', 'SST', 'I+D'.
+# Asi una fila como "| Responsable | Compras |" no convierte 'Responsable' en nombre del area, ni un
+# codigo como "| K-01 | Compras |" (tabla de indicadores) en una sigla: una sigla no lleva digitos.
+RE_SIGLA = re.compile(r"^(?=(?:[^A-ZÁÉÍÓÚÑ]*[A-ZÁÉÍÓÚÑ]){2})[A-ZÁÉÍÓÚÑ&./+-]{2,10}$")
 
 
-def construir_alias(areas, documentos_contexto):
-    """{codigo: {nombres}}: nombre oficial, nombre sin 'Departamento de' y siglas del glosario."""
+def construir_alias(areas, documentos_contexto, extra=()):
+    """{codigo: {nombres}}: nombre oficial, nombre sin 'Departamento de', siglas del glosario y los alias
+    que areas_extra.csv declara para un area que tiene documentos."""
     alias = collections.defaultdict(set)
     nombres = {norm(a.nombre): cod for cod, a in areas.items() if a.nombre}
     for cod, a in areas.items():
@@ -34,6 +36,9 @@ def construir_alias(areas, documentos_contexto):
             for sigla, nombre in ((cel[0], cel[1]), (cel[1], cel[0])):
                 if norm(nombre) in nombres and RE_SIGLA.match(sigla) and norm(sigla) != norm(nombre):
                     alias[nombres[norm(nombre)]].add(sigla)
+    for e in extra:
+        if norm(e.nombre) in nombres:
+            alias[nombres[norm(e.nombre)]].update(e.alias)
     return alias
 
 

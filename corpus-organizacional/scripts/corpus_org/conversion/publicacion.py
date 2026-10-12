@@ -2,19 +2,31 @@
 
 import collections
 import datetime
+import hashlib
+import math
 import re
 import shutil
 from dataclasses import dataclass, field
-from typing import List
+from typing import Dict, List
 
 from .. import VERSION
-from ..comun.archivos import escribir_csv, leer_csv
-from ..comun.esquema import (ARCHIVO_CATALOGO, ARCHIVO_INDICE, ARCHIVO_INVENTARIO, COLUMNAS_INDICE, PATRON_CODIGO,
-                             PREFIJO_DIC, PREFIJO_REPORTE)
+from ..comun.archivos import escribir_csv, leer_csv, leer_texto
+from ..comun.esquema import (ARCHIVO_AREAS_EXTRA, ARCHIVO_CATALOGO, ARCHIVO_HUELLAS, ARCHIVO_INDICE,
+                             ARCHIVO_INVENTARIO, ARCHIVO_KPIS, ARCHIVO_REVISADOS, ARCHIVO_REVISION, COLUMNAS_INDICE,
+                             PATRON_CODIGO, PREFIJO_DIC, PREFIJO_REPORTE, estado_no_publicable, inventario_activo)
+from ..comun.markdown import esc_celda
+from .huella import huella
 
 RE_DOC_MD = re.compile(rf"^## \[({PATRON_CODIGO})\]", re.M)
 # Archivos que genera la conversion en control/ y que se regeneran en cada construccion.
-PATRONES_GENERADOS = ("P_*.md", "D_*.md", "contexto.md", f"{PREFIJO_DIC}*.csv", f"{PREFIJO_REPORTE}*.md")
+PATRONES_GENERADOS = ("P_*.md", "D_*.md", "contexto.md", f"{PREFIJO_DIC}*.csv", f"{PREFIJO_REPORTE}*.md",
+                      ARCHIVO_KPIS, ARCHIVO_AREAS_EXTRA)
+# Archivos de control/ que se publican tal cual (si existen).
+PUBLICADOS_TAL_CUAL = (ARCHIVO_INVENTARIO, ARCHIVO_CATALOGO, ARCHIVO_KPIS, ARCHIVO_AREAS_EXTRA)
+MUESTRA_REVISION = 0.10
+
+LISTO, PENDIENTE, REQUIERE = "LISTO PARA PUBLICAR", "PENDIENTE DE REVISIÓN VISUAL", "REQUIERE REVISIÓN"
+CODIGO_SALIDA = {LISTO: 0, REQUIERE: 2, PENDIENTE: 3}
 
 
 @dataclass
@@ -25,14 +37,22 @@ class Validacion:
     duplicados: List[str] = field(default_factory=list)
     problemas: List[str] = field(default_factory=list)
     avisos: List[str] = field(default_factory=list)
+    revision_visual: Dict[str, str] = field(default_factory=dict)   # codigo -> motivo (pendientes)
 
     @property
     def listo(self):
-        return not self.problemas and not self.duplicados
+        return not self.problemas and not self.duplicados and not self.revision_visual
 
     @property
     def estado(self):
-        return "LISTO PARA PUBLICAR" if self.listo else "REQUIERE REVISIÓN"
+        """REQUIERE REVISIÓN (hay errores) > PENDIENTE DE REVISIÓN VISUAL > LISTO PARA PUBLICAR."""
+        if self.problemas or self.duplicados:
+            return REQUIERE
+        return PENDIENTE if self.revision_visual else LISTO
+
+    @property
+    def codigo_salida(self):
+        return CODIGO_SALIDA[self.estado]
 
 
 def limpiar_generados(control):
@@ -77,7 +97,7 @@ def publicar_corpus(control, publicado):
     for p in sorted(control.glob("*.md")):
         if not p.name.upper().startswith(PREFIJO_REPORTE):
             copiados.append(shutil.copy2(p, publicado / p.name))
-    for nombre in (ARCHIVO_INVENTARIO, ARCHIVO_CATALOGO):
+    for nombre in PUBLICADOS_TAL_CUAL:
         p = control / nombre
         if p.is_file():
             copiados.append(shutil.copy2(p, publicado / nombre))
@@ -86,22 +106,59 @@ def publicar_corpus(control, publicado):
     return copiados, duplicados
 
 
+def escribir_huellas(publicado):
+    """SHA-256 de cada archivo publicado; ``corpus.py verificar`` los recalcula para detectar cambios manuales."""
+    lineas = [f"# convertir.py v{VERSION} · huella del código {huella()} · {datetime.datetime.now():%Y-%m-%d %H:%M}"]
+    for p in sorted(publicado.iterdir()):
+        if p.is_file() and p.name != ARCHIVO_HUELLAS:
+            lineas.append(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}")
+    (publicado / ARCHIVO_HUELLAS).write_text("\n".join(lineas) + "\n", encoding="utf-8")
+
+
+def leer_revisados(*carpetas):
+    """Codigos ya revisados visualmente: uno por linea en revision_visual_ok.txt ('#' inicia un comentario)."""
+    codigos = set()
+    for carpeta in carpetas:
+        p = carpeta / ARCHIVO_REVISADOS
+        if p.is_file():
+            for linea in leer_texto(p).splitlines():
+                c = linea.split("#", 1)[0].strip().upper()
+                if c:
+                    codigos.add(c)
+    return codigos
+
+
 def _cobertura(valor):
     return float((valor or "").replace("%", "").strip().replace(",", "."))
 
 
-def validar_publicacion(publicado, duplicados=()):
-    """Valida inventario, indice, textos y cobertura del corpus publicado."""
+def _muestra(codigos, fraccion):
+    """Muestra reproducible (siempre la misma para los mismos codigos) de una fraccion de los documentos."""
+    n = math.ceil(fraccion * len(codigos)) if codigos and fraccion else 0
+    return sorted(codigos, key=lambda c: hashlib.sha256(c.encode()).hexdigest())[:n]
+
+
+def validar_publicacion(publicado, duplicados=(), revisados=frozenset(), muestra=MUESTRA_REVISION,
+                        errores_contexto=(), control=None):
+    """Valida inventario, indice, textos, cobertura y estructura del corpus publicado.
+
+    - Problemas (REQUIERE REVISIÓN): codigos duplicados, documentos sin convertir o sin texto, texto
+      del original que falta (cobertura < 100 %), palabras que no estan en el original y errores del contexto.
+    - Revision visual (PENDIENTE DE REVISIÓN VISUAL): documentos con avisos de estructura y una muestra
+      del ``muestra`` de los demas, hasta que su codigo este en revision_visual_ok.txt.
+    """
     v = Validacion(duplicados=list(duplicados))
     indice_p, inv_p = publicado / ARCHIVO_INDICE, publicado / ARCHIVO_INVENTARIO
     filas = leer_csv(indice_p) if indice_p.is_file() else []
-    inventario = leer_csv(inv_p) if inv_p.is_file() else []
+    inventario = inventario_activo(leer_csv(inv_p)) if inv_p.is_file() else []
     cod_indice = {(f.get("codigo") or "").upper() for f in filas if f.get("codigo")}
     cod_inv = {(f.get("codigo") or "").upper() for f in inventario if f.get("codigo")}
     if not filas:
         v.problemas.append("El índice consolidado está vacío.")
     if duplicados:
         v.problemas.append("Códigos duplicados: " + ", ".join(duplicados))
+    if errores_contexto:
+        v.problemas.append("Materiales de contexto que no se pudieron convertir: " + "; ".join(errores_contexto))
     faltan = sorted(cod_inv - cod_indice)
     sobran = sorted(c for c in cod_indice - cod_inv if not c.startswith("C-"))
     if faltan:
@@ -114,15 +171,35 @@ def validar_publicacion(publicado, duplicados=()):
     sin_texto = sorted(cod_indice - cod_md)
     if sin_texto:
         v.problemas.append("Filas del índice sin texto Markdown: " + ", ".join(sin_texto))
-    bajos = []
+    bajos, agregadas, no_publicables = [], [], []
+    revision = collections.OrderedDict()
     for f in filas:
+        c = (f.get("codigo") or "").upper()
         try:
             if f.get("cobertura") and _cobertura(f["cobertura"]) < 100.0:
-                bajos.append(f.get("codigo", ""))
+                bajos.append(f"{c} ({f['cobertura']})")
         except ValueError:
-            v.avisos.append(f"Cobertura no interpretable: {f.get('codigo', '')} = {f.get('cobertura')}")
+            v.problemas.append(f"Cobertura no interpretable: {c} = {f.get('cobertura')}")
+        if (f.get("palabras_agregadas") or "").strip():
+            agregadas.append(f"{c} ({f['palabras_agregadas'][:60]})")
+        if (f.get("avisos_estructura") or "0").strip() not in ("", "0"):
+            revision[c] = (f.get("detalle_avisos") or "")[:200]
+        if estado_no_publicable(f.get("estado_documental", "")):
+            no_publicables.append(f"{c} ({f.get('estado_documental')})")
     if bajos:
-        v.avisos.append("Cobertura menor a 100 %: " + ", ".join(bajos))
+        v.problemas.append("Texto del original que no aparece en el Markdown (cobertura < 100 %): " + ", ".join(bajos))
+    if agregadas:
+        v.problemas.append("Palabras que no están en el original (posible texto corrupto): " + "; ".join(agregadas))
+    if no_publicables:
+        v.avisos.append("Excluidos de las consultas por su estado documental: " + ", ".join(no_publicables))
+    resto = sorted(c for c in cod_indice if c not in revision and not c.startswith("C-"))
+    for c in _muestra(resto, muestra):
+        revision[c] = f"muestra aleatoria ({muestra:.0%})"
+    v.revision_visual = collections.OrderedDict((c, m) for c, m in revision.items() if c not in revisados)
+    if control is not None:
+        escribir_csv(control / ARCHIVO_REVISION, ["codigo", "motivo", "revisado"],
+                     [{"codigo": c, "motivo": m, "revisado": "sí" if c in revisados else ""}
+                      for c, m in revision.items()])
     v.documentos_inventariados = len(cod_inv)
     v.documentos_indexados = len(cod_indice)
     v.documentos_con_texto = len(cod_md & cod_indice)
@@ -133,7 +210,7 @@ def escribir_resumen_construccion(path, v, publicados):
     lineas = [
         "# Resumen de construcción del corpus", "",
         f"- Fecha: {datetime.datetime.now():%Y-%m-%d %H:%M}",
-        f"- convertir.py: v{VERSION}",
+        f"- convertir.py: v{VERSION} · huella {huella()}",
         f"- Resultado: **{v.estado}**", "",
         f"- Documentos inventariados: {v.documentos_inventariados}",
         f"- Documentos indexados: {v.documentos_indexados}",
@@ -142,8 +219,15 @@ def escribir_resumen_construccion(path, v, publicados):
     ]
     if v.problemas:
         lineas += ["## Problemas", ""] + ["- " + x for x in v.problemas] + [""]
+    if v.revision_visual:
+        lineas += ["## Revisión visual pendiente", "",
+                   "Abra cada documento original junto a su Markdown. Cuando esté correcto, agregue su código a "
+                   f"`{ARCHIVO_REVISADOS}` (uno por línea) y vuelva a ejecutar `construir`.", "",
+                   "| Código | Motivo |", "|---|---|"]
+        lineas += [f"| {c} | {esc_celda(m)} |" for c, m in v.revision_visual.items()] + [""]
     if v.avisos:
         lineas += ["## Avisos", ""] + ["- " + x for x in v.avisos] + [""]
-    lineas += ["## Carpetas", "", "- `publicado/`: archivos que puede consumir el agente.",
-               "- `control/`: reportes, diccionarios parciales y evidencia de QA.", ""]
+    lineas += ["## Carpetas", "",
+               f"- `publicado/`: archivos que puede consumir el agente (con `{ARCHIVO_HUELLAS}`).",
+               f"- `control/`: reportes, diccionarios parciales, `{ARCHIVO_REVISION}` y evidencia de QA.", ""]
     path.write_text("\n".join(lineas), encoding="utf-8")

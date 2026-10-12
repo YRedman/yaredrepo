@@ -82,8 +82,10 @@ CAMPOS_CLAVE = {
     "C": [],
 }
 
-# Columnas de una tabla del desarrollo cuyo contenido es una actividad.
-COLUMNAS_ACTIVIDAD = ("actividad", "descripcion", "accion", "tarea")
+# Columnas de una tabla del desarrollo cuyo contenido es una actividad (en orden de preferencia) y
+# columnas que indican quien la ejecuta.
+COLUMNAS_ACTIVIDAD = ("actividad", "descripcion", "accion", "tarea", "que se hace")
+COLUMNAS_RESPONSABLE = ("responsab", "quien", "ejecuta", "rol")
 
 # Palabras que se ignoran al proponer el codigo de 3 letras de un departamento.
 PALABRAS_VACIAS_DEP = {"DE", "DEL", "LA", "LAS", "LOS", "EL", "Y", "E", "EN", "PARA", "POR", "A", "AL"}

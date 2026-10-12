@@ -36,6 +36,8 @@ def _mostrar_error(e, s):
     elif isinstance(e, AreaNoEncontrada):
         s.linea(f"NO ENCONTRADO: no hay un área llamada '{e.texto}'. Áreas disponibles:")
         s.lista(f"{nombre} ({cod})" for cod, nombre in e.disponibles)
+        if e.sin_documentos:
+            s.linea("Áreas o entidades mencionadas sin documentos propios: " + ", ".join(e.sin_documentos))
     else:
         s.linea(f"ERROR: {e.mensaje}")
 
@@ -58,4 +60,6 @@ def main(argv=None, uso="", flujo=None):
     except CorpusError as e:
         _mostrar_error(e, s)
         return e.codigo_salida
+    except BrokenPipeError:   # la salida se corto (p. ej. con | head): no es un error del corpus
+        return 0
     return 0

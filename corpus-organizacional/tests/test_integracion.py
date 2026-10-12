@@ -35,7 +35,8 @@ def construir(base, *extra):
     with redirect_stdout(io.StringIO()) as out:
         try:
             conversion_cli.main(["construir", "--entrada", str(base / "entrada"),
-                                 "--contexto", str(base / "contexto"), "--sin-verificacion-cruzada", *extra])
+                                 "--contexto", str(base / "contexto"), "--sin-verificacion-cruzada",
+                                 "--muestra-revision", "0", *extra])
             codigo = 0
         except SystemExit as e:
             codigo = e.code

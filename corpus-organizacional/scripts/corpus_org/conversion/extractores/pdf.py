@@ -8,10 +8,11 @@ import re
 import statistics
 
 from ...comun.esquema import MARCA_COMBINADA
-from ...comun.texto import limpiar_celda, nfc, norm, tokens, unir
+from ...comun.texto import limpiar_celda, nfc, norm, numeros, tokens, unir
 from ..modelo import DocumentoExtraido
 from .base import Extractor
-from .maquetacion import agrupar_filas, bloques_desde_items
+from ..secciones import clave_titulo, es_seccion_conocida
+from .maquetacion import RE_NUM_INICIO, agrupar_filas, bloques_desde_items
 
 RE_PATRON_ENC = re.compile(r"(p[aá]gina\s*\d+\s*(de|/)\s*\d+|\bversi[oó]n\s*:|\brevisi[oó]n\s*:|c[oó]digo\s*:|"
                            r"fecha de (emisi[oó]n|vigencia|elaboraci[oó]n)\s*:)", re.I)
@@ -355,36 +356,80 @@ def _idioma_ocr():
     return None
 
 
+MAX_SUELTAS_ENTRE_TABLAS = 3
+
+
+def _es_suelta_entre_tablas(it):
+    """Linea corta que puede quedar entre dos trozos de una tabla partida (fragmento de fila, no un titulo)."""
+    if it["tipo"] != "fila":
+        return False
+    t = it["texto"].strip()
+    if not t or len(t.split()) > 15 or (RE_NUM_INICIO.match(t) and it.get("bold")):
+        return False
+    return not es_seccion_conocida(clave_titulo(t))
+
+
+def _columnas_compatibles(a, b):
+    na = len(a["filas"][0]) if a["filas"] else 0
+    nb = len(b["filas"][0]) if b["filas"] else 0
+    xs_ok = (not a["xs"] or not b["xs"] or len(a["xs"]) != len(b["xs"]) or
+             all(abs(x - y) <= 6 for x, y in zip(a["xs"], b["xs"])))
+    return na == nb and na > 0 and xs_ok
+
+
+def _agregar_continuacion(a, b, d, pagina):
+    """Agrega las filas de ``b`` a la tabla ``a`` (sin la cabecera repetida; uniendo una fila partida)."""
+    filas_b = b["filas"]
+    if filas_b and [norm(c) for c in filas_b[0]] == [norm(c) for c in a["filas"][0]]:
+        for c in filas_b[0]:
+            d.retirados.update(tokens(c))
+        filas_b = filas_b[1:]
+    if filas_b and not filas_b[0][0].strip() and any(c.strip() for c in filas_b[0][1:]):
+        a["filas"][-1] = [
+            (unir(x, y.replace(MARCA_COMBINADA, "")) if y.strip() and not y.endswith(MARCA_COMBINADA) else x)
+            for x, y in zip(a["filas"][-1], filas_b[0])]
+        filas_b = filas_b[1:]
+        d.notas.append(f"Página {pagina + 1}: fila de tabla partida entre páginas; se unió con la anterior.")
+    a["filas"].extend(filas_b)
+    a["pagina_fin"] = pagina
+
+
 def _unir_tablas_continuas(items, d):
-    """Une una tabla que continua en la pagina siguiente con la de la pagina anterior."""
+    """Une una tabla que continua en la pagina siguiente con la de la pagina anterior.
+
+    Tambien si entre ambos trozos quedaron hasta 3 lineas sueltas cortas (fragmentos de una fila que
+    no quedaron en celdas): la tabla se une, las lineas se conservan despues de ella y se emite un
+    aviso de estructura para revisarla.
+    """
     k = 1
     while k < len(items):
-        pa, _, _, a = items[k - 1]
         pb, _, _, b = items[k]
-        pa = a.get("pagina_fin", pa)
-        if a["tipo"] == "tabla" and b["tipo"] == "tabla" and pb == pa + 1:
-            na = len(a["filas"][0]) if a["filas"] else 0
-            nb = len(b["filas"][0]) if b["filas"] else 0
-            xs_ok = (not a["xs"] or not b["xs"] or len(a["xs"]) != len(b["xs"]) or
-                     all(abs(x - y) <= 6 for x, y in zip(a["xs"], b["xs"])))
-            if na == nb and na > 0 and xs_ok:
-                filas_b = b["filas"]
-                if filas_b and [norm(c) for c in filas_b[0]] == [norm(c) for c in a["filas"][0]]:
-                    for c in filas_b[0]:
-                        d.retirados.update(tokens(c))
-                    filas_b = filas_b[1:]
-                if filas_b and not filas_b[0][0].strip() and any(c.strip() for c in filas_b[0][1:]):
-                    ult = a["filas"][-1]
-                    a["filas"][-1] = [
-                        (unir(x, y.replace(MARCA_COMBINADA, "")) if y.strip() and not y.endswith(MARCA_COMBINADA)
-                         else x)
-                        for x, y in zip(ult, filas_b[0])]
-                    filas_b = filas_b[1:]
-                a["filas"].extend(filas_b)
-                a["pagina_fin"] = pb
-                del items[k]
-                continue
-        k += 1
+        if b["tipo"] != "tabla":
+            k += 1
+            continue
+        j, medio = k - 1, []
+        while j >= 0 and len(medio) < MAX_SUELTAS_ENTRE_TABLAS and _es_suelta_entre_tablas(items[j][3]):
+            medio.insert(0, j)
+            j -= 1
+        if j < 0 or items[j][3]["tipo"] != "tabla":
+            k += 1
+            continue
+        a = items[j][3]
+        pa = a.get("pagina_fin", items[j][0])
+        if pb != pa + 1 or any(items[m][0] not in (pa, pb) for m in medio) or not _columnas_compatibles(a, b):
+            k += 1
+            continue
+        _agregar_continuacion(a, b, d, pb)
+        sueltas = [items[m] for m in medio]
+        del items[k]
+        for m in reversed(medio):
+            del items[m]
+        for desplazamiento, it in enumerate(sueltas):
+            items.insert(j + 1 + desplazamiento, it)
+        if sueltas:
+            d.avisos.append(f"p.{pb + 1}: tabla partida entre páginas con {len(sueltas)} líneas sueltas en medio; "
+                            "se unió la tabla y las líneas quedaron después de ella")
+        k = j + 1 + len(sueltas)
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +480,7 @@ class _ExtraccionPDF:
         self._aplicar_ocr_pendiente()
         d = self.d
         d.crudo = +d.crudo
+        d.numeros = +d.numeros
         self.items.sort(key=lambda t: (t[0], t[1], t[2]))
         _unir_tablas_continuas(self.items, d)
         d.tablas = sum(1 for it in self.items if it[3]["tipo"] == "tabla")
@@ -498,14 +544,16 @@ class _ExtraccionPDF:
         ids_enc = {id(l) for l in enc_lineas}
         en_formas = _formas_con_texto(page, [l for l in lineas if id(l) not in ids_enc], [r for r, _, _ in tablas], w, h)
         if en_formas:
-            self.d.notas.append(f"Página {i + 1}: posible diagrama vectorial ({en_formas} líneas de texto dentro de "
-                                "formas); su texto quedó como líneas sueltas: revisar contra el original.")
+            self.d.avisos.append(f"p.{i + 1}: posible diagrama vectorial ({en_formas} líneas de texto dentro de "
+                                 "formas); su texto quedó como líneas sueltas")
         self._imagenes_contenido(i, corte_sup, corte_inf, w, h)
         # texto crudo de verificacion (motor principal, pagina completa, sin encabezado ni pie)
         crudo = re.sub(r"(\w)-\n(?=[a-záéíóúüñ])", r"\1", page.get_text("text"))
         self.d.crudo.update(tokens(crudo))
+        self.d.numeros.update(numeros(crudo))
         for l in enc_lineas:
             self.d.crudo.subtract(tokens(l["texto"]))
+            self.d.numeros.subtract(numeros(l["texto"]))
 
     def _encabezado_y_pie(self, i, page, lineas, h, w):
         sup = [l for l in lineas if l["y1"] <= ZONA_SUPERIOR * h and _es_clave(_clave_rep(l["texto"]), self.claves_sup)]
@@ -550,8 +598,8 @@ class _ExtraccionPDF:
                   and _clave_rep(l["texto"]) not in self.claves_guardadas]
         if unicas:
             ids = {id(l) for l in unicas}
-            self.d.notas.append(f"Página {i + 1}: {len(unicas)} líneas en la zona de encabezado o pie no coinciden "
-                                "con el encabezado de la primera página; se conservaron como contenido.")
+            self.d.avisos.append(f"p.{i + 1}: {len(unicas)} líneas en la zona de encabezado o pie no coinciden "
+                                 "con el encabezado de la primera página; se conservaron como contenido")
             return [l for l in enc_lineas if id(l) not in ids]
         return enc_lineas
 
@@ -626,13 +674,13 @@ class _ExtraccionPDF:
             if total and perdidas > 0.3 * total:
                 contenido.extend(propias)
                 d.lineas_diag += [(i + 1, "posible tabla tratada como texto", l["texto"]) for l in propias]
-                d.notas.append(f"Página {i + 1}: una posible tabla se dejó como texto porque sus celdas no "
-                               f"contenían todo su texto ({perdidas} de {total} palabras).")
+                d.avisos.append(f"p.{i + 1}: posible tabla tratada como texto ({perdidas} de {total} palabras "
+                                "fuera de celdas)")
                 continue
             if sueltas:
                 contenido.extend(sueltas)
-                d.notas.append(f"Página {i + 1}: {len(sueltas)} líneas dentro de una tabla no quedaron en sus celdas; "
-                               "se agregaron como texto junto a la tabla.")
+                d.avisos.append(f"p.{i + 1}: {len(sueltas)} líneas de una tabla fuera de sus celdas; se agregaron "
+                                "como texto junto a la tabla")
             d.lineas_diag += [(i + 1, "tabla", l["texto"]) for l in propias]
             self.items.append((i, r.y0, r.x0, {"tipo": "tabla", "filas": filas, "xs": xs, "y0": r.y0, "y1": r.y1,
                                                "pagina": i}))

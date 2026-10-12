@@ -122,7 +122,9 @@ def generar(base):
                 [("Nombre del puesto", "Gerente de Aseguramiento de Calidad"), ("Reporta a", "Director General")],
                 ["Auditar procesos."])
 
-    procedimiento(pc / "Compra de insumos.docx", "Comprar insumos.",
+    procedimiento(pc / "Compra de insumos.docx",
+                  "Comprar insumos. Mejorar la Calidad de Vida del personal. Coordinar el pago con la Gerencia "
+                  "Financiera y el transporte con la Dirección de Logística.",
                   [("Solicitar la cotización", "Comprador"), ("Registrar la orden", "Asistente Administrativo"),
                    ("Validar especificaciones con el Gerente de Calidad", "comité de compras"),
                    ("Entregar la mercancía a Almacén", "coordinadores de logística")], diagrama=True)
@@ -140,6 +142,14 @@ def generar(base):
     (ctx / "glosario.md").write_text("# Glosario\n\n| Sigla | Significado |\n|---|---|\n| RRHH | Recursos Humanos |\n\n"
                                      "- Un punto de la minuta.\n", encoding="utf-8")
     (ctx / "indicadores.csv").write_text("id;indicador;meta\nI-01;Tiempo de entrega;5 días\n", encoding="utf-8")
+    # datos estructurados del contexto (se publican aparte; no se convierten a contexto.md)
+    (ctx / "areas_extra.csv").write_text(
+        "nombre;alias;tipo;nota\nFinanzas;Gerencia Financiera|Director Financiero;interna;\n"
+        "Transportes Externos SA;;externa;\nCalidad de Vida;;excluir;\n", encoding="utf-8")
+    (ctx / "kpis_prueba.csv").write_text(
+        "id;gestion;indicador;meta;medicion;unidad;estado_segun_leyenda;periodo;observaciones;terminos_busqueda\n"
+        "K-01;Compras;Tiempo de cotización;5;4;d;Bueno [Inferido];2026;;cotización\n"
+        "K-02;Almacén;Mercancía rechazada;2;;%;Sin medición;2026;;rechazo\n", encoding="utf-8")
     return ent, ctx
 
 

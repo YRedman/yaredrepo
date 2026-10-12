@@ -1,5 +1,6 @@
 """Normalizacion y manipulacion de texto (sin dependencias del dominio)."""
 
+import collections
 import re
 import unicodedata
 
@@ -22,6 +23,18 @@ def tokens(s):
     """Palabras de un texto (NFKC, minusculas) para comparar original y salida."""
     s = unicodedata.normalize("NFKC", s or "").casefold()
     return re.findall(r"\w+", s)
+
+
+RE_NUMERO = re.compile(r"(?<![\w.,])\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?(?!\w)|(?<![\w.,])\d+[.,]\d+(?!\w)")
+
+
+def numeros(texto):
+    """Numeros con separadores tal como aparecen (45.000,00 · 1.5 · 352,600,000).
+
+    ``tokens`` los parte en pedazos ('45', '000', '00'), asi que un numero truncado pasaria la
+    verificacion por palabras; se comparan aparte y completos.
+    """
+    return collections.Counter(RE_NUMERO.findall(texto or ""))
 
 
 def recortar_palabras(s, n):
@@ -70,6 +83,12 @@ def patron_frase(frase, flags=0):
     """Regex que encuentra la frase completa (no dentro de otra palabra), tolerando espacios multiples."""
     palabras = [re.escape(p) for p in frase.split()]
     return re.compile(r"(?<!\w)" + r"\s+".join(palabras) + r"(?!\w)", flags)
+
+
+def patron_termino(termino):
+    """Termino de busqueda sobre texto normalizado; '*' = cualquier final de palabra; espacios flexibles."""
+    partes = [re.escape(p).replace(r"\*", r"\w*") for p in norm(termino).split()]
+    return re.compile(r"(?<!\w)" + r"\s+".join(partes) + r"(?!\w)")
 
 
 def empieza_palabra(clave, texto):

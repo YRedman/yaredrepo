@@ -27,8 +27,8 @@ scripts/
     consulta/
       repositorio.py             Carga del corpus publicado y exclusión de no vigentes
       parser.py                  Recorrido único del Markdown de un documento
-      areas.py, puestos.py, roles.py, relaciones.py
-      comandos/                  Un archivo por comando (catalogo, area, ficha, doc, ...)
+      areas.py, entidades.py, puestos.py, roles.py, relaciones.py, participacion.py, indicadores.py, integridad.py
+      comandos/                  Un archivo por comando (catalogo, area, briefing, ficha, doc, kpis, ...)
       cli.py
 tests/                           Pruebas unitarias y de integración
 ```
@@ -91,7 +91,37 @@ La v2.1 se desarrolló en paralelo a partir de la misma v2.0 y corrigió otros p
 
 Resultado en el caso de prueba de la v2.1: 60 de 60 filas, en orden, en una sola tabla (antes 48).
 
-Pendiente de la comparación (no incluido en esta versión): comandos `briefing` y `kpis`, `areas_extra.csv`, códigos congelados con `--base`, avisos de estructura y revisión visual, y huellas SHA-256.
+## v3.3: fase 2 (control de calidad y comandos para el agente)
+
+**Construcción**
+
+| Función | Qué hace | Dónde |
+|---|---|---|
+| Avisos de estructura | Cada documento registra señales de que la estructura pudo leerse mal aunque el texto esté completo: tabla tratada como texto, líneas fuera de celdas, tabla partida con líneas sueltas, filas sin primera celda, párrafos repetidos, contenido sobre todo en imágenes, posible diagrama vectorial, nombre del puesto distinto del archivo, números que no aparecen completos (`45.000,00` → `45.000`) y OCR. Columnas nuevas del índice: `palabras_agregadas`, `avisos_estructura`, `detalle_avisos` (al final; las anteriores no se mueven) | `extractores/pdf.py`, `analisis.avisos_de_estructura`, `modelo.DocumentoConvertido.avisos` |
+| Validación más estricta | Cobertura < 100 %, palabras que no están en el original y errores del contexto pasan a ser **problemas** (antes eran avisos) | `publicacion.validar_publicacion` |
+| Revisión visual | Los documentos con avisos y una muestra reproducible del 10 % quedan pendientes hasta anotar su código en `revision_visual_ok.txt`. Tres estados con código de salida: LISTO (0), REQUIERE REVISIÓN (2), PENDIENTE DE REVISIÓN VISUAL (3). `--muestra-revision` ajusta la muestra | `publicacion.py`, `cli.modo_construir` |
+| Huellas SHA-256 | `publicado/huellas.sha256`; `corpus.py verificar` detecta archivos editados o borrados después de la conversión | `publicacion.escribir_huellas`, `consulta/integridad.py` |
+| Códigos estables | Al reconstruir con `lista.txt`, el inventario anterior es la base: cada documento conserva su código, los nuevos van al final de su grupo y los que ya no están quedan `RETIRADO` reservando su código (`inventario --base`) | `inventario.construir_inventario` |
+| Datos del contexto | Los `kpi*.csv` de la carpeta de contexto se unen en `kpis.csv` y `areas_extra.csv` se publica tal cual (no se convierte a `contexto.md`) | `cli._datos_de_contexto` |
+
+**Consulta**
+
+| Función | Qué hace | Dónde |
+|---|---|---|
+| `areas_extra.csv` | Áreas internas sin documentos, entidades externas y frases a excluir (“Seguridad Social” no es el área Seguridad; hay exclusiones base) | `consulta/entidades.py` |
+| Menciones no resueltas | `relaciones` lista aparte las entidades sin documentos, las unidades no identificadas (“Dirección de Logística”) y los puestos ambiguos; nunca cuentan como relación con un área | `relaciones.NoResueltas` |
+| `kpis` | Indicadores con meta, medición (“sin medición” si está vacía, nunca cero) y documentos que mencionan sus términos `[Inferido]` | `consulta/indicadores.py`, `comandos/kpis.py` |
+| `participacion` | Resumen por puesto sobre todas las filas y detalle acotado (`--detalle N\|todo`). Las ausencias (roles sin descriptivo, descriptivos sin participación) solo se afirman con el corpus completo | `consulta/participacion.py` |
+| `briefing` | Tablas del briefing ya calculadas por partes de 15 documentos, con la línea de cobertura; el modelo solo redacta resumen, insights y “para profundizar” | `comandos/briefing.py` |
+| `verificar` y `catalogo` | Huellas, corpus completo, palabras agregadas, documentos con avisos, códigos retirados, KPIs y entidades sin documentos | `comandos/verificar.py`, `comandos/catalogo.py` |
+
+**Actividades:** si el desarrollo tiene tabla, las actividades son sus filas con su responsable (“Solicitar cotización (Responsable: Comprador)”); si no, sus viñetas.
+
+**Falsos positivos encontrados al probar la fase 2 y corregidos:**
+- Una tabla de indicadores en el contexto (`| K-01 | Compras |`) convertía “K-01” en alias del área Compras. Ahora una sigla no lleva dígitos.
+- En una fila `| Entregar la mercancía a Almacén | coordinadores de logística |`, el sustantivo “coordinadores” se tomaba como el verbo. Ahora el verbo se busca primero en la celda de la mención.
+
+**Comparación con la batería de la v2.1:** con esta versión pasan 34 de sus 35 pruebas punta a punta. La que falla solo cambia el formato del mensaje de ambigüedad, no el comportamiento. La v2.1 fallaba la de la tabla partida de 60 filas, que aquí pasa.
 
 Otras mejoras:
 

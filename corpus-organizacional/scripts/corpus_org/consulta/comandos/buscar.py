@@ -3,17 +3,11 @@ import re
 
 from ...comun.errores import CorpusError
 from ...comun.esquema import area_de, tipo_desde_texto
-from ...comun.texto import norm, recortar_palabras as recortar
+from ...comun.texto import norm, patron_termino, recortar_palabras as recortar
 from .base import Comando
 
 MAX_COINCIDENCIAS_POR_DOC = 4
 MAX_FILAS = 80
-
-
-def patron_termino(termino):
-    """Termino literal normalizado; '*' = cualquier final de palabra; los espacios toleran saltos."""
-    partes = [re.escape(p).replace(r"\*", r"\w*") for p in norm(termino).split()]
-    return re.compile(r"(?<!\w)" + r"\s+".join(partes) + r"(?!\w)")
 
 
 def fragmento(linea, pats, ancho=90):

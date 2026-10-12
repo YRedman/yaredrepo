@@ -27,7 +27,9 @@ class DocumentoExtraido:
     crudo: collections.Counter = field(default_factory=collections.Counter)      # tokens del original
     crudo_encabezado: Set[str] = field(default_factory=set)
     retirados: collections.Counter = field(default_factory=collections.Counter)  # duplicados retirados a proposito
-    notas: List[str] = field(default_factory=list)          # avisos para el reporte
+    notas: List[str] = field(default_factory=list)          # informacion para el reporte
+    avisos: List[str] = field(default_factory=list)         # avisos de ESTRUCTURA: exigen revision visual
+    numeros: collections.Counter = field(default_factory=collections.Counter)   # numeros completos del original
     texto_cruzado: Optional[Set[str]] = None                # tokens de un segundo motor (pdfplumber)
     idioma_ocr: Optional[str] = None
     lineas_diag: List[tuple] = field(default_factory=list)  # (pagina, zona, texto) para ubicar faltantes
@@ -56,7 +58,9 @@ class Analisis:
     secciones_excluidas: List[str] = field(default_factory=list)
     secciones_diagrama: List[str] = field(default_factory=list)
     notas: List[str] = field(default_factory=list)
+    avisos: List[str] = field(default_factory=list)
     excluidos: collections.Counter = field(default_factory=collections.Counter)
+    excluidos_numeros: collections.Counter = field(default_factory=collections.Counter)
     metadatos: Metadatos = field(default_factory=Metadatos)
 
 
@@ -69,6 +73,7 @@ class Verificacion:
     cruz: List[str]
     origen: collections.Counter
     ejemplos: Dict[tuple, str]
+    numeros_faltan: collections.Counter = field(default_factory=collections.Counter)
 
     @property
     def palabras_faltantes(self):
@@ -92,6 +97,21 @@ class DocumentoConvertido:
     def ok(self):
         return self.estado == "OK"
 
+    @property
+    def avisos(self):
+        """Avisos de estructura del documento: si hay alguno, se exige revision visual antes de publicar."""
+        if not self.ok:
+            return []
+        d, v = self.doc, self.verificacion
+        avisos = list(d.avisos) + list(self.analisis.avisos)
+        if v.numeros_faltan:
+            avisos.append("números del original que no aparecen completos: " + ", ".join(list(v.numeros_faltan)[:8]))
+        if d.paginas_ocr:
+            avisos.append("OCR en páginas " + ", ".join(map(str, d.paginas_ocr)) + ": revisar contra el original")
+        if d.paginas_escaneadas_sin_ocr:
+            avisos.append("páginas escaneadas sin texto: " + ", ".join(map(str, d.paginas_escaneadas_sin_ocr)))
+        return avisos
+
     def motivos_consola(self):
         """Razones de revision que se muestran en la consola al terminar la conversion."""
         if not self.ok:
@@ -108,6 +128,7 @@ class DocumentoConvertido:
             extra.append("páginas escaneadas sin texto")
         if self.palabras == 0:
             extra.append("el documento no tiene texto")
+        extra += [f"ESTRUCTURA: {a}" for a in self.avisos if not a.startswith(("OCR en", "páginas escaneadas"))]
         return extra
 
     def motivos_revision(self):
@@ -129,4 +150,6 @@ class DocumentoConvertido:
             motivos.append("el documento no tiene texto")
         if self.analisis.faltantes:
             motivos.append("no especificado: " + ", ".join(self.analisis.faltantes))
+        if self.avisos:
+            motivos.append(f"{len(self.avisos)} avisos de estructura")
         return motivos
