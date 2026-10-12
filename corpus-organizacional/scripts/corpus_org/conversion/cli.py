@@ -1,0 +1,318 @@
+"""Linea de comandos de ``convertir.py``: interpreta argumentos, orquesta y muestra resultados."""
+
+import argparse
+import shutil
+import sys
+import time
+from pathlib import Path
+
+from .. import VERSION
+from ..comun.archivos import escribir_csv, leer_csv
+from ..comun.errores import CorpusError
+from ..comun.esquema import (ARCHIVO_CATALOGO, ARCHIVO_INVENTARIO, ARCHIVO_RESUMEN, COLUMNAS_CATALOGO,
+                             COLUMNAS_INVENTARIO, tipo_desde_texto)
+from ..comun.texto import norm
+from .asignacion import asignar_archivos, grupos_a_convertir
+from .entradas import buscar_entradas, entrada_por_defecto, localizar
+from .huella import huella
+from .inventario import (RE_CODIGO_DEP, candidatos_codigo, construir_inventario, inventario_provisional,
+                         leer_catalogo_codigos, parsear_lista)
+from .lote import Grupo, OpcionesConversion, procesar_grupo
+from .publicacion import escribir_resumen_construccion, limpiar_generados, publicar_corpus, validar_publicacion
+
+
+def carpeta_salida(args):
+    s = Path(args.salida) if args.salida else Path(args.entrada) / "salida"
+    s.mkdir(parents=True, exist_ok=True)
+    return s
+
+
+def _opciones(args):
+    return OpcionesConversion(verificacion_cruzada=not args.sin_verificacion_cruzada,
+                              tiempo_max=args.tiempo_max or 0)
+
+
+# ---------------------------------------------------------------------------
+# inventario
+# ---------------------------------------------------------------------------
+
+def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None):
+    """Lee lista.txt y escribe inventario_maestro.csv y catalogo.csv en ``salida``."""
+    lista = localizar(nombre_lista, entrada)
+    if not lista:
+        raise CorpusError(f"No encontré la lista de archivos '{nombre_lista}'. Adjúntala al chat.")
+    filas, ignoradas = parsear_lista(lista)
+    if not filas:
+        raise CorpusError("La lista no contiene rutas válidas con la estructura Tipo\\Departamento\\Archivo.")
+    fijados = {}
+    if nombre_catalogo:
+        cat = localizar(nombre_catalogo, entrada)
+        if not cat:
+            raise CorpusError(f"No encontré el catálogo '{nombre_catalogo}'.")
+        fijados = leer_catalogo_codigos(cat)
+    inv = construir_inventario(filas, ignoradas, fijados)
+    escribir_csv(salida / ARCHIVO_INVENTARIO, COLUMNAS_INVENTARIO, inv.documentos)
+    escribir_csv(salida / ARCHIVO_CATALOGO, COLUMNAS_CATALOGO, inv.catalogo)
+    return inv
+
+
+def modo_inventario(args):
+    salida = carpeta_salida(args)
+    inv = generar_inventario(args.entrada, salida, args.lista, args.catalogo)
+    d = sum(1 for f in inv.documentos if f["tipo"] == "Descriptivo")
+    print(f"INVENTARIO · convertir.py v{VERSION} · huella {huella()}")
+    print()
+    print(f"Rutas leídas: {inv.rutas_validas + len(inv.ignoradas)} · documentos válidos: {inv.rutas_validas} · "
+          f"ignoradas: {len(inv.ignoradas)}")
+    print(f"Descriptivos: {d} · Procedimientos: {len(inv.documentos) - d} · Departamentos: {len(inv.departamentos)}")
+    print()
+    print("| Departamento | Código | Descriptivos | Procedimientos |")
+    print("|---|---|---|---|")
+    for r in inv.catalogo:
+        print(f"| {r['departamento']} | {r['codigo']} | {r['descriptivos']} | {r['procedimientos']} |")
+    if inv.avisos or inv.ignoradas:
+        print()
+        print("AVISOS")
+        for a in inv.avisos:
+            print(f"- {a}")
+        for l, motivo in inv.ignoradas[:50]:
+            print(f"- Ignorada ({motivo}): {l}")
+        if len(inv.ignoradas) > 50:
+            print(f"- ... y {len(inv.ignoradas) - 50} rutas ignoradas más")
+    print()
+    print("ARCHIVOS GENERADOS")
+    print(f"- {salida / ARCHIVO_INVENTARIO}")
+    print(f"- {salida / ARCHIVO_CATALOGO}")
+
+
+# ---------------------------------------------------------------------------
+# convertir
+# ---------------------------------------------------------------------------
+
+def _inventario_para_convertir(args, entradas):
+    """(inventario, tipo_filtro, dep_filtro) segun haya inventario o se convierta un piloto sin el."""
+    tipo_filtro = tipo_desde_texto(args.tipo) if args.tipo else None
+    dep_filtro = args.dep.upper() if args.dep else None
+    if args.departamento:
+        if tipo_filtro not in ("P", "D"):
+            raise CorpusError("Sin inventario hay que indicar --tipo P o --tipo D.")
+        cod = dep_filtro or candidatos_codigo(args.departamento)[0]
+        if not RE_CODIGO_DEP.match(cod):
+            raise CorpusError(f"El código de departamento '{cod}' debe tener 3 letras.")
+        print("AVISO: conversión sin inventario. Los códigos dependen de los archivos adjuntos en esta corrida;")
+        print("       adjunta todos los documentos del departamento a la vez para que la numeración sea la definitiva.")
+        return inventario_provisional(entradas, tipo_filtro, cod, args.departamento), tipo_filtro, cod
+    inv_path = localizar(args.inventario, args.entrada)
+    if not inv_path:
+        raise CorpusError(f"No encontré '{args.inventario}'. Adjunta inventario_maestro.csv al chat, "
+                          "o indica --departamento \"Nombre\" --tipo P|D para convertir sin inventario.")
+    inventario = leer_csv(inv_path)
+    if not inventario or "codigo" not in inventario[0]:
+        raise CorpusError("El inventario no tiene la columna 'codigo'. ¿Es el archivo correcto?")
+    return inventario, tipo_filtro, dep_filtro
+
+
+def _imprimir_resumen_conversion(resultados, asignacion):
+    print()
+    print("| Grupo | Departamento | En inventario | Convertidos | Texto presente (mín.) | No adjuntos | Errores |")
+    print("|---|---|---|---|---|---|---|")
+    for res in resultados:
+        g, docs = res.grupo, res.documentos
+        minimo = min((r.verificacion.cobertura for r in res.convertidos), default=0)
+        total = len(asignacion.grupos[(g.tipo, g.codigo_dep)])
+        print(f"| {g.tipo}_{g.codigo_dep} | {g.departamento} | {total} | {len(res.convertidos)} | {minimo:.1f} % | "
+              f"{sum(1 for r in docs if r.estado == 'NO ADJUNTO')} | {sum(1 for r in docs if r.estado == 'ERROR')} |")
+    for res in resultados:
+        g = res.grupo
+        hechos = {r.codigo for r in res.convertidos}
+        faltan = [f["codigo"] for f in asignacion.grupos[(g.tipo, g.codigo_dep)] if f["codigo"] not in hechos]
+        if faltan:
+            print()
+            print(f"Faltan por convertir en {g.tipo}_{g.codigo_dep} ({len(faltan)}): {', '.join(faltan)}")
+    for res in resultados:
+        malos = [r for r in res.documentos if r.motivos_consola()]
+        if malos:
+            print()
+            print(f"Revisar en {res.grupo.tipo}_{res.grupo.codigo_dep}:")
+            for r in malos:
+                print(f"- {r.codigo} {r.archivo}: {'; '.join(r.motivos_consola())}")
+
+
+def ejecutar_conversion(args):
+    opciones = _opciones(args)
+    salida = carpeta_salida(args)
+    entradas = buscar_entradas(Path(args.entrada), salida)
+    inventario, tipo_filtro, dep_filtro = _inventario_para_convertir(args, entradas)
+    asignacion = asignar_archivos(inventario, entradas, tipo_filtro, dep_filtro)
+    if asignacion.ambiguos and not (tipo_filtro and dep_filtro):
+        print("AVISO: estos archivos tienen el mismo nombre en más de un departamento o tipo. "
+              "Vuelve a ejecutar indicando --tipo y --dep:")
+        for p in asignacion.ambiguos:
+            print(f"- {Path(p).name}")
+    if not asignacion.asignados:
+        nombres = "\n".join(f"- {p.name}" for p in entradas)
+        raise CorpusError("No encontré archivos adjuntos que coincidan con el inventario.\n"
+                          f"Archivos encontrados en el entorno:\n{nombres}")
+    print(f"CONVERSIÓN · convertir.py v{VERSION} · huella {huella()}")
+    resultados = [procesar_grupo(g, salida, opciones) for g in grupos_a_convertir(asignacion)]
+    _imprimir_resumen_conversion(resultados, asignacion)
+    usados = asignacion.usados
+    sobrantes = [p for p in entradas if str(p) not in usados]
+    if sobrantes:
+        print()
+        print("Archivos adjuntos que no se usaron en esta corrida (no están en el inventario o pertenecen a otro grupo):")
+        for p in sobrantes:
+            print(f"- {p.name}")
+    print()
+    print("ARCHIVOS GENERADOS")
+    for res in resultados:
+        for p in res.archivos_generados:
+            print(f"- {p}")
+    print(f"\nTiempo: {time.time() - opciones.inicio:.1f} s")
+    return resultados
+
+
+def modo_convertir(args):
+    ejecutar_conversion(args)
+
+
+# ---------------------------------------------------------------------------
+# contexto
+# ---------------------------------------------------------------------------
+
+def ejecutar_contexto(args):
+    salida = carpeta_salida(args)
+    excluir = {norm(x) for x in (args.excluir or [])}
+    entradas = sorted((p for p in buscar_entradas(Path(args.entrada), salida) if norm(p.name) not in excluir),
+                      key=lambda p: norm(p.name))
+    if not entradas:
+        raise CorpusError("No encontré PDF ni Word adjuntos para el contexto.")
+    filas, mapa = [], {}
+    for i, p in enumerate(entradas, 1):
+        cod = f"C-CTX-{i:02d}"
+        filas.append({"codigo": cod, "archivo": p.name, "departamento": ""})
+        mapa[cod] = p
+    print(f"CONTEXTO · convertir.py v{VERSION} · huella {huella()}")
+    res = procesar_grupo(Grupo("C", "CTX", "", filas, mapa, "contexto"), salida, _opciones(args))
+    print(f"Materiales: {len(filas)} · convertidos: {len(res.convertidos)} · "
+          f"errores: {sum(1 for r in res.documentos if r.estado == 'ERROR')}")
+    for r in res.documentos:
+        if r.ok:
+            print(f"- {r.codigo} {r.archivo}: texto presente {r.verificacion.cobertura:.1f} %")
+        else:
+            print(f"- {r.codigo} {r.archivo}: {r.estado} {r.error}")
+    print()
+    print("ARCHIVOS GENERADOS")
+    for p in res.archivos_generados:
+        print(f"- {p}")
+    return res
+
+
+def modo_contexto(args):
+    ejecutar_contexto(args)
+
+
+# ---------------------------------------------------------------------------
+# construir
+# ---------------------------------------------------------------------------
+
+def modo_construir(args):
+    """Inventario, conversion, contexto opcional, publicacion y validacion en una sola orden."""
+    entrada = Path(args.entrada).resolve()
+    raiz_salida = Path(args.salida).resolve() if args.salida else entrada / "salida_corpus"
+    control, publicado = raiz_salida / "control", raiz_salida / "publicado"
+    control.mkdir(parents=True, exist_ok=True)
+    publicado.mkdir(parents=True, exist_ok=True)
+    contexto = Path(args.contexto).resolve() if args.contexto else None
+    if contexto is not None and not contexto.is_dir():
+        raise CorpusError(f"La carpeta de contexto no existe: {contexto}")
+    limpiar_generados(control)
+
+    # 1) Inventario: reutiliza uno existente o lo genera desde lista.txt.
+    inventario_origen = localizar(args.inventario, entrada)
+    if inventario_origen:
+        shutil.copy2(inventario_origen, control / ARCHIVO_INVENTARIO)
+        cat = localizar(args.catalogo, entrada) if args.catalogo else None
+        if cat:
+            shutil.copy2(cat, control / ARCHIVO_CATALOGO)
+    else:
+        if not localizar(args.lista, entrada):
+            raise CorpusError("Para construir se necesita inventario_maestro.csv o lista.txt.")
+        modo_inventario(argparse.Namespace(entrada=str(entrada), salida=str(control), lista=args.lista,
+                                           catalogo=args.catalogo))
+
+    # 2) Conversion de descriptivos y procedimientos.
+    comunes = dict(salida=str(control), sin_verificacion_cruzada=args.sin_verificacion_cruzada,
+                   tiempo_max=args.tiempo_max)
+    ejecutar_conversion(argparse.Namespace(entrada=str(entrada), inventario=str(control / ARCHIVO_INVENTARIO),
+                                           tipo=None, dep=None, departamento=None, **comunes))
+
+    # 3) Contexto opcional, en carpeta separada para no convertir documentos operativos como contexto.
+    if contexto is not None:
+        ejecutar_contexto(argparse.Namespace(entrada=str(contexto), excluir=[], **comunes))
+
+    # 4) Publicacion limpia, indice maestro y validacion automatica.
+    publicados, duplicados = publicar_corpus(control, publicado)
+    validacion = validar_publicacion(publicado, duplicados)
+    resumen_path = raiz_salida / ARCHIVO_RESUMEN
+    escribir_resumen_construccion(resumen_path, validacion, publicados)
+    print("\nCONSTRUIR CORPUS · convertir.py v" + VERSION)
+    print("Resultado: " + validacion.estado)
+    print(f"Publicado: {publicado}")
+    print(f"Control: {control}")
+    print(f"Resumen: {resumen_path}")
+    for x in validacion.problemas:
+        print("ERROR: " + x)
+    for x in validacion.avisos:
+        print("AVISO: " + x)
+    if not validacion.listo:
+        sys.exit(2)
+
+
+# ---------------------------------------------------------------------------
+# Argumentos
+# ---------------------------------------------------------------------------
+
+MODOS = {"inventario": modo_inventario, "convertir": modo_convertir, "contexto": modo_contexto,
+         "construir": modo_construir}
+
+
+def crear_parser():
+    ap = argparse.ArgumentParser(description="Conversión y construcción del corpus organizacional.")
+    sub = ap.add_subparsers(dest="modo", required=True)
+    for nombre in MODOS:
+        sp = sub.add_parser(nombre)
+        sp.add_argument("--entrada", default=None,
+                        help="Carpeta donde están los archivos adjuntos (por defecto /mnt/data o la actual).")
+        sp.add_argument("--salida", default=None, help="Carpeta de salida.")
+        if nombre in ("inventario", "construir"):
+            sp.add_argument("--lista", default="lista.txt")
+            sp.add_argument("--catalogo", default=None, help="catalogo.csv editado con los códigos de departamento.")
+        if nombre in ("convertir", "construir"):
+            sp.add_argument("--inventario", default=ARCHIVO_INVENTARIO)
+        if nombre == "convertir":
+            sp.add_argument("--tipo", default=None, help="P o D, para convertir solo ese tipo.")
+            sp.add_argument("--dep", default=None, help="Código de 3 letras, para convertir solo ese departamento.")
+            sp.add_argument("--departamento", default=None,
+                            help="Nombre del departamento, para convertir sin inventario (piloto).")
+        if nombre == "contexto":
+            sp.add_argument("--excluir", nargs="*", default=[])
+        if nombre == "construir":
+            sp.add_argument("--contexto", default=None,
+                            help="Carpeta separada con organigrama, glosario y otros materiales de contexto.")
+        if nombre in ("convertir", "contexto", "construir"):
+            sp.add_argument("--sin-verificacion-cruzada", action="store_true")
+            sp.add_argument("--tiempo-max", type=float, default=0,
+                            help="Segundos máximos; lo que no alcance queda como pendiente.")
+    return ap
+
+
+def main(argv=None):
+    args = crear_parser().parse_args(argv)
+    if args.entrada is None:
+        args.entrada = entrada_por_defecto()
+    try:
+        MODOS[args.modo](args)
+    except CorpusError as e:
+        print(f"ERROR: {e.mensaje}")
+        sys.exit(e.codigo_salida)

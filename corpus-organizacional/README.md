@@ -1,0 +1,80 @@
+# Corpus organizacional
+
+Scripts del skill `corpus-organizacional` (ver `SKILL.md`):
+
+- `scripts/convertir.py`: convierte descriptivos de puesto y procedimientos (PDF/Word) a Markdown, construye el índice y publica el corpus.
+- `scripts/corpus.py`: consulta el corpus publicado (solo biblioteca estándar).
+
+La línea de comandos y el formato de los archivos generados son los mismos de la v2.0, así que un corpus publicado con la v2.0 se puede seguir consultando. Conviene reconstruirlo para aprovechar las correcciones de metadatos.
+
+## Estructura
+
+```
+scripts/
+  convertir.py, corpus.py        Puntos de entrada (solo llaman a main)
+  corpus_org/
+    comun/                       Compartido por ambos scripts (solo biblioteca estándar)
+      esquema.py                 Contrato de datos: columnas del índice, códigos, estados no publicables
+      texto.py, archivos.py, markdown.py, errores.py
+    conversion/
+      configuracion.py           Títulos de sección, etiquetas y campos clave (editable)
+      extractores/               Un extractor por formato (pdf.py, word.py) + maquetacion.py
+      analisis.py                Secciones, campos, actividades y códigos citados
+      metadatos.py               Versión, estado, vigencia, propietario... (solo con etiqueta explícita)
+      render.py, verificacion.py, reportes.py
+      inventario.py, entradas.py, asignacion.py, lote.py, publicacion.py
+      cli.py                     Argumentos y orquestación de los modos
+    consulta/
+      repositorio.py             Carga del corpus publicado y exclusión de no vigentes
+      parser.py                  Recorrido único del Markdown de un documento
+      areas.py, puestos.py, roles.py, relaciones.py
+      comandos/                  Un archivo por comando (catalogo, area, ficha, doc, ...)
+      cli.py
+tests/                           Pruebas unitarias y de integración
+```
+
+### Cómo se aplican los principios
+
+| Principio | Antes | Ahora |
+|---|---|---|
+| Responsabilidad única | `extraer_pdf` (220 líneas), `procesar_grupo` y `Corpus.__init__` hacían extracción, análisis, escritura e impresión a la vez. | Cada módulo tiene un solo motivo de cambio. Por ejemplo, `metadatos.py` solo extrae metadatos, `reportes.py` solo escribe reportes y cada comando vive en su propio archivo. |
+| Abierto/cerrado | Para agregar un comando o un formato había que editar `if/elif` y diccionarios dispersos. | Un comando nuevo es una subclase de `Comando` registrada en `comandos/__init__.py`. Un formato nuevo es una subclase de `Extractor`. Las secciones y etiquetas se configuran en `configuracion.py` y `metadatos.CAMPOS`. |
+| Sustitución de Liskov / interfaces | No había contratos. | `Extractor.extraer()` y `Comando.ejecutar()` son contratos pequeños: cualquier implementación sirve al pipeline o a la CLI. |
+| Inversión de dependencias | Los comandos hacían `print` y `sys.exit` dentro de la lógica, y `DATOS` se calculaba al importar. | La lógica lanza excepciones (`CorpusError`, `AreaAmbigua`...). Los comandos escriben en una `Salida` inyectada y reciben el corpus ya cargado, así que se pueden probar con `StringIO` y un corpus en memoria. |
+| Fuente única de verdad | `corpus.py` tenía una lista de columnas propia, desactualizada respecto a `convertir.py` (22 frente a 29 columnas). | Ambos scripts usan `comun/esquema.py`. |
+| Estado explícito | `analizar()` agregaba atributos sueltos al documento (`getattr(doc, "version", "")`). Además, `_CACHE_PUESTOS` era una variable global que había que llenar en cierto orden. | Se usan `DocumentoExtraido`, `Analisis` y `Metadatos` como dataclasses, y `DetectorPuestos` es una clase autocontenida. |
+
+## Falsos positivos corregidos
+
+Todos se reprodujeron con el corpus de `tests/fixtures_corpus.py` y quedaron cubiertos por pruebas.
+
+| # | Problema en v2.0 | Ejemplo real | Corrección |
+|---|---|---|---|
+| 1 | Los metadatos se buscaban sin exigir `:` en el texto unido de encabezado y cuerpo. | `Estado documental: "de cuenta revisado mensualmente"`, `Versión: "de"` (de “Revisión de la solicitud”), `Propietario: "Gerente de Compras Objetivo Establecer el proceso…"` | `metadatos.py` exige la etiqueta (`Estado:` o una celda `Estado`), corta el valor en la siguiente etiqueta o separador y valida la forma del valor. |
+| 2 | Un documento obsoleto no se filtraba, porque su estado capturado era `"Obsoleto Objetivo Atender…"`. | P-COM-02 aparecía en búsquedas y fichas. | Consecuencia de la corrección 1, más `estado_no_publicable()`, que compara por palabra completa. |
+| 3 | El filtro de no vigentes quitaba el documento del índice pero no del texto. | `verificar` reportaba “Documentos sin fila en el diccionario”, `buscar` seguía encontrándolo y `area` lo contaba como “NO CONVERTIDO”. | `repositorio.cargar_corpus` excluye el documento del índice y del texto a la vez. Los excluidos se informan aparte. |
+| 4 | Cualquier tabla de 2 columnas del contexto creaba alias de área. | Una fila `\| Responsable \| Compras \|` hacía que “Responsable” contara como mención del área Compras en `relaciones`. | Solo se aceptan alias con forma de sigla (`RRHH`, `TI`, `R.H.`). |
+| 5 | El rol y el verbo se calculaban con toda la línea. | En “El Gerente aprueba las órdenes. El Jefe de Almacén recibe el material.”, el Jefe de Almacén aparecía con rol “Aprueba”. | Se usa la oración que contiene la mención (`oracion_con`). |
+| 6 | Las raíces se buscaban sin límite de palabra. | “con**firm**a” se clasificaba como Aprueba e “in**valid**ar” como Revisa. | Las raíces se buscan al inicio de una palabra (`\b`). |
+| 7 | Una frase parecida a varios puestos se asignaba al primero. | “Gerente de Compras” se asignaba a “Gerente de Compras Nacionales” cuando también existía “…Internacionales”. | Los empates quedan como “ambigua” y se listan sin asignar. |
+| 8 | Las actividades eran todas las viñetas del documento. | “Compras nacionales” (del Alcance) contaba como actividad del proceso. Los descriptivos también tenían actividades. | Solo cuentan las viñetas y la columna “Actividad” de la sección de desarrollo de los procedimientos. |
+| 9 | Los códigos citados aceptaban cualquier `XX-123`. | `ISO-9001` y `COVID-19` aparecían como documentos citados. | Se exigen al menos dos guiones (`PR-ALM-001`, `NOM-035-STPS-2018`). |
+| 10 | Al reconstruir, quedaban en `control/` los DIC y .md de corridas anteriores. | Después de una conversión parcial, `construir` daba **REQUIERE REVISIÓN** por “Códigos duplicados: P-COM-01”. | `construir` limpia los archivos generados antes de convertir. |
+| 11 | pdfplumber devuelve `(cid:NN)` para glifos que no puede leer. | El reporte decía “palabras solo detectadas por el segundo motor: cid”. | Se filtra `(cid:NN)` antes de comparar. |
+| 12 | La `ficha` comparaba subcadenas. | La sección “Comisiones” se mostraba como “misión”. Además, la cabecera de una segunda tabla se contaba como un paso más. | Se compara al inicio de palabra y cada tabla reinicia su cabecera. |
+| 13 | Un área sin nombre coincidía con cualquier búsqueda parcial (`"" in texto`). | Daba un `AMBIGUO` espurio. | Las áreas sin nombre se ignoran en la búsqueda por parecido. Cuando se elige un área por parecido, se avisa con `AVISO: se interpretó como…`. |
+
+Otras mejoras:
+
+- Los archivos PDF y ZIP ahora se cierran siempre.
+- `construir` llama a las funciones directamente, sin lanzar subprocesos de sí mismo.
+- `gobierno` muestra `[NO ESPECIFICADO]` en lugar de celdas vacías.
+- El campo `proceso`, que antes siempre quedaba vacío, se llena cuando el original trae `Proceso:`.
+
+## Pruebas
+
+```bash
+python -m unittest discover -s tests -t .      # o: python -m pytest tests
+```
+
+Las pruebas de integración generan un corpus sintético. Necesitan `pymupdf`, `lxml`, `python-docx` y `reportlab`; si falta alguna de esas bibliotecas, se omiten.

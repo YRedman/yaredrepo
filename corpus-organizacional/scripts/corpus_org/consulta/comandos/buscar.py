@@ -1,0 +1,78 @@
+import collections
+import re
+
+from ...comun.errores import CorpusError
+from ...comun.esquema import area_de, tipo_desde_texto
+from ...comun.texto import norm, recortar_palabras as recortar
+from .base import Comando
+
+MAX_COINCIDENCIAS_POR_DOC = 4
+MAX_FILAS = 80
+
+
+def patron_termino(termino):
+    """Termino literal normalizado; '*' = cualquier final de palabra; los espacios toleran saltos."""
+    partes = [re.escape(p).replace(r"\*", r"\w*") for p in norm(termino).split()]
+    return re.compile(r"(?<!\w)" + r"\s+".join(partes) + r"(?!\w)")
+
+
+def fragmento(linea, pats, ancho=90):
+    texto = re.sub(r"\s+", " ", linea.strip().strip("|").replace("|", "·"))
+    nl = norm(texto)
+    pos = min((m.start() for p in pats for m in [p.search(nl)] if m), default=0)
+    ini = max(0, pos - ancho // 2)
+    return ("…" if ini > 0 else "") + texto[ini:ini + ancho] + ("…" if ini + ancho < len(texto) else "")
+
+
+class Buscar(Comando):
+    nombre = "buscar"
+    ayuda = "Busqueda literal (sin distinguir mayusculas ni acentos)."
+
+    def configurar(self, parser):
+        parser.add_argument("terminos", metavar="termino1|termino2")
+        parser.add_argument("--area", default=None)
+        parser.add_argument("--tipo", type=tipo_desde_texto, default=None)
+
+    def ejecutar(self, ctx, args):
+        cp, s = ctx.corpus, ctx.salida
+        terminos = [t.strip() for t in args.terminos.split("|") if t.strip()]
+        if not terminos:
+            raise CorpusError("Indica al menos un término.")
+        cods = sorted(cp.docs)
+        if args.area:
+            cod = ctx.area(args.area)
+            cods = [c for c in cods if area_de(c) == cod]
+        if args.tipo:
+            cods = [c for c in cods if c[0] == args.tipo]
+        pats = [patron_termino(t) for t in terminos]
+        resultados = collections.OrderedDict()
+        for c in cods:
+            for sec, l in cp.cuerpo(c):
+                nl = norm(l)
+                if any(p.search(nl) for p in pats):
+                    resultados.setdefault(c, []).append((sec, l))
+            titulo = cp.docs[c].titulo
+            if c not in resultados and any(p.search(norm(titulo)) for p in pats):
+                resultados[c] = [("(título)", titulo)]
+        s.linea(f"BÚSQUEDA · términos: {', '.join(terminos)}" + (f" · área: {args.area}" if args.area else "")
+                + (f" · tipo: {args.tipo}" if args.tipo else ""))
+        s.linea(f"Documentos revisados: {len(cods)} · con coincidencias: {len(resultados)} · "
+                f"coincidencias totales: {sum(len(v) for v in resultados.values())}")
+        if not resultados:
+            s.linea("Sin coincidencias literales. Prueba con sinónimos o variantes (separados con |).")
+            return
+        filas = []
+        for c, lista in resultados.items():
+            f = cp.meta.get(c, {})
+            for sec, l in lista[:MAX_COINCIDENCIAS_POR_DOC]:
+                filas.append([c, cp.nombre(c), f.get("departamento", ""), recortar(sec, 8), fragmento(l, pats)])
+            if len(lista) > MAX_COINCIDENCIAS_POR_DOC:
+                filas.append([c, "", "", "", f"… y {len(lista) - MAX_COINCIDENCIAS_POR_DOC} coincidencias más "
+                                             f"(ver doc {c})"])
+        s.linea()
+        s.linea("Todos los documentos con coincidencias: " + ", ".join(f"{c} ({len(v)})" for c, v in resultados.items()))
+        s.linea()
+        s.tabla(["Código", "Documento", "Área", "Sección", "Fragmento"], filas[:MAX_FILAS])
+        if len(filas) > MAX_FILAS:
+            s.linea(f"Se muestran {MAX_FILAS} de {len(filas)} filas. Para ver el resto, acota con --area o --tipo, "
+                    "o lee cada documento con doc <CÓDIGO>.")
