@@ -15,6 +15,7 @@ from ..comun.esquema import (AREA_SIN_ASIGNAR, ARCHIVO_AREAS_DOCUMENTOS, ARCHIVO
 from ..comun.texto import norm
 from .asignacion import asignar_archivos, grupos_a_convertir
 from .configuracion import EXT_RECONOCIDAS, EXT_TEXTO
+from .copilot import ARCHIVO_INSTRUCCIONES, MAX_ARCHIVOS, exportar_copilot
 from .entradas import buscar_entradas, entrada_por_defecto, localizar, partes_ruta
 from .huella import huella
 from .inventario import (RE_CODIGO_DEP, actualizar_plantilla_areas, candidatos_codigo, clave_documento,
@@ -360,11 +361,14 @@ def modo_construir(args):
     escribir_huellas(publicado)
     resumen_path = raiz_salida / ARCHIVO_RESUMEN
     escribir_resumen_construccion(resumen_path, validacion, publicados)
+    carpeta_copilot = exportar_copilot(raiz_salida, args.max_archivos_copilot)
     print("\nCONSTRUIR CORPUS · convertir.py v" + VERSION)
     print("Resultado: " + validacion.estado)
     print(f"Publicado: {publicado}")
     print(f"Control: {control}")
     print(f"Resumen: {resumen_path}")
+    print(f"Copilot: {carpeta_copilot} ({len(list(carpeta_copilot.iterdir()))} archivos de conocimiento; "
+          f"instrucciones en {raiz_salida / ARCHIVO_INSTRUCCIONES})")
     for x in validacion.problemas:
         print("ERROR: " + x)
     if validacion.revision_visual:
@@ -377,12 +381,24 @@ def modo_construir(args):
         sys.exit(validacion.codigo_salida)
 
 
+def modo_copilot(args):
+    """Regenera el paquete para Copilot desde una construccion existente (por ejemplo con otro limite)."""
+    raiz = Path(args.salida or "salida_corpus").resolve()
+    carpeta = exportar_copilot(raiz, args.max_archivos_copilot)
+    archivos = sorted(carpeta.iterdir())
+    print(f"COPILOT · convertir.py v{VERSION}")
+    print(f"Conocimiento ({len(archivos)} archivos) en {carpeta}:")
+    for p in archivos:
+        print(f"- {p.name} ({p.stat().st_size // 1024} KB)")
+    print(f"Instrucciones del agente: {raiz / ARCHIVO_INSTRUCCIONES}")
+
+
 # ---------------------------------------------------------------------------
 # Argumentos
 # ---------------------------------------------------------------------------
 
 MODOS = {"inventario": modo_inventario, "convertir": modo_convertir, "contexto": modo_contexto,
-         "construir": modo_construir}
+         "construir": modo_construir, "copilot": modo_copilot}
 
 
 def crear_parser():
@@ -410,6 +426,9 @@ def crear_parser():
                             help="Nombre del departamento, para convertir sin inventario (piloto).")
         if nombre == "contexto":
             sp.add_argument("--excluir", nargs="*", default=[])
+        if nombre in ("construir", "copilot"):
+            sp.add_argument("--max-archivos-copilot", type=int, default=MAX_ARCHIVOS,
+                            help="Máximo de archivos del paquete para el conocimiento de Copilot.")
         if nombre == "construir":
             sp.add_argument("--contexto", default=None,
                             help="Carpeta separada con organigrama, glosario y otros materiales de contexto.")

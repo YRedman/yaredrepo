@@ -156,6 +156,18 @@ Código: `cli._lista_desde_carpeta`, `inventario.parsear_lista`, `inventario.lee
 
 Resultado en el piloto (10 descriptivos reales, dos variantes de plantilla): cobertura 100 % en todos; nombre, reporta a, propósito, versión y vigencia en los 9 digitales. El escaneado (OCR) no trae “Reporta a” ni funciones legibles: conviene usar la versión digital.
 
+## Paquete para Copilot
+
+Copilot no ejecuta `corpus.py` y acepta pocos archivos de conocimiento. Al terminar, `construir` escribe:
+
+- `salida_corpus/copilot/`: como máximo 20 archivos (`--max-archivos-copilot N`):
+  - `00_indice_corpus.md`: una fila por documento con área, puesto, reporta a, supervisa a, versión, vigencia, el archivo donde está y una nota («SIN TEXTO (escaneado)», «pendiente de revisión»);
+  - `01_contexto.md` y `02_indicadores.md`;
+  - los documentos agrupados por área en archivos de tamaño parecido.
+- `salida_corpus/instrucciones_copilot.md`: el texto para el campo de instrucciones del agente. No se sube como conocimiento.
+
+`python scripts/convertir.py copilot --salida salida_corpus --max-archivos-copilot 15` regenera el paquete con otro límite sin volver a convertir. Código: `conversion/copilot.py`.
+
 ## Pruebas
 
 ```bash
