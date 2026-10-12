@@ -11,7 +11,7 @@ from typing import Dict, List
 
 from .. import VERSION
 from ..comun.archivos import escribir_csv, leer_csv, leer_texto
-from ..comun.esquema import (ARCHIVO_AREAS_EXTRA, ARCHIVO_CATALOGO, ARCHIVO_HUELLAS, ARCHIVO_INDICE,
+from ..comun.esquema import (AREA_SIN_ASIGNAR, ARCHIVO_AREAS_DOCUMENTOS, ARCHIVO_AREAS_EXTRA, ARCHIVO_CATALOGO, ARCHIVO_HUELLAS, ARCHIVO_INDICE,
                              ARCHIVO_INVENTARIO, ARCHIVO_KPIS, ARCHIVO_REVISADOS, ARCHIVO_REVISION, COLUMNAS_INDICE,
                              PATRON_CODIGO, PREFIJO_DIC, PREFIJO_REPORTE, estado_no_publicable, inventario_activo)
 from ..comun.markdown import esc_celda
@@ -163,6 +163,11 @@ def validar_publicacion(publicado, duplicados=(), revisados=frozenset(), muestra
     sobran = sorted(c for c in cod_indice - cod_inv if not c.startswith("C-"))
     if faltan:
         v.problemas.append("Documentos inventariados sin convertir: " + ", ".join(faltan))
+    sin_area = sorted((f.get("codigo") or "") for f in inventario if (f.get("departamento") or "") == AREA_SIN_ASIGNAR)
+    if sin_area:
+        v.problemas.append(f"Documentos sin área ({len(sin_area)}; códigos provisionales): escriba su área en "
+                           f"{ARCHIVO_AREAS_DOCUMENTOS} y vuelva a construir. " + ", ".join(sin_area[:20])
+                           + (" …" if len(sin_area) > 20 else ""))
     if sobran:
         v.avisos.append("Documentos fuera del inventario: " + ", ".join(sobran))
     cod_md = set()

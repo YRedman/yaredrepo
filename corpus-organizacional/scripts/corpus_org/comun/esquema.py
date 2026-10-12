@@ -45,6 +45,9 @@ ARCHIVO_KPIS = "kpis.csv"
 ARCHIVO_AREAS_EXTRA = "areas_extra.csv"
 ARCHIVO_REVISADOS = "revision_visual_ok.txt"
 ARCHIVO_REVISION = "revision_visual.csv"
+# Area de cada documento que no esta en una carpeta de area (entrada\Descriptivos\archivo.pdf).
+ARCHIVO_AREAS_DOCUMENTOS = "areas.csv"
+AREA_SIN_ASIGNAR = "Sin Área"
 PREFIJO_DIC = "DIC_"
 PREFIJO_REPORTE = "REPORTE_"
 COLUMNAS_INVENTARIO = ["codigo", "tipo", "codigo_departamento", "departamento", "archivo", "ruta_original",

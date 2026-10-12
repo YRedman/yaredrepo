@@ -8,9 +8,9 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List
 
-from ..comun.archivos import leer_csv, leer_texto
+from ..comun.archivos import escribir_csv, leer_csv, leer_texto
 from ..comun.errores import CorpusError
-from ..comun.esquema import INVENTARIO_ACTIVO, INVENTARIO_RETIRADO, TIPOS
+from ..comun.esquema import AREA_SIN_ASIGNAR, INVENTARIO_ACTIVO, INVENTARIO_RETIRADO, TIPOS
 from ..comun.texto import nfc, norm, sin_acentos
 from .configuracion import EXT_RECONOCIDAS, PALABRAS_VACIAS_DEP, PREFERENCIA_EXT
 from .entradas import es_archivo_ignorado, partes_ruta
@@ -65,8 +65,14 @@ def candidatos_codigo(nombre):
     return vistos
 
 
-def parsear_lista(path):
-    """Rutas Tipo/Departamento/Archivo de lista.txt -> (filas validas, [(ruta, motivo) ignoradas])."""
+def parsear_lista(path, areas=None):
+    """Rutas de lista.txt -> (filas validas, [(ruta, motivo) ignoradas]).
+
+    La ruta normal es Tipo/Departamento/Archivo. Tambien se acepta Tipo/Archivo (sin carpeta de area):
+    el area se toma de ``areas`` ({clave_documento: area}, el archivo areas.csv) y, si no esta, el
+    documento queda en AREA_SIN_ASIGNAR con la marca ``sin_area``.
+    """
+    areas = areas or {}
     filas, ignoradas = [], []
     for linea in leer_texto(path).splitlines():
         l = linea.strip().strip('"').strip("'").strip()
@@ -80,8 +86,14 @@ def parsear_lista(path):
         if os.path.splitext(nombre)[1].lower() not in EXT_RECONOCIDAS:
             ignoradas.append((l, "no es PDF ni Word"))
             continue
+        if len(partes) >= 2 and not (len(partes) >= 3 and tipo_de_carpeta(partes[-3])) \
+                and tipo_de_carpeta(partes[-2]):
+            area = areas.get(clave_documento(nombre), "")
+            filas.append({"tipo": tipo_de_carpeta(partes[-2]), "departamento": area or AREA_SIN_ASIGNAR,
+                          "archivo": nfc(nombre).strip(), "ruta": l, "sin_area": not area})
+            continue
         if len(partes) < 3:
-            ignoradas.append((l, "la ruta no incluye Tipo/Departamento/Archivo"))
+            ignoradas.append((l, "la ruta no incluye Tipo/Departamento/Archivo ni Tipo/Archivo"))
             continue
         tipo = tipo_de_carpeta(partes[-3])
         if not tipo:
@@ -126,6 +138,33 @@ def quitar_duplicados(filas, incluir=False):
         avisos.append(f"Duplicado en {TIPOS[tipo]}/{lista_f[0]['departamento']}: se usa «{lista_f[0]['archivo']}» "
                       f"y se descarta {', '.join('«' + f['archivo'] + '»' for f in lista_f[1:])}")
     return salida, avisos
+
+
+def leer_areas(path):
+    """areas.csv (columnas archivo;area) -> {clave_documento: area}. Las filas sin area se ignoran."""
+    areas = {}
+    for r in leer_csv(path):
+        archivo = (r.get("archivo") or "").strip()
+        area = (r.get("area") or r.get("área") or "").strip()
+        if archivo and area:
+            areas[clave_documento(archivo)] = nfc(area)
+    return areas
+
+
+def actualizar_plantilla_areas(path, filas):
+    """Agrega a areas.csv los archivos sin carpeta de area que todavia no estan, con el area vacia.
+
+    Conserva las areas ya escritas. Devuelve cuantos archivos se agregaron.
+    """
+    existentes = leer_csv(path) if path.is_file() else []
+    claves = {clave_documento(r.get("archivo") or "") for r in existentes}
+    nuevas = [{"archivo": f["archivo"], "area": ""} for f in filas
+              if f.get("sin_area") and clave_documento(f["archivo"]) not in claves]
+    if nuevas or not path.is_file():
+        filas_csv = [{"archivo": r.get("archivo", ""), "area": r.get("area") or r.get("área") or ""}
+                     for r in existentes] + nuevas
+        escribir_csv(path, ["archivo", "area"], sorted(filas_csv, key=lambda r: norm(r["archivo"])))
+    return len(nuevas)
 
 
 def leer_catalogo_codigos(path):
@@ -180,6 +219,8 @@ def leer_base(path):
         t = _tipo_inventario(f)
         dep = (f.get("departamento") or "").strip()
         cod_dep = (f.get("codigo_departamento") or "").strip().upper()
+        if norm(dep) == norm(AREA_SIN_ASIGNAR):
+            continue   # codigos provisionales: cambian cuando se asigna el area
         if dep and cod_dep:
             base.departamentos.setdefault(norm(dep), cod_dep)
         try:

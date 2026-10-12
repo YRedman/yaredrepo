@@ -143,6 +143,14 @@ Ajustes hechos al probar el lector con descriptivos reales (procesados fuera del
 | 31 | Columnas corridas en tablas con celdas combinadas | Se unen columnas adyacentes cuando una no tiene cabecera y ninguna fila tiene texto en ambas | `pdf._unir_columnas_corridas` |
 | 32 | Nombre del puesto, “Reporta a” y funciones sin detectar | Título numerado “1. Puesto.”; tabla “Áreas de Relacionamiento” (Subordinación directa → `reporta_a`, Reporte directo → `supervisa_a`); un título o tabla con nombre de campo abre su sección; el propósito usa solo párrafos | `analisis._nombre_por_titulo`, `analisis._campos_por_relacionamiento`, `analisis._separar_secciones`, `configuracion.py` |
 
+**Entrada sin carpetas de área y sin `lista.txt`**
+
+- Si `entrada` no tiene `lista.txt`, `construir` la arma con los documentos que están en una carpeta `Descriptivos` o `Procedimientos` (directamente o en una subcarpeta de área) y la guarda en `control/lista.txt`. Se regenera en cada construcción, así que los archivos nuevos entran solos.
+- Se aceptan dos estructuras: `Descriptivos\<Área>\archivo.pdf` (el área es la carpeta) y `Descriptivos\archivo.pdf`. En la segunda, el área se toma de `entrada\areas.csv` (columnas `archivo;area`). El script crea ese archivo con todos los documentos y la columna `area` vacía, y agrega los nuevos en cada construcción sin tocar lo ya escrito.
+- Un documento sin área queda en «Sin Área» con un código provisional (`D-SAR-NN`) y la construcción termina en REQUIERE REVISIÓN. Los códigos provisionales no se conservan: al escribir el área, el documento recibe su código definitivo sin dejar filas `RETIRADO`.
+
+Código: `cli._lista_desde_carpeta`, `inventario.parsear_lista`, `inventario.leer_areas`, `inventario.actualizar_plantilla_areas`, `inventario.leer_base` y `publicacion.validar_publicacion`.
+
 Resultado en el piloto (10 descriptivos reales, dos variantes de plantilla): cobertura 100 % en todos; nombre, reporta a, propósito, versión y vigencia en los 9 digitales. El escaneado (OCR) no trae “Reporta a” ni funciones legibles: conviene usar la versión digital.
 
 ## Pruebas

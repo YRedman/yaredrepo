@@ -9,16 +9,17 @@ from pathlib import Path
 from .. import VERSION
 from ..comun.archivos import escribir_csv, leer_csv
 from ..comun.errores import CorpusError
-from ..comun.esquema import (ARCHIVO_AREAS_EXTRA, ARCHIVO_CATALOGO, ARCHIVO_INVENTARIO, ARCHIVO_KPIS,
+from ..comun.esquema import (AREA_SIN_ASIGNAR, ARCHIVO_AREAS_DOCUMENTOS, ARCHIVO_AREAS_EXTRA, ARCHIVO_CATALOGO, ARCHIVO_INVENTARIO, ARCHIVO_KPIS,
                              ARCHIVO_RESUMEN, COLUMNAS_CATALOGO, COLUMNAS_INVENTARIO, inventario_activo,
                              tipo_desde_texto)
 from ..comun.texto import norm
 from .asignacion import asignar_archivos, grupos_a_convertir
 from .configuracion import EXT_RECONOCIDAS, EXT_TEXTO
-from .entradas import buscar_entradas, entrada_por_defecto, localizar
+from .entradas import buscar_entradas, entrada_por_defecto, localizar, partes_ruta
 from .huella import huella
-from .inventario import (RE_CODIGO_DEP, candidatos_codigo, construir_inventario, inventario_provisional,
-                         leer_base, leer_catalogo_codigos, parsear_lista)
+from .inventario import (RE_CODIGO_DEP, actualizar_plantilla_areas, candidatos_codigo, construir_inventario,
+                         inventario_provisional, leer_areas, leer_base, leer_catalogo_codigos, parsear_lista,
+                         tipo_de_carpeta)
 from .lote import Grupo, OpcionesConversion, procesar_grupo
 from .publicacion import (MUESTRA_REVISION, escribir_huellas, escribir_resumen_construccion, leer_revisados,
                           limpiar_generados, publicar_corpus, validar_publicacion)
@@ -51,9 +52,19 @@ def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None, incl
     lista = localizar(nombre_lista, entrada)
     if not lista:
         raise CorpusError(f"No encontré la lista de archivos '{nombre_lista}'. Adjúntala al chat.")
-    filas, ignoradas = parsear_lista(lista)
+    ruta_areas = localizar(ARCHIVO_AREAS_DOCUMENTOS, entrada) or Path(entrada) / ARCHIVO_AREAS_DOCUMENTOS
+    filas, ignoradas = parsear_lista(lista, leer_areas(ruta_areas) if Path(ruta_areas).is_file() else None)
     if not filas:
-        raise CorpusError("La lista no contiene rutas válidas con la estructura Tipo\\Departamento\\Archivo.")
+        raise CorpusError("La lista no contiene rutas válidas. Use carpetas Descriptivos\\<Área>\\archivo.pdf "
+                          "o Descriptivos\\archivo.pdf con el área en areas.csv.")
+    if any("sin_area" in f for f in filas):
+        agregados = actualizar_plantilla_areas(Path(ruta_areas), filas)
+        sin_area = sum(1 for f in filas if f.get("sin_area"))
+        if agregados:
+            print(f"Se agregaron {agregados} archivos a {ruta_areas}: escriba el área de cada uno en la columna 'area'.")
+        if sin_area:
+            print(f"AVISO: {sin_area} documentos sin área quedan en «{AREA_SIN_ASIGNAR}» con códigos provisionales "
+                  f"(complete {ruta_areas}).")
     fijados = {}
     if nombre_catalogo:
         cat = localizar(nombre_catalogo, entrada)
@@ -238,11 +249,33 @@ def modo_contexto(args):
 # construir
 # ---------------------------------------------------------------------------
 
-def _inventario_para_construir(args, entrada, control):
-    """Con lista.txt el inventario se regenera conservando los codigos del anterior (si existe);
-    sin lista.txt se usa el inventario adjunto tal cual."""
+def _lista_desde_carpeta(entrada, raiz_salida, control):
+    """Escribe control/lista.txt con los documentos de ``entrada`` que estan en una carpeta Descriptivos o
+    Procedimientos (directamente o en una subcarpeta de area). Devuelve su ruta o None si no hay ninguno."""
+    rutas = []
+    for p in sorted(buscar_entradas(entrada, raiz_salida)):
+        partes = partes_ruta(p.relative_to(entrada))
+        if any(tipo_de_carpeta(x) for x in partes[-3:-1]):
+            rutas.append(str(p))
+    if not rutas:
+        return None
+    lista = control / "lista.txt"
+    lista.write_text("\n".join(rutas) + "\n", encoding="utf-8")
+    print(f"lista.txt generada con {len(rutas)} documentos de {entrada}")
+    return lista
+
+
+def _inventario_para_construir(args, entrada, control, raiz_salida):
+    """Con lista.txt el inventario se regenera conservando los codigos del anterior (si existe).
+    Sin lista.txt, la lista se arma con las carpetas Descriptivos/Procedimientos de la entrada; si no
+    las hay, se usa el inventario adjunto tal cual."""
     base_control = control / ARCHIVO_INVENTARIO
     previo = localizar(args.inventario, entrada) or (base_control if base_control.is_file() else None)
+    encontrada = localizar(args.lista, entrada)
+    if not encontrada or Path(encontrada).resolve().parent == control.resolve():
+        generada = _lista_desde_carpeta(entrada, raiz_salida, control)
+        if generada:
+            args.lista = str(generada)
     if localizar(args.lista, entrada):
         base = None
         if previo:
@@ -259,7 +292,8 @@ def _inventario_para_construir(args, entrada, control):
         if cat:
             shutil.copy2(cat, control / ARCHIVO_CATALOGO)
     else:
-        raise CorpusError("Para construir se necesita lista.txt o inventario_maestro.csv.")
+        raise CorpusError("No hay documentos en carpetas Descriptivos o Procedimientos dentro de la entrada "
+                          "(ni lista.txt o inventario_maestro.csv).")
 
 
 def unir_csv(rutas, destino):
@@ -304,7 +338,7 @@ def modo_construir(args):
     limpiar_generados(control)
 
     # 1) Inventario (codigos estables si ya habia uno).
-    _inventario_para_construir(args, entrada, control)
+    _inventario_para_construir(args, entrada, control, raiz_salida)
 
     # 2) Conversion de descriptivos y procedimientos.
     comunes = dict(salida=str(control), sin_verificacion_cruzada=args.sin_verificacion_cruzada,

@@ -50,6 +50,9 @@ python scripts/convertir.py construir --entrada <carpeta_documentos> --contexto 
 python scripts/corpus.py verificar
 ```
 
+- Los documentos van en `Descriptivos\<Área>\archivo` o `Procedimientos\<Área>\archivo`. Si están directamente en `Descriptivos\` (sin carpeta de área), el área se escribe en `entrada\areas.csv` (`archivo;area`); el script crea ese archivo con la columna `area` vacía. `lista.txt` es opcional: sin ella, la lista se arma con la carpeta de entrada.
+- Los documentos sin área quedan como «Sin Área» con códigos provisionales `D-SAR-NN` y la construcción termina en REQUIERE REVISIÓN. No cites esos códigos como definitivos.
+
 - **REQUIERE REVISIÓN** (código 2): faltan documentos, hay texto del original que no aparece (cobertura < 100 %), palabras que no están en el original, códigos duplicados o errores del contexto.
 - **PENDIENTE DE REVISIÓN VISUAL** (código 3): documentos con avisos de estructura (tabla leída como texto, filas partidas, posible diagrama, números incompletos, OCR…) y una muestra del 10 % de los demás. Una persona compara cada uno con su original y anota su código en `revision_visual_ok.txt` (uno por línea); luego se vuelve a construir. `--muestra-revision 0` desactiva la muestra.
 - **LISTO PARA PUBLICAR** (código 0).
