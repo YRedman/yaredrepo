@@ -21,7 +21,7 @@ INICIO_TITULO_ENCABEZADO_PIE = "Datos de encabezado y pie"
 TITULO_ENCABEZADO_PIE = INICIO_TITULO_ENCABEZADO_PIE + " del documento original"
 MARCA_COMBINADA = " [CELDA COMBINADA]"
 NO_ESPECIFICADO = "[NO ESPECIFICADO]"
-RE_MARCAS = re.compile(r"\[(?:NO ESPECIFICADO|DIAGRAMA[^\]]*|IMAGEN[^\]]*|CELDA COMBINADA|NOTA AL PIE[^\]]*|"
+RE_MARCAS = re.compile(r"\[(?:NO ESPECIFICADO|DIAGRAMA[^\]]*|ORGANIGRAMA[^\]]*|IMAGEN[^\]]*|CELDA COMBINADA|NOTA AL PIE[^\]]*|"
                        r"CUADRO DE TEXTO|TEXTO OCR[^\]]*|PÁGINA ESCANEADA[^\]]*|ILEGIBLE|[DPC]-[A-Z]{3}-\d{2,3})\]")
 
 # Columnas del indice (DIC_*.csv parciales e indice_corpus.csv consolidado).

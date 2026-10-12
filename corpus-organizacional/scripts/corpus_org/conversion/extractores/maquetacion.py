@@ -7,7 +7,7 @@ bloques del modelo intermedio. No depende de PyMuPDF.
 import collections
 import re
 
-from ...comun.texto import unir
+from ...comun.texto import norm, unir
 from ..modelo import bloque_h
 from ..secciones import (buscar_alias, clave_titulo, es_excluida, es_seccion_conocida, es_titulo_corto,
                          profundidad_numeracion)
@@ -19,6 +19,9 @@ RE_VINETA_INICIAL = re.compile(r"^([•●○◦▪■□►➢➤✓✔◆◇�
 RE_MARCADOR_NUM = re.compile(r"^(?:\d{1,3}(?:\.\d{1,3})*[\.\)]?|[a-zA-Z][\.\)]|[ivxlcdmIVXLCDM]{1,6}[\.\)])$")
 RE_NUM_INICIO = re.compile(r"^\s*((?:\d{1,3}(?:\.\d{1,3})*\.?)|(?:[IVXLC]{1,6}\.)|(?:[a-z]\)))\s+(\S.*)$")
 RE_ROMANO = re.compile(r"^[IVXLC]{1,6}\.\s")
+# Un renglon que termina en articulo, preposicion o conjuncion esta a mitad de frase: no es un titulo.
+PALABRAS_DE_ENLACE = {"de", "del", "la", "las", "el", "los", "y", "e", "o", "u", "a", "al", "en", "para", "por",
+                      "con", "sin", "que", "su", "sus", "un", "una", "como", "sobre", "entre"}
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +180,10 @@ def nivel_titulo(f, tam_cuerpo, tam_titulos):
         return profundidad if (profundidad and profundidad > 1) else 1
     if not corto or texto.endswith((",", ";")):
         return 0
+    if norm(texto.split()[-1]) in PALABRAS_DE_ENLACE:
+        return 0
+    if texto[0].islower() and not f.get("marcador"):
+        return 0   # empieza en minuscula: continua la frase del renglon anterior
     if f.get("ocr"):
         if profundidad and profundidad > 1 and len(texto.split()) <= 8 and not texto.endswith("."):
             return min(profundidad, 3)
@@ -226,6 +233,11 @@ def bloques_desde_items(items):
     def cerrar():
         nonlocal actual
         if actual is not None:
+            if actual["k"] == "h" and not es_titulo_corto(actual["texto"]):
+                # renglones en negrita o mas grandes que se unieron como "titulo partido" pero forman
+                # un parrafo (p. ej. el objetivo del puesto destacado): un titulo no es tan largo
+                actual = {"k": "p", "texto": actual["texto"], "ocr": actual.get("ocr", False),
+                          "pagina": actual.get("pagina")}
             bloques.append(actual)
             actual = None
 
@@ -300,7 +312,7 @@ def _continua(actual, previo, it, borde_der):
                     actual["x_vineta"] + 4 < it["x0"] <= actual["x_texto"] + 30)
     else:
         alineado = abs(it["x0"] - previo["x0"]) <= 4 or it["x0"] < previo["x0"]
-    return (((mismo_pag and 0 <= hueco < 0.6 * alto) or not mismo_pag) and alineado and not fin_parrafo
+    return (((mismo_pag and -0.5 * alto <= hueco < 0.6 * alto) or not mismo_pag) and alineado and not fin_parrafo
             and abs(it["tam"] - previo["tam"]) < 1.0)
 
 

@@ -6,7 +6,7 @@ description: >-
 
 # Corpus organizacional
 
-> Compatible con `convertir.py` v3.3 y `corpus.py` v3.3.
+> Compatible con `convertir.py` v3.4 y `corpus.py` v3.4.
 
 Este skill consulta exclusivamente el corpus publicado. Los documentos son la fuente de verdad; el índice sirve para localizar, contar y filtrar, pero los datos sustantivos se confirman en el Markdown original.
 

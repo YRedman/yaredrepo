@@ -130,12 +130,27 @@ Otras mejoras:
 - `gobierno` muestra `[NO ESPECIFICADO]` en lugar de celdas vacías.
 - El campo `proceso`, que antes siempre quedaba vacío, se llena cuando el original trae `Proceso:`.
 
+## v3.4: plantillas reales de descriptivo de puesto (PDF)
+
+Ajustes hechos al probar el lector con descriptivos reales (procesados fuera del repositorio; las pruebas usan un PDF ficticio con la misma maquetación, `tests/fixtures_plantilla.py`).
+
+| # | Problema | Corrección | Dónde |
+|---|---|---|---|
+| 27 | La tabla de funciones salía con una fila por renglón de texto | Las filas se agrupan entre los bordes horizontales reales de la tabla (los que cubren ≥ 90 % de su ancho) | `pdf.bordes_horizontales_completos`, `pdf._filas_por_bordes` |
+| 28 | El organigrama y el párrafo vecino entraban a la tabla | La tabla se recorta a sus bordes reales; las cajas dibujadas con texto se leen como `[ORGANIGRAMA: …]` seguido de “Jefe → Puesto”, una sola vez aunque también se detecten como tabla de una columna | `pdf._cajas_con_texto`, `pdf._es_organigrama`, `_ExtraccionPDF._organigrama` |
+| 29 | Valores del encabezado (fecha, “1 de 3”) en el cuerpo y vigencia perdida | Los valores que están debajo de su etiqueta en la celda del encabezado son parte del encabezado; los lados de un recuadro con contorno cuentan como bordes; nueva etiqueta “Vigente a partir de” | `_ExtraccionPDF._fondo_encabezado`, `pdf._bordes_horizontales`, `metadatos.py` |
+| 30 | El objetivo del puesto (letra más grande) salía partido como título | Un renglón que termina en artículo o preposición, o que empieza en minúscula, no es título; un “título” largo se convierte en párrafo; renglones con cajas de texto superpuestas continúan el párrafo | `maquetacion.nivel_titulo`, `maquetacion._continua` |
+| 31 | Columnas corridas en tablas con celdas combinadas | Se unen columnas adyacentes cuando una no tiene cabecera y ninguna fila tiene texto en ambas | `pdf._unir_columnas_corridas` |
+| 32 | Nombre del puesto, “Reporta a” y funciones sin detectar | Título numerado “1. Puesto.”; tabla “Áreas de Relacionamiento” (Subordinación directa → `reporta_a`, Reporte directo → `supervisa_a`); un título o tabla con nombre de campo abre su sección; el propósito usa solo párrafos | `analisis._nombre_por_titulo`, `analisis._campos_por_relacionamiento`, `analisis._separar_secciones`, `configuracion.py` |
+
+Resultado en el piloto (10 descriptivos reales, dos variantes de plantilla): cobertura 100 % en todos; nombre, reporta a, propósito, versión y vigencia en los 9 digitales. El escaneado (OCR) no trae “Reporta a” ni funciones legibles: conviene usar la versión digital.
+
 ## Pruebas
 
 ```bash
 python -m unittest discover -s tests -t .      # o: python -m pytest tests
 ```
 
-Las pruebas de integración generan corpus sintéticos (`tests/fixtures_corpus.py`, `tests/fixtures_casos.py`). Necesitan `pymupdf`, `lxml`, `python-docx` y `reportlab`, y las de PDF además LibreOffice (`soffice`); si falta alguno, esas pruebas se omiten.
+Las pruebas de integración generan corpus sintéticos (`tests/fixtures_corpus.py`, `tests/fixtures_casos.py`, `tests/fixtures_plantilla.py`). Necesitan `pymupdf`, `lxml`, `python-docx` y `reportlab`, y las de PDF además LibreOffice (`soffice`); si falta alguno, esas pruebas se omiten.
 
 Los datos del cliente (documentos, materiales de contexto y corpus generado) no se versionan: `.gitignore` excluye `contexto/`, `entrada/`, `salida_corpus/` y `publicado/`.
