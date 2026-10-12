@@ -3,7 +3,7 @@
 import difflib
 from abc import ABC, abstractmethod
 
-from ...comun.errores import CorpusError
+from ...comun.errores import AreaNoEncontrada, CorpusError
 from ...comun.esquema import RE_CODIGO, area_de
 from ..areas import ResolutorAreas
 
@@ -18,7 +18,11 @@ class Contexto:
 
     def area(self, texto):
         """Codigo del area; avisa si se eligio por parecido para que no pase inadvertido."""
-        cod, interpretado = self._resolutor.resolver(texto)
+        try:
+            cod, interpretado = self._resolutor.resolver(texto)
+        except AreaNoEncontrada as e:
+            e.sin_documentos = [x.nombre for x in self.corpus.extra]
+            raise
         if interpretado:
             self.salida.linea(f"AVISO: '{texto}' se interpretó como el área {self.corpus.areas[cod].nombre} ({cod}).")
         return cod

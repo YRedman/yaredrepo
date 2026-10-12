@@ -6,7 +6,7 @@ import re
 import zipfile
 
 from ...comun.esquema import MARCA_COMBINADA
-from ...comun.texto import norm, tokens
+from ...comun.texto import norm, numeros, tokens
 from ..modelo import DocumentoExtraido, bloque_h
 from ..secciones import clave_titulo, es_seccion_conocida, es_titulo_corto, profundidad_numeracion
 from .base import Extractor
@@ -364,11 +364,13 @@ class _ConversionDocx:
 
     def _bloque_texto(self, texto, nombre, numpr, outline, bold):
         nivel = _nivel_estilo(nombre, outline)
+        # El numero automatico de Word no esta en el texto del parrafo: se calcula con la numeracion
+        # del documento (tambien para los titulos, para que "2. Alcance" no quede como "Alcance").
+        marcador = self.ctx.marcador_lista(numpr[0], numpr[1]) if numpr is not None else None
         if nivel:
-            return bloque_h(min(nivel, 3), texto)
+            return bloque_h(min(nivel, 3), (marcador + " " + texto) if marcador and marcador != "-" else texto)
         clave = clave_titulo(texto)
         corto = es_titulo_corto(texto)
-        marcador = self.ctx.marcador_lista(numpr[0], numpr[1]) if numpr is not None else None
         if es_seccion_conocida(clave) and corto and len(clave.split()) <= 6 and (
                 bold or numpr is not None or len(texto.split()) <= 5):
             t = (marcador + " " + texto) if marcador and marcador != "-" else texto
@@ -410,9 +412,11 @@ class ExtractorDocx(Extractor):
             d.bloques = conv.bloques
             d.encabezado = self._encabezados_y_pies(z, ctx, d)
             # texto crudo independiente (regex sobre el XML)
-            d.crudo = collections.Counter(tokens(_crudo_docx_xml(z.read("word/document.xml"))))
+            crudo = _crudo_docx_xml(z.read("word/document.xml"))
             if "word/footnotes.xml" in z.namelist():
-                d.crudo.update(tokens(_crudo_docx_xml(z.read("word/footnotes.xml"))))
+                crudo += " " + _crudo_docx_xml(z.read("word/footnotes.xml"))
+            d.crudo = collections.Counter(tokens(crudo))
+            d.numeros = numeros(crudo)
             d.paginas = self._paginas(ctx)
         return d
 

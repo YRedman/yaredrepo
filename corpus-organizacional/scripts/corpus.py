@@ -7,6 +7,7 @@ Uso: python scripts/corpus.py <comando> [argumentos]
 
   catalogo                         Areas, codigos y numero de documentos.
   area "<area>"                    Indice completo de un area: todos sus codigos con sus datos clave.
+  briefing "<area>" [--parte N]    Tablas del briefing ya calculadas, 15 documentos por parte.
   ficha "<area o codigo>" [--tipo P|D]
                                    Campos clave literales de cada documento (para briefings).
   doc <CODIGO> [--seccion "<texto>"]
@@ -14,11 +15,14 @@ Uso: python scripts/corpus.py <comando> [argumentos]
   buscar "<termino1|termino2>" [--area "<area>"] [--tipo P|D]
                                    Busqueda literal (sin distinguir mayusculas ni acentos).
   relaciones "<area A>" ["<area B>"]
-                                   Menciones explicitas entre areas, con codigo y cita.
-  participacion "<area o codigo>"  Puestos que aparecen en los procedimientos y con que rol.
+                                   Menciones explicitas entre areas, con codigo y cita, y menciones no resueltas.
+  participacion "<area o codigo>" [--detalle N|todo]
+                                   Resumen por puesto (completo) y detalle de su rol en los procedimientos.
   gobierno [--area "<area>"]       Versiones, vigencia, propietario y responsable.
   procesos [--area "<area>"]       Macroproceso, proceso, procedimiento y actividades.
-  verificar                        Revisa que el corpus publicado este completo y sea coherente.
+  kpis [--gestion "<texto>"] [--sin-medicion] [--relacionar] [--area "<area>"]
+                                   Indicadores y documentos que mencionan sus terminos.
+  verificar                        Integridad (huellas), inventario, cobertura y corpus completo.
 
 Solo usa la biblioteca estandar de Python. No modifica ningun archivo.
 La logica vive en el paquete ``corpus_org`` (junto a este archivo).

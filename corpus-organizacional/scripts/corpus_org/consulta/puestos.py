@@ -12,7 +12,9 @@ from ..comun.texto import norm
 PATRON_PUESTO = re.compile(
     r"\b((?:Gerente|Jefe|Jefa|Director|Directora|Coordinador|Coordinadora|Supervisor|Supervisora|Analista|"
     r"Encargado|Encargada|Auxiliar|Asistente|Técnico|Técnica|Especialista|Inspector|Inspectora|Responsable|"
-    r"Comprador|Compradora|Recepcionista|Oficial|Ejecutivo|Ejecutiva|Representante|Operador|Operadora)"
+    r"Comprador|Compradora|Recepcionista|Oficial|Ejecutivo|Ejecutiva|Representante|Operador|Operadora|"
+    r"Operario|Operaria|Comité|Enfermero|Enfermera|Médico|Médica|Contador|Contadora|Abogado|Abogada|"
+    r"Vendedor|Vendedora|Promotor|Promotora|Visitador|Visitadora|Chofer|Mensajero|Mensajera)"
     r"(?:\s+(?:de|del|la|las|los|el|y|en)?\s*[A-ZÁÉÍÓÚÑ][\wáéíóúñü]+){0,4})")
 UMBRAL_PROBABLE = 0.85
 MARGEN_EMPATE = 0.02

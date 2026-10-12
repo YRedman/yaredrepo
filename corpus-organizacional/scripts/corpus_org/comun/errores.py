@@ -22,7 +22,8 @@ class AreaAmbigua(CorpusError):
 
 
 class AreaNoEncontrada(CorpusError):
-    def __init__(self, texto, disponibles):
+    def __init__(self, texto, disponibles, sin_documentos=()):
         super().__init__(f"no hay un área llamada '{texto}'.", 2)
         self.texto = texto
         self.disponibles = disponibles  # [(codigo, nombre)]
+        self.sin_documentos = list(sin_documentos)  # areas o entidades conocidas sin documentos propios

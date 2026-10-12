@@ -4,7 +4,7 @@ import collections
 import re
 
 from ..comun.esquema import RE_MARCAS
-from ..comun.texto import tokens
+from ..comun.texto import numeros, tokens
 from .analisis import texto_bloque
 from .modelo import Verificacion
 
@@ -51,5 +51,6 @@ def verificar(doc, bloques, analisis, cuerpo_md):
     if doc.texto_cruzado is not None:
         base = set(doc.crudo) | doc.crudo_encabezado | set(analisis.excluidos)
         cruz = sorted(t for t in doc.texto_cruzado - base if len(t) > 2 and not t.isdigit())
+    numeros_faltan = +((doc.numeros - analisis.excluidos_numeros) - numeros(texto))
     return Verificacion(total=total, faltan=faltan, cobertura=cobertura, agregadas=agregadas, cruz=cruz,
-                        origen=origen, ejemplos=ejemplos)
+                        origen=origen, ejemplos=ejemplos, numeros_faltan=numeros_faltan)

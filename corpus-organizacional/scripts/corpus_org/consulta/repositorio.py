@@ -4,27 +4,35 @@ import collections
 
 from ..comun.archivos import leer_csv
 from ..comun.errores import CorpusError
-from ..comun.esquema import (ARCHIVO_INDICE, ARCHIVO_INVENTARIO, ARCHIVO_RESUMEN, COLUMNAS_INDICE,
-                             PREFIJO_DIC, PREFIJO_REPORTE, RE_TITULO_DOC, area_de, estado_no_publicable)
+from ..comun.esquema import (ARCHIVO_AREAS_EXTRA, ARCHIVO_INDICE, ARCHIVO_INVENTARIO, ARCHIVO_KPIS, ARCHIVO_RESUMEN,
+                             COLUMNAS_INDICE, PREFIJO_DIC, PREFIJO_REPORTE, RE_TITULO_DOC, area_de,
+                             INVENTARIO_RETIRADO, estado_no_publicable, inventario_activo, tipo_desde_texto)
 from . import parser
 from .areas import construir_alias
+from .entidades import leer_areas_extra
 from .modelo import Area, DocumentoCorpus
 
 
 class Corpus:
     """Corpus publicado en memoria. Solo lectura; no imprime ni termina el programa."""
 
-    def __init__(self, carpeta, meta, docs, archivos_md, inventario, fuente_indice, duplicados, excluidos):
+    def __init__(self, carpeta, meta, docs, archivos_md, inventario, fuente_indice, duplicados, excluidos,
+                 extra=(), exclusiones=(), kpis=()):
         self.carpeta = carpeta
         self.meta = meta                    # codigo -> fila del indice
         self.docs = docs                    # codigo -> DocumentoCorpus
         self.archivos_md = archivos_md
-        self.inventario = inventario
+        self.inventario = inventario_activo(inventario)   # documentos que deben existir
+        self.retirados = [f for f in inventario                             # solo reservan su codigo
+                          if (f.get("estado_inventario") or "").upper() == INVENTARIO_RETIRADO]
         self.fuente_indice = fuente_indice
         self.duplicados = duplicados
         self.excluidos = excluidos          # codigo -> estado documental (no publicables)
-        self.areas = _construir_areas(meta, docs, inventario)
-        self.alias = construir_alias(self.areas, [d for c, d in docs.items() if c.startswith("C-")])
+        self.extra = list(extra)            # EntidadExtra: areas y entidades sin documentos
+        self.exclusiones = list(exclusiones)
+        self.kpis = list(kpis)
+        self.areas = _construir_areas(meta, docs, self.inventario)
+        self.alias = construir_alias(self.areas, [d for c, d in docs.items() if c.startswith("C-")], self.extra)
 
     # -- consultas basicas -----------------------------------------------------
 
@@ -54,6 +62,31 @@ class Corpus:
 
     def codigos_inventario(self):
         return {(f.get("codigo") or "").upper() for f in self.inventario if f.get("codigo")}
+
+    @property
+    def completo(self):
+        """Hay inventario y todo lo inventariado esta convertido (o excluido por estado).
+
+        Solo con el corpus completo se puede afirmar una ausencia ("este rol no tiene descriptivo").
+        """
+        return bool(self.inventario) and not self.faltantes_de_inventario()
+
+    def cobertura(self, cod=None):
+        """'X/Y descriptivos · Z/W procedimientos' contra el inventario (de un area o de todo el corpus)."""
+        partes = []
+        for tipo, nombre in (("D", "descriptivos"), ("P", "procedimientos")):
+            esperados = [f for f in (self.inventario_de_area(cod) if cod else self.inventario)
+                         if (tipo_desde_texto(f.get("tipo")) or "P") == tipo]
+            presentes = [c for c in (self.areas[cod].codigos(tipo) if cod else self.docs)
+                         if c in self.docs and c[0] == tipo]
+            if not self.inventario:
+                partes.append(f"{len(presentes)} {nombre} (sin inventario: no se puede confirmar)")
+                continue
+            excluidos = [f for f in esperados if (f.get("codigo") or "").upper() in self.excluidos]
+            partes.append(f"{len(presentes)}/{len(esperados)} {nombre}"
+                          + (f" ({len(excluidos)} excluido{'s' if len(excluidos) > 1 else ''} por estado documental)"
+                             if excluidos else ""))
+        return " · ".join(partes)
 
     def faltantes_de_inventario(self, filas=None):
         """Codigos del inventario sin texto publicado (los excluidos por estado no cuentan como faltantes)."""
@@ -145,4 +178,8 @@ def cargar_corpus(carpeta, incluir_no_vigentes=False):
         docs = {c: d for c, d in docs.items() if c not in excluidos}
     inv = carpeta / ARCHIVO_INVENTARIO
     inventario = leer_csv(inv) if inv.is_file() else []
-    return Corpus(carpeta, meta, docs, archivos_md, inventario, fuente, dup_indice + dup_md, excluidos)
+    extra, exclusiones = leer_areas_extra(carpeta / ARCHIVO_AREAS_EXTRA)
+    kp = carpeta / ARCHIVO_KPIS
+    kpis = leer_csv(kp) if kp.is_file() else []
+    return Corpus(carpeta, meta, docs, archivos_md, inventario, fuente, dup_indice + dup_md, excluidos,
+                  extra, exclusiones, kpis)

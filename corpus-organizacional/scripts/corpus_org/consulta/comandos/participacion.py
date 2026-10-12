@@ -1,91 +1,94 @@
-import collections
-import re
-
 from ...comun.errores import CorpusError
 from ...comun.esquema import area_de
-from ...comun.texto import oracion_con, recortar_palabras as recortar
-from ..puestos import DetectorPuestos
-from ..roles import es_columna_responsable, rol
+from ...comun.texto import recortar_palabras as recortar
+from ..participacion import calcular_participacion
+from ..salida import resumir_lista
 from .base import Comando
 
-MAX_FILAS = 150
+DETALLE_POR_DEFECTO = 60
 
 
-def rol_sin_descriptivo(celda):
-    """Texto de una celda de la columna Responsable que no coincide con ningun descriptivo.
+def _detalle(valor):
+    """'todo' -> sin limite; un numero -> ese limite."""
+    if valor is None:
+        return DETALLE_POR_DEFECTO
+    if str(valor).lower() == "todo":
+        return None
+    if str(valor).isdigit():
+        return int(valor)
+    raise CorpusError(f"--detalle acepta un número o 'todo' (recibido: '{valor}').")
 
-    Toda celda de esa columna es un rol aunque no empiece con 'Jefe', 'Gerente'... ("comprador",
-    "Comité de compras", "analistas").
-    """
-    t = celda.replace("[CELDA COMBINADA]", "").strip()
-    return t if re.search(r"[A-Za-zÁÉÍÓÚÑáéíóúñ]{3}", t) and len(t.split()) <= 8 else ""
+
+def tabla_resumen_puestos(s, participaciones, maximo=None):
+    resumen = participaciones.resumen_por_puesto()
+    s.tabla(["Código", "Puesto", "Procedimientos distintos", "Roles", "Procedimientos"],
+            [[p.codigo, p.nombre, len(procs), ", ".join(f"{k} ({n})" for k, n in roles.most_common()),
+              resumir_lista(sorted(procs), 12)] for p, procs, roles in resumen[:maximo]])
+
+
+def imprimir_ausencias(s, cp, participaciones, codigos):
+    """Roles sin descriptivo y descriptivos sin participacion: solo se afirman con el corpus completo."""
+    if participaciones.sin_descriptivo:
+        s.linea()
+        if cp.completo:
+            s.linea("Puestos o roles mencionados que no tienen descriptivo en el corpus (corpus completo):")
+        else:
+            s.linea("Puestos o roles mencionados que no coinciden con ningún descriptivo CARGADO. El corpus está "
+                    "incompleto: no concluyas que no tienen descriptivo.")
+        for frase, cs in participaciones.sin_descriptivo.items():
+            s.linea(f"- {frase}: {', '.join(sorted(cs))}")
+    areas = {area_de(c) for c in codigos}
+    if len(areas) == 1 and len(codigos) > 1:
+        cod = areas.pop()
+        sin_part = [d for d in cp.areas[cod].descriptivos
+                    if d in cp.docs and d not in participaciones.puestos_con_participacion()]
+        if sin_part:
+            s.linea()
+            if cp.completo:
+                s.linea("Descriptivos del área que no aparecen en sus procedimientos: "
+                        + ", ".join(f"{d} {cp.nombre(d)}" for d in sin_part))
+            else:
+                s.linea("(Se omite 'descriptivos que no aparecen en procedimientos': el corpus está incompleto.)")
 
 
 class Participacion(Comando):
     nombre = "participacion"
-    ayuda = "Puestos que aparecen en los procedimientos y con que rol."
+    ayuda = "Puestos que aparecen en los procedimientos y con que rol (resumen completo y detalle)."
 
     def configurar(self, parser):
         parser.add_argument("objetivo", metavar="area_o_codigo")
+        parser.add_argument("--detalle", default=None, help="Filas de detalle: un número o 'todo'.")
 
     def ejecutar(self, ctx, args):
         cp, s = ctx.corpus, ctx.salida
+        maximo = _detalle(args.detalle)
         cods = ctx.codigos_objetivo(args.objetivo, "P")
         if not cods:
             raise CorpusError("No hay procedimientos para ese criterio.", 2)
-        detector = DetectorPuestos.desde_corpus(cp)
-        filas, vistos, con_participacion = [], set(), set()
-        sin_desc, ambiguas = collections.OrderedDict(), collections.OrderedDict()
-        for c in cods:
-            for sec, col, texto, linea in cp.celdas(c):
-                menciones = detector.detectar(texto, area_de(c))
-                if not menciones and es_columna_responsable(col):
-                    rol_libre = rol_sin_descriptivo(texto)
-                    if rol_libre:
-                        sin_desc.setdefault(rol_libre, set()).add(c)
-                    continue
-                for m in menciones:
-                    if m.tipo == "sin descriptivo":
-                        sin_desc.setdefault(m.frase, set()).add(c)
-                        continue
-                    if m.tipo == "ambigua":
-                        ambiguas.setdefault(m.frase, (set(), m.candidatos))[0].add(c)
-                        continue
-                    r = rol(col, oracion_con(texto, m.frase), sec)
-                    clave = (m.puesto.codigo, c, r)
-                    if clave in vistos:
-                        continue
-                    vistos.add(clave)
-                    con_participacion.add(m.puesto.codigo)
-                    filas.append([f"{m.puesto.nombre} ({m.puesto.codigo})", f"{c} {cp.nombre(c)}", r,
-                                  "exacta" if m.tipo == "exacta" else f"{m.etiqueta}: «{m.frase}»", recortar(sec, 8),
-                                  recortar(linea.strip("| ").replace("|", "·"), 30)])
-        s.linea(f"PARTICIPACIÓN · {len(cods)} procedimientos · {len(filas)} relaciones puesto–procedimiento")
+        p = calcular_participacion(cp, cods)
+        con_filas = len({f.procedimiento for f in p.filas})
+        s.linea(f"PARTICIPACIÓN · {len(cods)} procedimientos ({con_filas} con puestos identificados) · "
+                f"{len(p.filas)} relaciones puesto–procedimiento · calculado sobre TODAS las filas")
         s.linea("Rol según la columna de la tabla o las palabras clave de la oración donde aparece el puesto; "
                 "'probable' = nombre parecido, no idéntico (tratar como [Inferido]).")
         s.linea()
-        if filas:
-            s.tabla(["Puesto (descriptivo)", "Procedimiento", "Rol", "Coincidencia", "Sección", "Evidencia"],
-                    filas[:MAX_FILAS])
-        else:
+        if not p.filas:
             s.linea("No se encontraron puestos con descriptivo en estos procedimientos.")
-        if len(filas) > MAX_FILAS:
-            s.linea(f"Se muestran {MAX_FILAS} de {len(filas)} filas; consulta por procedimiento: participacion <CÓDIGO>.")
-        if ambiguas:
+        else:
+            s.linea("Resumen por puesto (completo; úsalo para contar quién concentra más procedimientos)")
+            tabla_resumen_puestos(s, p)
+            mostradas = p.filas if maximo is None else p.filas[:maximo]
+            s.linea()
+            s.linea(f"Detalle: filas 1–{len(mostradas)} de {len(p.filas)}"
+                    + ("" if len(mostradas) == len(p.filas) else " (más: --detalle todo, o participacion <CÓDIGO>)"))
+            s.tabla(["Puesto (descriptivo)", "Procedimiento", "Rol", "Coincidencia", "Sección", "Evidencia"],
+                    [[f"{f.puesto.nombre} ({f.puesto.codigo})", f"{f.procedimiento} {cp.nombre(f.procedimiento)}",
+                      f.rol, f.coincidencia, recortar(f.seccion, 8),
+                      recortar(f.evidencia.strip("| ").replace("|", "·"), 30)] for f in mostradas])
+        if p.ambiguas:
             s.linea()
             s.linea("Menciones parecidas a varios puestos (no se asignaron; confirmar con doc):")
-            for frase, (cs, candidatos) in ambiguas.items():
-                opciones = ", ".join(f"{p.nombre} ({p.codigo})" for p in candidatos)
+            for frase, (cs, candidatos) in p.ambiguas.items():
+                opciones = ", ".join(f"{x.nombre} ({x.codigo})" for x in candidatos)
                 s.linea(f"- {frase}: {', '.join(sorted(cs))} · posibles: {opciones}")
-        if sin_desc:
-            s.linea()
-            s.linea("Puestos o roles mencionados que no tienen descriptivo en el corpus:")
-            for frase, cs in sin_desc.items():
-                s.linea(f"- {frase}: {', '.join(sorted(cs))}")
-        areas = {area_de(c) for c in cods}
-        if len(areas) == 1:
-            sin_part = [d for d in cp.areas[areas.pop()].descriptivos if d not in con_participacion]
-            if sin_part:
-                s.linea()
-                s.linea("Descriptivos del área que no aparecen en sus procedimientos: "
-                        + ", ".join(f"{d} {cp.nombre(d)}" for d in sin_part))
+        imprimir_ausencias(s, cp, p, cods)

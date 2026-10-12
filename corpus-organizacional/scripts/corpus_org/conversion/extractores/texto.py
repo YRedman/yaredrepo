@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ...comun.archivos import detectar_delimitador, leer_texto
 from ...comun.esquema import RE_MARCAS
-from ...comun.texto import tokens
+from ...comun.texto import numeros, tokens
 from ..modelo import DocumentoExtraido, bloque_h
 from .base import Extractor
 
@@ -79,6 +79,7 @@ class ExtractorTexto(Extractor):
         d = DocumentoExtraido()
         # las marcas ([NO ESPECIFICADO], [D-XXX-01]...) se descuentan igual que en el Markdown generado
         d.crudo = collections.Counter(tokens(RE_MARCAS.sub(" ", txt)))
+        d.numeros = numeros(txt)
         if Path(path).suffix.lower() == ".csv":
             filas = _filas_csv(txt)
             d.bloques = [{"k": "tabla", "filas": filas}] if filas else []

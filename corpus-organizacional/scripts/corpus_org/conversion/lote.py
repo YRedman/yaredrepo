@@ -100,6 +100,8 @@ def fila_indice(r, grupo, archivo_md, linea_ini, linea_fin):
         "campos_no_especificados": ", ".join(a.faltantes),
         "paginas": r.doc.paginas or "", "palabras": r.palabras, "cobertura": f"{r.verificacion.cobertura:.1f} %",
         "archivo_md": archivo_md, "linea_inicio": linea_ini, "linea_fin": linea_fin,
+        "palabras_agregadas": ", ".join(r.verificacion.agregadas[:20]),
+        "avisos_estructura": len(r.avisos), "detalle_avisos": SEPARADOR_LISTA.join(r.avisos),
     }
 
 

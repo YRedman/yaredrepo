@@ -17,7 +17,8 @@ PREFERENCIA_EXT = {".docx": 0, ".pdf": 1, ".doc": 2}
 SECCIONES_EXCLUIDAS = [
     "control de cambios", "historial de cambios", "control de versiones",
     "seccion aprobada", "seccion de aprobacion", "seccion de aprobaciones",
-    "aprobaciones", "aprobacion del documento", "firmas de aprobacion",
+    "aprobaciones", "aprobacion del documento", "firmas de aprobacion", "firma de aprobacion",
+    "firma del colaborador",
 ]
 
 # Secciones conocidas: titulo normalizado -> campo. El orden importa (mas largo primero).
@@ -44,9 +45,12 @@ SECCIONES_D = [
     ("datos generales", "datos_generales"), ("identificacion del puesto", "datos_generales"),
     ("datos del puesto", "datos_generales"), ("informacion general", "datos_generales"),
     ("proposito del puesto", "proposito"), ("objetivo del puesto", "proposito"), ("mision del puesto", "proposito"),
-    ("objetivo general", "proposito"), ("proposito", "proposito"), ("objetivo", "proposito"), ("mision", "proposito"),
+    ("objetivo general", "proposito"), ("funcion general", "proposito"), ("proposito", "proposito"),
+    ("objetivo", "proposito"), ("mision", "proposito"),
     ("funciones y responsabilidades", "funciones"), ("funciones principales", "funciones"),
     ("principales funciones", "funciones"), ("funciones especificas", "funciones"),
+    ("areas de relacionamiento", "relacionamiento"), ("relaciones de trabajo", "relacionamiento"),
+    ("requisitos del puesto", "requisitos"),
     ("descripcion de funciones", "funciones"), ("responsabilidades del puesto", "funciones"),
     ("actividades principales", "funciones"), ("principales actividades", "funciones"),
     ("funciones", "funciones"), ("responsabilidades", "funciones"), ("actividades", "funciones"),
@@ -68,6 +72,7 @@ ETIQUETAS_D = [
     ("dependencia jerarquica", "reporta_a"), ("puesto superior", "reporta_a"),
     ("supervisa a", "supervisa_a"), ("supervisa", "supervisa_a"), ("puestos que supervisa", "supervisa_a"),
     ("puestos a su cargo", "supervisa_a"), ("personal a cargo", "supervisa_a"), ("subordinados", "supervisa_a"),
+    ("area de interaccion", CAMPO_OTRO), ("tipo de relacion", CAMPO_OTRO),
     ("area", "area"), ("departamento", "area"), ("gerencia", "area"), ("direccion", "area"),
     ("unidad organizativa", "area"), ("unidad", "area"),
     ("salario", CAMPO_OTRO), ("sueldo", CAMPO_OTRO), ("banda salarial", CAMPO_OTRO), ("nivel", CAMPO_OTRO),
@@ -82,8 +87,13 @@ CAMPOS_CLAVE = {
     "C": [],
 }
 
-# Columnas de una tabla del desarrollo cuyo contenido es una actividad.
-COLUMNAS_ACTIVIDAD = ("actividad", "descripcion", "accion", "tarea")
+# Tabla "Áreas de Relacionamiento" (Área de Interacción | Tipo de Relación): tipo -> campo del descriptivo.
+TIPOS_RELACION = (("subordinacion directa", "reporta_a"), ("reporte directo", "supervisa_a"))
+
+# Columnas de una tabla del desarrollo cuyo contenido es una actividad (en orden de preferencia) y
+# columnas que indican quien la ejecuta.
+COLUMNAS_ACTIVIDAD = ("actividad", "descripcion", "accion", "tarea", "que se hace")
+COLUMNAS_RESPONSABLE = ("responsab", "quien", "ejecuta", "rol")
 
 # Palabras que se ignoran al proponer el codigo de 3 letras de un departamento.
 PALABRAS_VACIAS_DEP = {"DE", "DEL", "LA", "LAS", "LOS", "EL", "Y", "E", "EN", "PARA", "POR", "A", "AL"}

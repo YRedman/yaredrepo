@@ -67,7 +67,7 @@ class AnalisisTest(unittest.TestCase):
 
     def test_actividades_solo_del_desarrollo(self):
         _, a = analizar(self._procedimiento(), "P")
-        self.assertEqual(a.actividades, ["Registrar la solicitud", "Aprobar la orden"])
+        self.assertEqual(a.actividades, ["Aprobar la orden (Responsable: Gerente)"])
 
     def test_codigos_citados_sin_normas_ni_nombres(self):
         _, a = analizar(self._procedimiento(), "P")

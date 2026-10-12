@@ -27,20 +27,33 @@ def es_columna_responsable(columna):
     return ncol.startswith("responsab") or ncol in COLUMNAS_RESPONSABLE
 
 
-def verbo(texto, fragmento=None):
-    """Verbo de la oracion donde aparece ``fragmento``; si hay varios, el mas cercano a la mencion.
-
-    En "Compras solicita el material y lo envía a Almacén" el verbo de Almacén es 'envía', no 'solicita'.
-    """
+def _verbo_cercano(texto, fragmento):
+    """Verbo de la oracion donde aparece ``fragmento``; si hay varios, el mas cercano a la mencion."""
     oracion = oracion_con(texto, fragmento) if fragmento else norm(texto)
     f = norm(fragmento or "")
     pos = oracion.find(f) if f else -1
     candidatos = []
     for m in RE_VERBO.finditer(oracion):
         nombre = next(VERBOS[i][0] for i in range(len(VERBOS)) if m.group(f"v{i}"))
-        distancia = abs(m.start() - pos) if pos >= 0 else m.start()
-        candidatos.append((distancia, nombre))
+        candidatos.append((abs(m.start() - pos) if pos >= 0 else m.start(), nombre))
     return min(candidatos)[1] if candidatos else "Mención"
+
+
+def verbo(texto, fragmento=None):
+    """Verbo con el que se menciona ``fragmento`` en ``texto``.
+
+    En una fila de tabla se busca primero en la celda de la mencion: en "| Entregar la mercancía a Almacén |
+    coordinadores de logística |" el verbo de Almacén es 'Entregar', no el sustantivo 'coordinadores'.
+    Si esa celda no tiene verbo se usa la fila completa.
+    """
+    if texto.lstrip().startswith("|") and fragmento:
+        f = norm(fragmento)
+        celda = next((c for c in texto.strip().strip("|").split("|") if f in norm(c)), None)
+        if celda is not None:
+            v = _verbo_cercano(celda, fragmento)
+            if v != "Mención":
+                return v
+    return _verbo_cercano(texto, fragmento)
 
 
 def rol(columna, oracion, seccion):

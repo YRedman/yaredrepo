@@ -42,7 +42,7 @@ CAMPOS = (
                   sin_dos_puntos=r"(?=[\w.\-]*\d)[\w.\-]{1,20}"),
     CampoMetadato("estado_documental", ("Estado documental", "Estado del documento", "Estado", "Estatus", "Status"),
                   rf"[{_LETRAS} ]{{2,40}}", 4),
-    CampoMetadato("fecha_vigencia", ("Fecha de vigencia", "Vigente desde", "Vigencia"),
+    CampoMetadato("fecha_vigencia", ("Fecha de vigencia", "Vigente a partir de", "Vigente desde", "Vigencia"),
                   rf"[0-9{_LETRAS}/ .\-]{{4,40}}", 5),
     CampoMetadato("propietario", ("Propietario del proceso", "Propietario", "Dueño del proceso", "Dueño de proceso"),
                   r"[^·|]{2,80}", 10),
@@ -56,6 +56,7 @@ ETIQUETAS_DE_CORTE = (
     "Página", "Pagina", "Pág", "Hoja", "Fecha de emisión", "Fecha de elaboración", "Fecha de revisión",
     "Fecha de actualización", "Fecha", "Revisado por", "Aprobado por", "Autorizado por", "Departamento",
     "Área", "Area", "Gerencia", "Macroproceso", "Subproceso", "Título", "Nombre del documento", "Tipo de documento",
+    "Próxima revisión", "Proxima revision", "Sustituye a", "Alcance",
 )
 RE_SEPARADOR_VALOR = re.compile(r"\s{2,}|\s*[·|]\s*|\n")
 

@@ -27,8 +27,8 @@ scripts/
     consulta/
       repositorio.py             Carga del corpus publicado y exclusión de no vigentes
       parser.py                  Recorrido único del Markdown de un documento
-      areas.py, puestos.py, roles.py, relaciones.py
-      comandos/                  Un archivo por comando (catalogo, area, ficha, doc, ...)
+      areas.py, entidades.py, puestos.py, roles.py, relaciones.py, participacion.py, indicadores.py, integridad.py
+      comandos/                  Un archivo por comando (catalogo, area, briefing, ficha, doc, kpis, ...)
       cli.py
 tests/                           Pruebas unitarias y de integración
 ```
@@ -81,7 +81,47 @@ La v2.1 se desarrolló en paralelo a partir de la misma v2.0 y corrigió otros p
 | 22 | Roles fuera del patrón “Jefe/Gerente…” | “comité de compras” o “coordinadores de logística” en la columna Responsable no aparecían | Toda celda de esa columna es un rol | `participacion.rol_sin_descriptivo` |
 | 23 | Contexto transcrito a mano | Un contexto en `.md` o `.csv` detenía `construir` | Extractor de texto (Markdown simple y CSV), solo para el modo contexto | `extractores/texto.py` |
 
-Pendiente de la comparación (no incluido en esta versión): comandos `briefing` y `kpis`, `areas_extra.csv`, códigos congelados con `--base`, avisos de estructura y revisión visual, huellas SHA-256, numeración automática de títulos en Word, y la tabla de PDF partida entre páginas que pierde filas (falla igual en la v2.1).
+## v3.2: exactitud de tablas PDF y títulos de Word
+
+| # | Problema | Ejemplo | Corrección | Dónde |
+|---|---|---|---|---|
+| 24 | Filas de tabla tomadas como encabezado de página | En una tabla de 60 filas partida entre dos páginas, “Analista de Procesos” y “Actividad número #” aparecían arriba en ambas páginas y se trataron como encabezado repetido. El título “3. Desarrollo del proceso”, la cabecera y las filas 1–3 terminaban en “Datos de encabezado y pie”, y el índice marcaba el desarrollo como `[NO ESPECIFICADO]` | Un encabezado o pie repetido debe aparecer **una sola vez por página y a la misma altura** (±4 pt). Las filas de una tabla se repiten varias veces o a otra altura | `pdf._repetidas` |
+| 25 | Pérdida silenciosa de texto en la zona de encabezado | Las filas 26–32 de la página 2 se borraban y la verificación seguía diciendo 100 %, porque descontaba del original todo lo marcado como encabezado (446 de 446 palabras; el documento tiene 523) | Solo se descarta como encabezado lo que coincide con el encabezado guardado de la primera página. El resto queda como contenido y el reporte lo avisa | `pdf._sin_texto_unico` |
+| 26 | Numeración automática de Word en títulos | “2. Alcance” salía como “Alcance” | El número de Word se calcula también para los títulos | `word._bloque_texto` |
+
+Resultado en el caso de prueba de la v2.1: 60 de 60 filas, en orden, en una sola tabla (antes 48).
+
+## v3.3: fase 2 (control de calidad y comandos para el agente)
+
+**Construcción**
+
+| Función | Qué hace | Dónde |
+|---|---|---|
+| Avisos de estructura | Cada documento registra señales de que la estructura pudo leerse mal aunque el texto esté completo: tabla tratada como texto, líneas fuera de celdas, tabla partida con líneas sueltas, filas sin primera celda, párrafos repetidos, contenido sobre todo en imágenes, posible diagrama vectorial, nombre del puesto distinto del archivo, números que no aparecen completos (`45.000,00` → `45.000`) y OCR. Columnas nuevas del índice: `palabras_agregadas`, `avisos_estructura`, `detalle_avisos` (al final; las anteriores no se mueven) | `extractores/pdf.py`, `analisis.avisos_de_estructura`, `modelo.DocumentoConvertido.avisos` |
+| Validación más estricta | Cobertura < 100 %, palabras que no están en el original y errores del contexto pasan a ser **problemas** (antes eran avisos) | `publicacion.validar_publicacion` |
+| Revisión visual | Los documentos con avisos y una muestra reproducible del 10 % quedan pendientes hasta anotar su código en `revision_visual_ok.txt`. Tres estados con código de salida: LISTO (0), REQUIERE REVISIÓN (2), PENDIENTE DE REVISIÓN VISUAL (3). `--muestra-revision` ajusta la muestra | `publicacion.py`, `cli.modo_construir` |
+| Huellas SHA-256 | `publicado/huellas.sha256`; `corpus.py verificar` detecta archivos editados o borrados después de la conversión | `publicacion.escribir_huellas`, `consulta/integridad.py` |
+| Códigos estables | Al reconstruir con `lista.txt`, el inventario anterior es la base: cada documento conserva su código, los nuevos van al final de su grupo y los que ya no están quedan `RETIRADO` reservando su código (`inventario --base`) | `inventario.construir_inventario` |
+| Datos del contexto | Los `kpi*.csv` de la carpeta de contexto se unen en `kpis.csv` y `areas_extra.csv` se publica tal cual (no se convierte a `contexto.md`) | `cli._datos_de_contexto` |
+
+**Consulta**
+
+| Función | Qué hace | Dónde |
+|---|---|---|
+| `areas_extra.csv` | Áreas internas sin documentos, entidades externas y frases a excluir (“Seguridad Social” no es el área Seguridad; hay exclusiones base) | `consulta/entidades.py` |
+| Menciones no resueltas | `relaciones` lista aparte las entidades sin documentos, las unidades no identificadas (“Dirección de Logística”) y los puestos ambiguos; nunca cuentan como relación con un área | `relaciones.NoResueltas` |
+| `kpis` | Indicadores con meta, medición (“sin medición” si está vacía, nunca cero) y documentos que mencionan sus términos `[Inferido]` | `consulta/indicadores.py`, `comandos/kpis.py` |
+| `participacion` | Resumen por puesto sobre todas las filas y detalle acotado (`--detalle N\|todo`). Las ausencias (roles sin descriptivo, descriptivos sin participación) solo se afirman con el corpus completo | `consulta/participacion.py` |
+| `briefing` | Tablas del briefing ya calculadas por partes de 15 documentos, con la línea de cobertura; el modelo solo redacta resumen, insights y “para profundizar” | `comandos/briefing.py` |
+| `verificar` y `catalogo` | Huellas, corpus completo, palabras agregadas, documentos con avisos, códigos retirados, KPIs y entidades sin documentos | `comandos/verificar.py`, `comandos/catalogo.py` |
+
+**Actividades:** si el desarrollo tiene tabla, las actividades son sus filas con su responsable (“Solicitar cotización (Responsable: Comprador)”); si no, sus viñetas.
+
+**Falsos positivos encontrados al probar la fase 2 y corregidos:**
+- Una tabla de indicadores en el contexto (`| K-01 | Compras |`) convertía “K-01” en alias del área Compras. Ahora una sigla no lleva dígitos.
+- En una fila `| Entregar la mercancía a Almacén | coordinadores de logística |`, el sustantivo “coordinadores” se tomaba como el verbo. Ahora el verbo se busca primero en la celda de la mención.
+
+**Comparación con la batería de la v2.1:** con esta versión pasan 34 de sus 35 pruebas punta a punta. La que falla solo cambia el formato del mensaje de ambigüedad, no el comportamiento. La v2.1 fallaba la de la tabla partida de 60 filas, que aquí pasa.
 
 Otras mejoras:
 
@@ -90,12 +130,35 @@ Otras mejoras:
 - `gobierno` muestra `[NO ESPECIFICADO]` en lugar de celdas vacías.
 - El campo `proceso`, que antes siempre quedaba vacío, se llena cuando el original trae `Proceso:`.
 
+## v3.4: plantillas reales de descriptivo de puesto (PDF)
+
+Ajustes hechos al probar el lector con descriptivos reales (procesados fuera del repositorio; las pruebas usan un PDF ficticio con la misma maquetación, `tests/fixtures_plantilla.py`).
+
+| # | Problema | Corrección | Dónde |
+|---|---|---|---|
+| 27 | La tabla de funciones salía con una fila por renglón de texto | Las filas se agrupan entre los bordes horizontales reales de la tabla (los que cubren ≥ 90 % de su ancho) | `pdf.bordes_horizontales_completos`, `pdf._filas_por_bordes` |
+| 28 | El organigrama y el párrafo vecino entraban a la tabla | La tabla se recorta a sus bordes reales; las cajas dibujadas con texto se leen como `[ORGANIGRAMA: …]` seguido de “Jefe → Puesto”, una sola vez aunque también se detecten como tabla de una columna | `pdf._cajas_con_texto`, `pdf._es_organigrama`, `_ExtraccionPDF._organigrama` |
+| 29 | Valores del encabezado (fecha, “1 de 3”) en el cuerpo y vigencia perdida | Los valores que están debajo de su etiqueta en la celda del encabezado son parte del encabezado; los lados de un recuadro con contorno cuentan como bordes; nueva etiqueta “Vigente a partir de” | `_ExtraccionPDF._fondo_encabezado`, `pdf._bordes_horizontales`, `metadatos.py` |
+| 30 | El objetivo del puesto (letra más grande) salía partido como título | Un renglón que termina en artículo o preposición, o que empieza en minúscula, no es título; un “título” largo se convierte en párrafo; renglones con cajas de texto superpuestas continúan el párrafo | `maquetacion.nivel_titulo`, `maquetacion._continua` |
+| 31 | Columnas corridas en tablas con celdas combinadas | Se unen columnas adyacentes cuando una no tiene cabecera y ninguna fila tiene texto en ambas | `pdf._unir_columnas_corridas` |
+| 32 | Nombre del puesto, “Reporta a” y funciones sin detectar | Título numerado “1. Puesto.”; tabla “Áreas de Relacionamiento” (Subordinación directa → `reporta_a`, Reporte directo → `supervisa_a`); un título o tabla con nombre de campo abre su sección; el propósito usa solo párrafos | `analisis._nombre_por_titulo`, `analisis._campos_por_relacionamiento`, `analisis._separar_secciones`, `configuracion.py` |
+
+**Entrada sin carpetas de área y sin `lista.txt`**
+
+- Si `entrada` no tiene `lista.txt`, `construir` la arma con los documentos que están en una carpeta `Descriptivos` o `Procedimientos` (directamente o en una subcarpeta de área) y la guarda en `control/lista.txt`. Se regenera en cada construcción, así que los archivos nuevos entran solos.
+- Se aceptan dos estructuras: `Descriptivos\<Área>\archivo.pdf` (el área es la carpeta) y `Descriptivos\archivo.pdf`. En la segunda, el área se toma de `entrada\areas.csv` (columnas `archivo;area`). El script crea ese archivo con todos los documentos y la columna `area` vacía, y agrega los nuevos en cada construcción sin tocar lo ya escrito.
+- Un documento sin área queda en «Sin Área» con un código provisional (`D-SAR-NN`) y la construcción termina en REQUIERE REVISIÓN. Los códigos provisionales no se conservan: al escribir el área, el documento recibe su código definitivo sin dejar filas `RETIRADO`.
+
+Código: `cli._lista_desde_carpeta`, `inventario.parsear_lista`, `inventario.leer_areas`, `inventario.actualizar_plantilla_areas`, `inventario.leer_base` y `publicacion.validar_publicacion`.
+
+Resultado en el piloto (10 descriptivos reales, dos variantes de plantilla): cobertura 100 % en todos; nombre, reporta a, propósito, versión y vigencia en los 9 digitales. El escaneado (OCR) no trae “Reporta a” ni funciones legibles: conviene usar la versión digital.
+
 ## Pruebas
 
 ```bash
 python -m unittest discover -s tests -t .      # o: python -m pytest tests
 ```
 
-Las pruebas de integración generan corpus sintéticos (`tests/fixtures_corpus.py`, `tests/fixtures_casos.py`). Necesitan `pymupdf`, `lxml`, `python-docx` y `reportlab`, y las de PDF además LibreOffice (`soffice`); si falta alguno, esas pruebas se omiten.
+Las pruebas de integración generan corpus sintéticos (`tests/fixtures_corpus.py`, `tests/fixtures_casos.py`, `tests/fixtures_plantilla.py`). Necesitan `pymupdf`, `lxml`, `python-docx` y `reportlab`, y las de PDF además LibreOffice (`soffice`); si falta alguno, esas pruebas se omiten.
 
 Los datos del cliente (documentos, materiales de contexto y corpus generado) no se versionan: `.gitignore` excluye `contexto/`, `entrada/`, `salida_corpus/` y `publicado/`.

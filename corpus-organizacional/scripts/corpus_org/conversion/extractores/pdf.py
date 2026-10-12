@@ -8,10 +8,11 @@ import re
 import statistics
 
 from ...comun.esquema import MARCA_COMBINADA
-from ...comun.texto import limpiar_celda, nfc, norm, tokens, unir
+from ...comun.texto import limpiar_celda, nfc, norm, numeros, tokens, unir
 from ..modelo import DocumentoExtraido
 from .base import Extractor
-from .maquetacion import agrupar_filas, bloques_desde_items
+from ..secciones import clave_titulo, es_seccion_conocida
+from .maquetacion import RE_NUM_INICIO, agrupar_filas, bloques_desde_items
 
 RE_PATRON_ENC = re.compile(r"(p[aá]gina\s*\d+\s*(de|/)\s*\d+|\bversi[oó]n\s*:|\brevisi[oó]n\s*:|c[oó]digo\s*:|"
                            r"fecha de (emisi[oó]n|vigencia|elaboraci[oó]n)\s*:)", re.I)
@@ -22,6 +23,9 @@ RE_CID = re.compile(r"\(cid:\d+\)")
 ZONA_SUPERIOR = 0.22      # fraccion de la altura donde se buscan encabezados repetidos
 ZONA_INFERIOR = 0.84      # fraccion de la altura a partir de la cual se buscan pies repetidos
 MIN_REPETICION = 0.6      # fraccion de paginas en que debe repetirse un encabezado, pie o logo
+TOLERANCIA_ALTURA = 4.0   # puntos: un encabezado o pie repetido esta siempre a la misma altura
+SEPARACION_VALOR_ENCABEZADO = 6.0   # puntos entre una etiqueta del encabezado y su valor en la linea de abajo
+COBERTURA_BORDE = 0.9     # fraccion del ancho de una tabla que debe cubrir una linea para ser borde de fila
 DPI_OCR = 300
 
 
@@ -79,6 +83,10 @@ def _bordes_horizontales(page):
                     r = it[1]
                     if r.height <= 2.5 and r.width > 20:
                         bordes.append((r.y0, r.y1))
+                    elif "s" in (dr.get("type") or "") and r.width > 20:
+                        # rectangulo con contorno (recuadro de una tabla): sus lados superior e inferior son bordes
+                        w = dr.get("width") or 0.5
+                        bordes += [(r.y0 - w / 2, r.y0 + w / 2), (r.y1 - w / 2, r.y1 + w / 2)]
                 elif it[0] == "l":
                     p1, p2 = it[1], it[2]
                     if abs(p1.y - p2.y) < 0.5 and abs(p1.x - p2.x) > 20:
@@ -112,33 +120,49 @@ def _corte_superior(page, fondo_texto):
     return enc[1] + 0.3
 
 
+def _posiciones_por_zona(lineas, h):
+    """{clave: [posiciones]} de las lineas de la zona superior e inferior de una pagina.
+
+    La posicion es la distancia al borde de su zona (arriba para el encabezado, abajo para el pie),
+    asi se compara bien aunque las paginas tengan alturas distintas.
+    """
+    sup, inf = collections.defaultdict(list), collections.defaultdict(list)
+    for l in lineas:
+        k = _clave_rep(l["texto"])
+        if len(re.findall(r"[a-z]", k)) < 3:
+            continue  # numeros sueltos (filas de tabla, numeros de pagina sin texto)
+        if l["y1"] <= ZONA_SUPERIOR * h:
+            sup[k].append(l["y0"])
+        elif l["y0"] >= ZONA_INFERIOR * h:
+            inf[k].append(h - l["y1"])
+    return sup, inf
+
+
+def _repetidas(zonas, ref, minimo):
+    """Claves que se repiten como encabezado o pie: en ``minimo`` paginas, una sola vez por pagina,
+    siempre a la misma altura y presentes en la pagina de referencia.
+
+    Una fila de tabla que continua en la pagina siguiente tambien se repite ("Analista de Procesos",
+    "Actividad numero #"), pero aparece varias veces por pagina o a otra altura; un encabezado real no.
+    """
+    posiciones = collections.defaultdict(list)
+    for zona in zonas:
+        for k, ys in zona.items():
+            if len(ys) == 1:
+                posiciones[k].append(ys[0])
+    return {k for k, ys in posiciones.items()
+            if len(ys) >= minimo and k in zonas[ref] and max(ys) - min(ys) <= TOLERANCIA_ALTURA}
+
+
 def _detectar_encabezados(paginas_lineas, alturas):
     """Claves de las lineas repetidas en la parte superior e inferior (encabezado y pie)."""
     n = len(paginas_lineas)
     if n < 2:
         return set(), set()
     minimo = max(2, math.ceil(MIN_REPETICION * n))
-    cuenta_sup, cuenta_inf = collections.Counter(), collections.Counter()
-    primera_sup, primera_inf = set(), set()
     ref = next((i for i, ls in enumerate(paginas_lineas) if sum(l["chars"] for l in ls) >= 25), 0)
-    for i, lineas in enumerate(paginas_lineas):
-        h = alturas[i]
-        vistas_sup, vistas_inf = set(), set()
-        for l in lineas:
-            k = _clave_rep(l["texto"])
-            if len(re.findall(r"[a-z]", k)) < 3:
-                continue  # numeros sueltos (filas de tabla, numeros de pagina sin texto)
-            if l["y1"] <= ZONA_SUPERIOR * h:
-                vistas_sup.add(k)
-            elif l["y0"] >= ZONA_INFERIOR * h:
-                vistas_inf.add(k)
-        cuenta_sup.update(vistas_sup)
-        cuenta_inf.update(vistas_inf)
-        if i == ref:
-            primera_sup, primera_inf = vistas_sup, vistas_inf
-    sup = {k for k, c in cuenta_sup.items() if c >= minimo and k in primera_sup}
-    inf = {k for k, c in cuenta_inf.items() if c >= minimo and k in primera_inf}
-    return sup, inf
+    zonas = [_posiciones_por_zona(lineas, alturas[i]) for i, lineas in enumerate(paginas_lineas)]
+    return (_repetidas([z[0] for z in zonas], ref, minimo), _repetidas([z[1] for z in zonas], ref, minimo))
 
 
 def _encabezado_por_patron(lineas, h):
@@ -175,6 +199,26 @@ def _quitar_vacias(filas, ncol):
     if filas:
         cols = [j for j in range(ncol) if any(f[j].strip() for f in filas)]
         filas = [[f[j] for j in cols] for f in filas]
+    return _unir_columnas_corridas(filas)
+
+
+def _unir_columnas_corridas(filas):
+    """Une dos columnas vecinas cuando la cabecera esta en una y los datos en la otra.
+
+    Una cabecera combinada desplaza las celdas: "|   | Área de Interacción |" sobre "| Gerente |   |".
+    Se unen solo si una de las dos no tiene cabecera y ninguna fila tiene texto en ambas.
+    """
+    if len(filas) < 2:
+        return filas
+    j = 0
+    while j < len(filas[0]) - 1:
+        a, b = j, j + 1
+        sin_cabecera = not filas[0][a].strip() or not filas[0][b].strip()
+        disjuntas = all(not (f[a].strip() and f[b].strip()) for f in filas)
+        if sin_cabecera and disjuntas:
+            filas = [f[:a] + [f[a] if f[a].strip() else f[b]] + f[b + 1:] for f in filas]
+            continue
+        j += 1
     return filas
 
 
@@ -210,11 +254,76 @@ def _datos_por_palabras(datos, filas_bbox, palabras):
     return nuevos
 
 
-def _tabla_desde_fitz(t, palabras=None):
+def bordes_horizontales_completos(page, rect):
+    """Alturas de las lineas horizontales que cruzan casi todo el ancho de ``rect`` (bordes de fila)."""
+    ancho = rect.x1 - rect.x0
+    if ancho <= 0:
+        return []
+    cobertura = collections.defaultdict(float)
+    try:
+        dibujos = page.get_drawings()
+    except Exception:
+        return []
+    for dr in dibujos:
+        for it in dr["items"]:
+            if it[0] == "l" and abs(it[1].y - it[2].y) < 0.5:
+                y, a, b = it[1].y, min(it[1].x, it[2].x), max(it[1].x, it[2].x)
+            elif it[0] == "re" and it[1].height <= 2.5:
+                y, a, b = (it[1].y0 + it[1].y1) / 2, it[1].x0, it[1].x1
+            else:
+                continue
+            if rect.y0 - 2 <= y <= rect.y1 + 2:
+                cobertura[round(y)] += max(0.0, min(b, rect.x1) - max(a, rect.x0))
+    return sorted(y for y, c in cobertura.items() if c >= COBERTURA_BORDE * ancho)
+
+
+def _unir_celdas(textos):
+    out = ""
+    for t in textos:
+        out = unir(out, t)
+    return out
+
+
+def _filas_por_bordes(datos, filas_bbox, bordes):
+    """Agrupa en una sola fila las filas de PyMuPDF que caen entre dos bordes reales consecutivos.
+
+    PyMuPDF puede cortar una fila por cada renglon de texto cuando una celda tiene varias lineas; los
+    bordes dibujados indican donde termina de verdad cada fila. Las filas fuera del primer y el ultimo
+    borde no son de la tabla (p. ej. un organigrama o un parrafo que quedo dentro del rectangulo).
+    Devuelve (datos, filas_bbox, (y_inicio, y_fin)).
+    """
+    grupos = collections.OrderedDict()
+    for i, cells in enumerate(filas_bbox):
+        ys = [(c[1] + c[3]) / 2 for c in cells if c is not None]
+        if not ys:
+            continue
+        cy = sum(ys) / len(ys)
+        k = next((k for k in range(len(bordes) - 1) if bordes[k] - 1 <= cy <= bordes[k + 1] + 1), None)
+        if k is not None:
+            grupos.setdefault(k, []).append(i)
+    nuevos, bbox_nuevos = [], []
+    for k, idx in grupos.items():
+        ncol = max(len(datos[i]) for i in idx)
+        fila, cajas = [], []
+        for j in range(ncol):
+            textos = [datos[i][j] for i in idx if j < len(datos[i]) and datos[i][j] is not None]
+            fila.append(_unir_celdas(limpiar_celda(x) for x in textos if x.strip()) if textos else None)
+            caja = next((filas_bbox[i][j] for i in idx if j < len(filas_bbox[i]) and filas_bbox[i][j] is not None), None)
+            cajas.append(caja)
+        nuevos.append(fila)
+        bbox_nuevos.append(cajas)
+    return nuevos, bbox_nuevos, (bordes[0], bordes[-1])
+
+
+def _tabla_desde_fitz(t, palabras=None, bordes=None):
+    """(filas, xs, (y_inicio, y_fin) o None). Con ``bordes`` reales, las filas se rehacen por bordes."""
     datos = t.extract()
     filas_bbox = [r.cells for r in t.rows]
     if palabras is not None:
         datos = _datos_por_palabras(datos, filas_bbox, palabras)
+    limites = None
+    if bordes and len(bordes) >= 3 and len(bordes) - 1 < len(datos):
+        datos, filas_bbox, limites = _filas_por_bordes(datos, filas_bbox, bordes)
     ncol = max((len(r) for r in datos), default=0)
     filas = []
     for i, fila in enumerate(datos):
@@ -226,7 +335,7 @@ def _tabla_desde_fitz(t, palabras=None):
     filas = _quitar_vacias(filas, ncol)
     primera = next((r for r in filas_bbox if r), None)
     xs = [round(c[0]) for c in primera if c is not None] if primera else []
-    return filas, xs
+    return filas, xs, limites
 
 
 def _formas_con_texto(page, lineas, rect_tablas, w, h):
@@ -265,6 +374,47 @@ def _formas_con_texto(page, lineas, rect_tablas, w, h):
                 con_texto.add(k)
                 break
     return dentro if len(con_texto) >= 3 else 0
+
+
+def _cajas_con_texto(page, lineas, rect_tablas, w, h):
+    """Cajas dibujadas (rectangulos chicos) que contienen texto y no son tablas: [(rect, [lineas])].
+
+    Un organigrama o diagrama de cajas se extrae como lineas sueltas que se mezclan con el parrafo de
+    al lado; agrupandolas por caja se conserva cada nombre completo y fuera del texto corrido.
+    """
+    try:
+        dibujos = page.get_drawings()
+    except Exception:
+        return []
+    candidatas = []
+    for dr in dibujos:
+        r = dr.get("rect")
+        if r is None or r.width < 30 or r.height < 12 or r.width > 0.6 * w or r.height > 0.25 * h:
+            continue
+        if any(t.intersects(r) and t.contains(r.tl) for t in rect_tablas):
+            continue
+        candidatas.append(r)
+    # una caja que contiene a otras es el marco del grupo, no una caja del diagrama
+    cajas = [r for r in candidatas
+             if not any(o != r and r.contains(o) and abs(o) < abs(r) for o in candidatas)]
+    resultado = []
+    for r in sorted({(c.x0, c.y0, c.x1, c.y1) for c in cajas}, key=lambda c: (c[1], c[0])):
+        rect = page.rect.__class__(*r)
+        dentro = [l for l in lineas if rect.x0 - 1 <= (l["x0"] + l["x1"]) / 2 <= rect.x1 + 1
+                  and rect.y0 - 1 <= (l["y0"] + l["y1"]) / 2 <= rect.y1 + 1]
+        if dentro:
+            resultado.append((rect, dentro))
+    return resultado if len(resultado) >= 2 else []
+
+
+def _es_organigrama(t, filas, rect, ancho_pagina):
+    """Una "tabla" angosta de una columna cuyas cajas estan separadas por una fila vacia (la linea que
+    las une) es un organigrama, no una tabla de datos."""
+    if len(filas) < 2 or any(len(f) != 1 for f in filas) or rect.width > 0.35 * ancho_pagina:
+        return False
+    crudas = t.extract()
+    vacias = [k for k, f in enumerate(crudas) if not any((c or "").strip() for c in f)]
+    return any(0 < k < len(crudas) - 1 for k in vacias)
 
 
 def _dentro(l, r, margen=1):
@@ -338,36 +488,80 @@ def _idioma_ocr():
     return None
 
 
+MAX_SUELTAS_ENTRE_TABLAS = 3
+
+
+def _es_suelta_entre_tablas(it):
+    """Linea corta que puede quedar entre dos trozos de una tabla partida (fragmento de fila, no un titulo)."""
+    if it["tipo"] != "fila":
+        return False
+    t = it["texto"].strip()
+    if not t or len(t.split()) > 15 or (RE_NUM_INICIO.match(t) and it.get("bold")):
+        return False
+    return not es_seccion_conocida(clave_titulo(t))
+
+
+def _columnas_compatibles(a, b):
+    na = len(a["filas"][0]) if a["filas"] else 0
+    nb = len(b["filas"][0]) if b["filas"] else 0
+    xs_ok = (not a["xs"] or not b["xs"] or len(a["xs"]) != len(b["xs"]) or
+             all(abs(x - y) <= 6 for x, y in zip(a["xs"], b["xs"])))
+    return na == nb and na > 0 and xs_ok
+
+
+def _agregar_continuacion(a, b, d, pagina):
+    """Agrega las filas de ``b`` a la tabla ``a`` (sin la cabecera repetida; uniendo una fila partida)."""
+    filas_b = b["filas"]
+    if filas_b and [norm(c) for c in filas_b[0]] == [norm(c) for c in a["filas"][0]]:
+        for c in filas_b[0]:
+            d.retirados.update(tokens(c))
+        filas_b = filas_b[1:]
+    if filas_b and not filas_b[0][0].strip() and any(c.strip() for c in filas_b[0][1:]):
+        a["filas"][-1] = [
+            (unir(x, y.replace(MARCA_COMBINADA, "")) if y.strip() and not y.endswith(MARCA_COMBINADA) else x)
+            for x, y in zip(a["filas"][-1], filas_b[0])]
+        filas_b = filas_b[1:]
+        d.notas.append(f"Página {pagina + 1}: fila de tabla partida entre páginas; se unió con la anterior.")
+    a["filas"].extend(filas_b)
+    a["pagina_fin"] = pagina
+
+
 def _unir_tablas_continuas(items, d):
-    """Une una tabla que continua en la pagina siguiente con la de la pagina anterior."""
+    """Une una tabla que continua en la pagina siguiente con la de la pagina anterior.
+
+    Tambien si entre ambos trozos quedaron hasta 3 lineas sueltas cortas (fragmentos de una fila que
+    no quedaron en celdas): la tabla se une, las lineas se conservan despues de ella y se emite un
+    aviso de estructura para revisarla.
+    """
     k = 1
     while k < len(items):
-        pa, _, _, a = items[k - 1]
         pb, _, _, b = items[k]
-        pa = a.get("pagina_fin", pa)
-        if a["tipo"] == "tabla" and b["tipo"] == "tabla" and pb == pa + 1:
-            na = len(a["filas"][0]) if a["filas"] else 0
-            nb = len(b["filas"][0]) if b["filas"] else 0
-            xs_ok = (not a["xs"] or not b["xs"] or len(a["xs"]) != len(b["xs"]) or
-                     all(abs(x - y) <= 6 for x, y in zip(a["xs"], b["xs"])))
-            if na == nb and na > 0 and xs_ok:
-                filas_b = b["filas"]
-                if filas_b and [norm(c) for c in filas_b[0]] == [norm(c) for c in a["filas"][0]]:
-                    for c in filas_b[0]:
-                        d.retirados.update(tokens(c))
-                    filas_b = filas_b[1:]
-                if filas_b and not filas_b[0][0].strip() and any(c.strip() for c in filas_b[0][1:]):
-                    ult = a["filas"][-1]
-                    a["filas"][-1] = [
-                        (unir(x, y.replace(MARCA_COMBINADA, "")) if y.strip() and not y.endswith(MARCA_COMBINADA)
-                         else x)
-                        for x, y in zip(ult, filas_b[0])]
-                    filas_b = filas_b[1:]
-                a["filas"].extend(filas_b)
-                a["pagina_fin"] = pb
-                del items[k]
-                continue
-        k += 1
+        if b["tipo"] != "tabla":
+            k += 1
+            continue
+        j, medio = k - 1, []
+        while j >= 0 and len(medio) < MAX_SUELTAS_ENTRE_TABLAS and _es_suelta_entre_tablas(items[j][3]):
+            medio.insert(0, j)
+            j -= 1
+        if j < 0 or items[j][3]["tipo"] != "tabla":
+            k += 1
+            continue
+        a = items[j][3]
+        pa = a.get("pagina_fin", items[j][0])
+        if pb != pa + 1 or any(items[m][0] not in (pa, pb) for m in medio) or not _columnas_compatibles(a, b):
+            k += 1
+            continue
+        _agregar_continuacion(a, b, d, pb)
+        sueltas = [items[m] for m in medio]
+        del items[k]
+        for m in reversed(medio):
+            del items[m]
+        for desplazamiento, it in enumerate(sueltas):
+            items.insert(j + 1 + desplazamiento, it)
+        if sueltas:
+            d.avisos.append(f"p.{pb + 1}: tabla partida entre páginas con {len(sueltas)} líneas sueltas en medio; "
+                            "se unió la tabla y las líneas quedaron después de ella")
+        k = j + 1 + len(sueltas)
 
 
 # ---------------------------------------------------------------------------
@@ -385,6 +579,8 @@ class _ExtraccionPDF:
         self.ocr_pendiente = []    # (pagina, lineas, altura)
         self.cortes = []           # (corte_sup, corte_inf) de paginas con encabezado
         self.encabezado_guardado = False
+        self.claves_guardadas = set()
+        self.rects_organigrama = []    # (pagina, rect) de organigramas ya agregados como marca
         self.ocr_idioma = None
         self.paginas_lineas = [_lineas_pagina(p, fitz) for p in doc_pdf]
         self.alturas = [p.rect.height for p in doc_pdf]
@@ -417,6 +613,7 @@ class _ExtraccionPDF:
         self._aplicar_ocr_pendiente()
         d = self.d
         d.crudo = +d.crudo
+        d.numeros = +d.numeros
         self.items.sort(key=lambda t: (t[0], t[1], t[2]))
         _unir_tablas_continuas(self.items, d)
         d.tablas = sum(1 for it in self.items if it[3]["tipo"] == "tabla")
@@ -476,18 +673,21 @@ class _ExtraccionPDF:
         h, w = self.alturas[i], self.anchos[i]
         corte_sup, corte_inf, enc_lineas = self._encabezado_y_pie(i, page, lineas, h, w)
         tablas = self._tablas(i, page, self.fitz.Rect(0, corte_sup, w, corte_inf))
+        lineas = self._organigrama(i, page, lineas, enc_lineas, tablas, w, h)
         self._contenido(i, lineas, enc_lineas, tablas)
         ids_enc = {id(l) for l in enc_lineas}
         en_formas = _formas_con_texto(page, [l for l in lineas if id(l) not in ids_enc], [r for r, _, _ in tablas], w, h)
         if en_formas:
-            self.d.notas.append(f"Página {i + 1}: posible diagrama vectorial ({en_formas} líneas de texto dentro de "
-                                "formas); su texto quedó como líneas sueltas: revisar contra el original.")
+            self.d.avisos.append(f"p.{i + 1}: posible diagrama vectorial ({en_formas} líneas de texto dentro de "
+                                 "formas); su texto quedó como líneas sueltas")
         self._imagenes_contenido(i, corte_sup, corte_inf, w, h)
         # texto crudo de verificacion (motor principal, pagina completa, sin encabezado ni pie)
         crudo = re.sub(r"(\w)-\n(?=[a-záéíóúüñ])", r"\1", page.get_text("text"))
         self.d.crudo.update(tokens(crudo))
+        self.d.numeros.update(numeros(crudo))
         for l in enc_lineas:
             self.d.crudo.subtract(tokens(l["texto"]))
+            self.d.numeros.subtract(numeros(l["texto"]))
 
     def _encabezado_y_pie(self, i, page, lineas, h, w):
         sup = [l for l in lineas if l["y1"] <= ZONA_SUPERIOR * h and _es_clave(_clave_rep(l["texto"]), self.claves_sup)]
@@ -512,11 +712,30 @@ class _ExtraccionPDF:
         if enc_lineas:
             if not self.encabezado_guardado:
                 self._guardar_encabezado(page, enc_lineas, corte_sup, corte_inf, w, h)
+                self.claves_guardadas = {_clave_rep(l["texto"]) for l in enc_lineas}
+            else:
+                enc_lineas = self._sin_texto_unico(i, enc_lineas)
             for l in enc_lineas:
                 self.d.crudo_encabezado.update(tokens(l["texto"]))
         if sup or inf:
             self.cortes.append((corte_sup if sup else None, corte_inf if inf else None))
         return corte_sup, corte_inf, enc_lineas
+
+    def _sin_texto_unico(self, i, enc_lineas):
+        """Deja como contenido las lineas de la zona de encabezado o pie que no estan en el encabezado guardado.
+
+        El encabezado se guarda una sola vez (el de la primera pagina) y en las demas paginas se descarta.
+        Una linea que no se parece a ninguna de las guardadas no es un encabezado repetido: si se
+        descartara, su texto desapareceria del corpus sin que la verificacion lo notara.
+        """
+        unicas = [l for l in enc_lineas if len(re.findall(r"[a-z]", _clave_rep(l["texto"]))) >= 3
+                  and _clave_rep(l["texto"]) not in self.claves_guardadas]
+        if unicas:
+            ids = {id(l) for l in unicas}
+            self.d.avisos.append(f"p.{i + 1}: {len(unicas)} líneas en la zona de encabezado o pie no coinciden "
+                                 "con el encabezado de la primera página; se conservaron como contenido")
+            return [l for l in enc_lineas if id(l) not in ids]
+        return enc_lineas
 
     @staticmethod
     def _fondo_encabezado(sup, lineas, h, w):
@@ -527,10 +746,14 @@ class _ExtraccionPDF:
             if l["y0"] > fondo + 14:
                 break
             fondo = max(fondo, l["y1"])
-        # lineas sueltas pegadas al encabezado (por ejemplo, el final de una linea partida)
+        # lineas sueltas pegadas al encabezado: el final de una linea partida o el valor numerico que esta
+        # debajo de su etiqueta en la misma celda ("Vigencia:" / "01/02/2024", "Página:" / "1 de 3")
         for l in sorted(lineas, key=lambda l: l["y0"]):
-            if fondo < l["y0"] <= fondo + 2 and l["y1"] - fondo < 14 and l["y1"] <= ZONA_SUPERIOR * h \
-                    and len(re.findall(r"[A-Za-z]", l["texto"])) < 3 and l["x0"] < 0.3 * w:
+            if l["y1"] <= fondo + 0.5:
+                continue
+            if l["y0"] > fondo + SEPARACION_VALOR_ENCABEZADO or l["y1"] > ZONA_SUPERIOR * h:
+                break
+            if len(re.findall(r"[A-Za-z]", l["texto"])) < 3 and l["y1"] - fondo < 14:
                 fondo = l["y1"]
         return fondo
 
@@ -543,15 +766,47 @@ class _ExtraccionPDF:
             + (_texto_zona(page, fitz, zona_inf, fitz.Rect(0, corte_inf, w, h)) if zona_inf else []))
         self.encabezado_guardado = True
 
+    def _organigrama(self, i, page, lineas, enc_lineas, tablas, w, h):
+        """Saca del texto corrido las lineas que estan dentro de cajas de un organigrama y las agrega
+        como una marca seguida de las cajas en orden (de arriba hacia abajo). Devuelve las lineas restantes."""
+        ids_enc = {id(l) for l in enc_lineas}
+        # las cajas ya leidas como organigrama desde una tabla de una columna no se agregan otra vez
+        ocupadas = [r for r, _, _ in tablas] + [r for p, r in self.rects_organigrama if p == i]
+        libres = [l for l in lineas if id(l) not in ids_enc and not any(_dentro(l, r) for r in ocupadas)]
+        cajas = _cajas_con_texto(page, libres, [r for r, _, _ in tablas], w, h)
+        if not cajas:
+            return lineas
+        usadas = {id(l) for _, ls in cajas for l in ls}
+        textos = [_unir_celdas(l["texto"].strip() for l in sorted(ls, key=lambda l: (l["y0"], l["x0"])))
+                  for _, ls in cajas]
+        self._agregar_organigrama(i, cajas[0][0], textos)
+        for _, ls in cajas:
+            for l in ls:
+                self.d.lineas_diag.append((i + 1, "organigrama", l["texto"]))
+        return [l for l in lineas if id(l) not in usadas]
+
+    def _agregar_organigrama(self, i, rect, cajas):
+        """Marca de organigrama seguida de sus cajas en orden (de arriba hacia abajo)."""
+        self._marca(i, rect.y0, rect.x0, f"[ORGANIGRAMA: cajas de arriba hacia abajo; ver página {i + 1} del original]")
+        self.items.append((i, rect.y0 + 0.01, rect.x0, {"tipo": "marca", "texto": " → ".join(cajas), "pagina": i}))
+        self.rects_organigrama.append((i, rect))
+
     def _tablas(self, i, page, clip):
         tablas = []
         try:
             palabras = page.get_text("words")
             for t in page.find_tables(clip=clip).tables:
-                filas, xs = _tabla_desde_fitz(t, palabras)
+                rect = self.fitz.Rect(t.bbox)
+                filas, xs, limites = _tabla_desde_fitz(t, palabras, bordes_horizontales_completos(page, rect))
                 if not filas or (len(filas) == 1 and len(filas[0]) == 1):
                     continue  # vacia o recuadro simple: se trata como texto
-                tablas.append((self.fitz.Rect(t.bbox), filas, xs))
+                if limites:
+                    # lo que queda fuera de los bordes reales (organigrama, parrafo) se lee como texto
+                    rect = self.fitz.Rect(rect.x0, limites[0], rect.x1, limites[1])
+                if _es_organigrama(t, filas, rect, page.rect.width):
+                    self._agregar_organigrama(i, rect, [f[0] for f in filas])
+                    continue
+                tablas.append((rect, filas, xs))
         except Exception as e:
             self.d.notas.append(f"No se pudieron leer tablas en la página {i + 1}: {e}")
         return tablas
@@ -565,6 +820,9 @@ class _ExtraccionPDF:
         for l in lineas:
             if id(l) in ids_enc:
                 d.lineas_diag.append((i + 1, "encabezado o pie", l["texto"]))
+                continue
+            if any(p == i and _dentro(l, r) for p, r in self.rects_organigrama):
+                d.lineas_diag.append((i + 1, "organigrama", l["texto"]))
                 continue
             k = next((k for k, (r, _, _) in enumerate(tablas) if _dentro(l, r)), None)
             if k is not None:
@@ -589,13 +847,13 @@ class _ExtraccionPDF:
             if total and perdidas > 0.3 * total:
                 contenido.extend(propias)
                 d.lineas_diag += [(i + 1, "posible tabla tratada como texto", l["texto"]) for l in propias]
-                d.notas.append(f"Página {i + 1}: una posible tabla se dejó como texto porque sus celdas no "
-                               f"contenían todo su texto ({perdidas} de {total} palabras).")
+                d.avisos.append(f"p.{i + 1}: posible tabla tratada como texto ({perdidas} de {total} palabras "
+                                "fuera de celdas)")
                 continue
             if sueltas:
                 contenido.extend(sueltas)
-                d.notas.append(f"Página {i + 1}: {len(sueltas)} líneas dentro de una tabla no quedaron en sus celdas; "
-                               "se agregaron como texto junto a la tabla.")
+                d.avisos.append(f"p.{i + 1}: {len(sueltas)} líneas de una tabla fuera de sus celdas; se agregaron "
+                                "como texto junto a la tabla")
             d.lineas_diag += [(i + 1, "tabla", l["texto"]) for l in propias]
             self.items.append((i, r.y0, r.x0, {"tipo": "tabla", "filas": filas, "xs": xs, "y0": r.y0, "y1": r.y1,
                                                "pagina": i}))

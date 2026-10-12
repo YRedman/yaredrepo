@@ -11,13 +11,14 @@ from unittest import mock
 
 from tests import ayuda  # noqa: F401
 from corpus_org.consulta import cli as consulta_cli
-from corpus_org.consulta.comandos.participacion import rol_sin_descriptivo
+from corpus_org.consulta.participacion import rol_sin_descriptivo
 from corpus_org.consulta.puestos import DetectorPuestos, Puesto
 from corpus_org.consulta.roles import rol, verbo
 from corpus_org.conversion import cli as conversion_cli
 from corpus_org.conversion.analisis import analizar
 from corpus_org.conversion.asignacion import asignar_archivos
 from corpus_org.conversion.entradas import es_archivo_ignorado
+from corpus_org.conversion.extractores.pdf import _repetidas
 from corpus_org.conversion.extractores.texto import ExtractorTexto
 from corpus_org.conversion.inventario import parsear_lista, quitar_duplicados
 from corpus_org.conversion.modelo import DocumentoExtraido, bloque_h
@@ -112,6 +113,61 @@ class DiagramaTest(unittest.TestCase):
         self.assertGreater(a.excluidos["aprobada"], 0)
 
 
+class EncabezadosRepetidosTest(unittest.TestCase):
+    """Un encabezado real aparece una vez por pagina y a la misma altura; una fila de tabla no."""
+
+    def test_encabezado_real(self):
+        zonas = [{"codigo: pr-#": [40.0]}, {"codigo: pr-#": [41.5]}]
+        self.assertEqual(_repetidas(zonas, 0, 2), {"codigo: pr-#"})
+
+    def test_filas_de_tabla_que_continuan(self):
+        varias_por_pagina = [{"analista de procesos": [130.0, 150.0, 170.0]}, {"analista de procesos": [80.0, 100.0]}]
+        self.assertEqual(_repetidas(varias_por_pagina, 0, 2), set())
+        otra_altura = [{"actividad numero #": [130.0]}, {"actividad numero #": [80.0]}]
+        self.assertEqual(_repetidas(otra_altura, 0, 2), set())
+
+
+@unittest.skipUnless(DEPENDENCIAS, "faltan python-docx o lxml")
+class TextoEnZonaDeEncabezadoTest(unittest.TestCase):
+    """Un texto junto al encabezado que solo aparece en una pagina no se descarta como encabezado."""
+
+    def test_se_conserva_y_se_avisa(self):
+        try:
+            from reportlab.lib.pagesizes import letter
+            from reportlab.pdfgen import canvas
+            try:
+                import pymupdf  # noqa: F401
+            except ImportError:
+                import fitz  # noqa: F401
+        except ImportError:
+            self.skipTest("faltan reportlab o PyMuPDF")
+        with tempfile.TemporaryDirectory() as tmp:
+            entrada, salida = Path(tmp) / "entrada", Path(tmp) / "salida"
+            entrada.mkdir()
+            c = canvas.Canvas(str(entrada / "Encabezado.pdf"), pagesize=letter)
+            for pg in (1, 2):
+                c.setFont("Helvetica", 9)
+                c.drawString(72, 750, "Código: PR-ENC-001")
+                if pg == 2:
+                    c.drawString(330, 750, "Aviso exclusivo de la segunda hoja")
+                c.setFont("Helvetica", 10)
+                c.drawString(72, 650, f"Contenido de la página {pg} del procedimiento de prueba.")
+                c.setFont("Helvetica", 8)
+                c.drawString(72, 40, "Documento controlado - uso interno")
+                c.showPage()
+            c.save()
+            with redirect_stdout(io.StringIO()):
+                conversion_cli.main(["convertir", "--entrada", str(entrada), "--salida", str(salida),
+                                     "--departamento", "Pruebas", "--tipo", "P", "--dep", "PRU",
+                                     "--sin-verificacion-cruzada"])
+            md = (salida / "P_PRU.md").read_text(encoding="utf-8")
+            reporte = (salida / "REPORTE_P_PRU.md").read_text(encoding="utf-8")
+        cuerpo = md[:md.index("Datos de encabezado y pie")]
+        self.assertIn("Aviso exclusivo de la segunda hoja", cuerpo)
+        self.assertIn("se conservaron como contenido", reporte)
+        self.assertEqual(md.count("Código: PR-ENC-001"), 1)
+
+
 class ContextoTextoTest(unittest.TestCase):
     def test_markdown_y_csv(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -152,7 +208,7 @@ def _construir(base):
     with redirect_stdout(io.StringIO()) as out:
         try:
             conversion_cli.main(["construir", "--entrada", str(base / "entrada"), "--contexto", str(base / "contexto"),
-                                 "--sin-verificacion-cruzada"])
+                                 "--sin-verificacion-cruzada", "--muestra-revision", "0"])
             codigo = 0
         except SystemExit as e:
             codigo = e.code
@@ -224,6 +280,13 @@ class CasosIntegracionTest(unittest.TestCase):
         _, out = _consultar(self.publicado, "relaciones", "Almacen", "Compras")
         self.assertNotIn("puesto Asistente Administrativo", out)
 
+    def test_titulos_con_numeracion_automatica_de_word(self):
+        md = (self.publicado / "P_ALM.md").read_text(encoding="utf-8")
+        self.assertIn("] 1. Objetivo", md)
+        self.assertIn("] 2. Alcance", md)
+        r = self.por_archivo[("ALM", "Control de inventario.docx")]
+        self.assertEqual(r["campos_no_especificados"], "Responsabilidades")
+
     def test_ficha_muestra_actividades_principales(self):
         codigo = self.por_archivo[("COM", "Comprador.docx")]["codigo"]
         _, out = _consultar(self.publicado, "ficha", codigo)
@@ -265,6 +328,18 @@ class PDFTest(unittest.TestCase):
 
     def test_diagrama_vectorial(self):
         self.assertTrue("[DIAGRAMA" in self.md or "posible diagrama vectorial" in self.reporte)
+
+    def test_tabla_partida_entre_paginas(self):
+        """Las 60 filas, en orden y en una sola tabla; nada termina en el bloque de encabezado y pie."""
+        doc = self.md[self.md.index("] Tabla partida"):]
+        doc = doc[:doc.index("\n---\n")]
+        numeros = [int(l.split("|")[1]) for l in doc.splitlines()
+                   if l.startswith("| ") and "Analista de Procesos" in l]
+        self.assertEqual(numeros, list(range(1, 61)))
+        self.assertEqual(doc.count("|---|---|---|"), 1)
+        self.assertNotIn("Datos de encabezado y pie", doc)
+        self.assertIn("### [P-PRU-", doc)
+        self.assertNotIn("Desarrollo del proceso: [NO ESPECIFICADO]", doc)
 
 
 if __name__ == "__main__":
