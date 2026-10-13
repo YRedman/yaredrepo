@@ -149,9 +149,47 @@ Ajustes hechos al probar el lector con descriptivos reales (procesados fuera del
 - Se aceptan dos estructuras: `Descriptivos\<Área>\archivo.pdf` (el área es la carpeta) y `Descriptivos\archivo.pdf`. En la segunda, el área se toma de `entrada\areas.csv` (columnas `archivo;area`). El script crea ese archivo con todos los documentos y la columna `area` vacía, y agrega los nuevos en cada construcción sin tocar lo ya escrito.
 - Un documento sin área queda en «Sin Área» con un código provisional (`D-SAR-NN`) y la construcción termina en REQUIERE REVISIÓN. Los códigos provisionales no se conservan: al escribir el área, el documento recibe su código definitivo sin dejar filas `RETIRADO`.
 
+- Un documento y sus copias (`archivo (1).pdf`) ocupan una sola fila en `areas.csv`, y se convierte el archivo que se llama igual que la fila del inventario (el original), no la copia.
+- Un PDF con páginas escaneadas que no se pudieron leer (no hay Tesseract instalado) es un **problema**, no solo un aviso: su texto no está en el corpus aunque la cobertura diga 100 %.
+
 Código: `cli._lista_desde_carpeta`, `inventario.parsear_lista`, `inventario.leer_areas`, `inventario.actualizar_plantilla_areas`, `inventario.leer_base` y `publicacion.validar_publicacion`.
 
 Resultado en el piloto (10 descriptivos reales, dos variantes de plantilla): cobertura 100 % en todos; nombre, reporta a, propósito, versión y vigencia en los 9 digitales. El escaneado (OCR) no trae “Reporta a” ni funciones legibles: conviene usar la versión digital.
+
+## OCR de PDF escaneados (Tesseract)
+
+Las páginas escaneadas se leen con Tesseract. `python scripts/convertir.py diagnostico` comprueba PyMuPDF, pytesseract, Pillow, Tesseract y el idioma español. El ejecutable se busca en `TESSERACT_CMD`, en el PATH y en las carpetas de instalación de Windows (`Program Files`, `Program Files (x86)` y `%LOCALAPPDATA%\Programs`), así que no hace falta editar el PATH. Código: `conversion/extractores/ocr.py`.
+
+## Matriz organizacional (Excel)
+
+`construir` escribe `salida_corpus/matriz_organizacional.xlsx` (requiere `openpyxl`), una base de datos para revisar el corpus sin ejecutar código. `python scripts/convertir.py matriz --salida salida_corpus` la regenera sin volver a convertir. Hojas:
+
+| Hoja | Contenido |
+|---|---|
+| Léeme | Qué contiene cada hoja, estado de la construcción y cómo leer las columnas |
+| Resumen | Conteos por área con fórmulas (puestos, OCR, sin texto, funciones, relaciones, pendientes) |
+| Puestos | Un puesto por fila: área, reporta a y supervisa a (literal), código del jefe si está en el corpus, propósito, versión, vigencia, calidad de lectura y revisión |
+| Funciones | Una función por fila con su evidencia o entregable |
+| Relaciones | Área o puesto de interacción y tipo de relación, con el código del puesto relacionado si está en el corpus |
+| Perfil y requisitos | Educación, experiencia, competencias, accesos, herramientas y características especiales |
+| Normativa citada | Cada texto literal que menciona una política, protocolo, procedimiento, norma, reglamento, manual, ley o código de documento |
+| Procedimientos, Participación, Puestos x Procedimientos | Procedimientos, el rol de cada puesto en cada uno y la matriz puesto × procedimiento (se llenan cuando hay procedimientos) |
+| Indicadores | KPIs del contexto |
+| Revisión | Documentos para comparar con el original, con una columna para las observaciones del auditor |
+
+Todo es literal del corpus; los cruces por nombre de puesto indican si la coincidencia es exacta o probable. Código: `consulta/matriz.py`.
+
+## Paquete para Copilot
+
+Copilot no ejecuta `corpus.py` y acepta pocos archivos de conocimiento. Al terminar, `construir` escribe:
+
+- `salida_corpus/copilot/`: como máximo 20 archivos (`--max-archivos-copilot N`):
+  - `00_indice_corpus.md`: una fila por documento con área, puesto, reporta a, supervisa a, versión, vigencia, el archivo donde está y una nota («SIN TEXTO (escaneado)», «pendiente de revisión»);
+  - `01_contexto.md` y `02_indicadores.md`;
+  - los documentos agrupados por área en archivos de tamaño parecido.
+- `salida_corpus/instrucciones_copilot.md`: el texto para el campo de instrucciones del agente. No se sube como conocimiento.
+
+`python scripts/convertir.py copilot --salida salida_corpus --max-archivos-copilot 15` regenera el paquete con otro límite sin volver a convertir. Código: `conversion/copilot.py`.
 
 ## Pruebas
 

@@ -12,6 +12,7 @@ from ...comun.texto import limpiar_celda, nfc, norm, numeros, tokens, unir
 from ..modelo import DocumentoExtraido
 from .base import Extractor
 from ..secciones import clave_titulo, es_seccion_conocida
+from .ocr import configurar_pytesseract, idioma_ocr
 from .maquetacion import RE_NUM_INICIO, agrupar_filas, bloques_desde_items
 
 RE_PATRON_ENC = re.compile(r"(p[aá]gina\s*\d+\s*(de|/)\s*\d+|\bversi[oó]n\s*:|\brevisi[oó]n\s*:|c[oó]digo\s*:|"
@@ -442,9 +443,22 @@ def _texto_zona(page, fitz, lineas, rect):
     return textos
 
 
+def palabras_ocr(lineas):
+    """Palabras de las lineas OCR, incluidas las que se unen al quitar el guion de fin de linea ("ambien-" + "tal")."""
+    lineas = list(lineas)
+    palabras = set()
+    for k, texto in enumerate(lineas):
+        palabras.update(tokens(texto))
+        if texto.rstrip().endswith("-") and k + 1 < len(lineas):
+            antes, despues = tokens(texto), tokens(lineas[k + 1])
+            if antes and despues:
+                palabras.add(antes[-1] + despues[0])
+    return palabras
+
+
 def _ocr_lineas(page, idioma):
     """OCR de una pagina escaneada; devuelve lineas con posicion (en puntos PDF)."""
-    import pytesseract
+    pytesseract = configurar_pytesseract()
     from PIL import Image
     pix = page.get_pixmap(dpi=DPI_OCR)
     img = Image.open(io.BytesIO(pix.tobytes("png")))
@@ -477,15 +491,7 @@ def _ocr_lineas(page, idioma):
 
 
 def _idioma_ocr():
-    try:
-        import pytesseract
-        langs = pytesseract.get_languages(config="")
-    except Exception:
-        return None
-    for idioma in ("spa", "eng"):
-        if idioma in langs:
-            return idioma
-    return None
+    return idioma_ocr()
 
 
 MAX_SUELTAS_ENTRE_TABLAS = 3
@@ -641,6 +647,7 @@ class _ExtraccionPDF:
             ocr = []
             self.d.notas.append(f"OCR falló en la página {i + 1}: {e}")
         self.d.paginas_ocr.append(i + 1)
+        self.d.crudo_ocr |= palabras_ocr(l["texto"] for l in ocr)
         self.d.idioma_ocr = self.ocr_idioma
         self._marca(i, -1, 0, f"[TEXTO OCR: página {i + 1} escaneada; revisar contra el original]")
         self.ocr_pendiente.append((i, ocr, self.alturas[i]))

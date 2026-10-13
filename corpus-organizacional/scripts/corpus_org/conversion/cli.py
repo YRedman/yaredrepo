@@ -15,11 +15,14 @@ from ..comun.esquema import (AREA_SIN_ASIGNAR, ARCHIVO_AREAS_DOCUMENTOS, ARCHIVO
 from ..comun.texto import norm
 from .asignacion import asignar_archivos, grupos_a_convertir
 from .configuracion import EXT_RECONOCIDAS, EXT_TEXTO
+from .extractores.ocr import diagnostico
+from ..consulta.matriz import escribir_matriz
+from .copilot import ARCHIVO_INSTRUCCIONES, MAX_ARCHIVOS, exportar_copilot
 from .entradas import buscar_entradas, entrada_por_defecto, localizar, partes_ruta
 from .huella import huella
-from .inventario import (RE_CODIGO_DEP, actualizar_plantilla_areas, candidatos_codigo, construir_inventario,
-                         inventario_provisional, leer_areas, leer_base, leer_catalogo_codigos, parsear_lista,
-                         tipo_de_carpeta)
+from .inventario import (RE_CODIGO_DEP, actualizar_plantilla_areas, candidatos_codigo, clave_documento,
+                         construir_inventario, inventario_provisional, leer_areas, leer_base,
+                         leer_catalogo_codigos, parsear_lista, tipo_de_carpeta)
 from .lote import Grupo, OpcionesConversion, procesar_grupo
 from .publicacion import (MUESTRA_REVISION, escribir_huellas, escribir_resumen_construccion, leer_revisados,
                           limpiar_generados, publicar_corpus, validar_publicacion)
@@ -59,7 +62,7 @@ def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None, incl
                           "o Descriptivos\\archivo.pdf con el área en areas.csv.")
     if any("sin_area" in f for f in filas):
         agregados = actualizar_plantilla_areas(Path(ruta_areas), filas)
-        sin_area = sum(1 for f in filas if f.get("sin_area"))
+        sin_area = len({clave_documento(f["archivo"]) for f in filas if f.get("sin_area")})
         if agregados:
             print(f"Se agregaron {agregados} archivos a {ruta_areas}: escriba el área de cada uno en la columna 'area'.")
         if sin_area:
@@ -360,11 +363,21 @@ def modo_construir(args):
     escribir_huellas(publicado)
     resumen_path = raiz_salida / ARCHIVO_RESUMEN
     escribir_resumen_construccion(resumen_path, validacion, publicados)
+    carpeta_copilot = exportar_copilot(raiz_salida, args.max_archivos_copilot)
+    try:
+        matriz = escribir_matriz(raiz_salida)
+    except CorpusError as e:
+        matriz = None
+        validacion.avisos.append(f"No se generó la matriz Excel: {e.mensaje}")
     print("\nCONSTRUIR CORPUS · convertir.py v" + VERSION)
     print("Resultado: " + validacion.estado)
     print(f"Publicado: {publicado}")
     print(f"Control: {control}")
     print(f"Resumen: {resumen_path}")
+    print(f"Copilot: {carpeta_copilot} ({len(list(carpeta_copilot.iterdir()))} archivos de conocimiento; "
+          f"instrucciones en {raiz_salida / ARCHIVO_INSTRUCCIONES})")
+    if matriz:
+        print(f"Matriz Excel: {matriz}")
     for x in validacion.problemas:
         print("ERROR: " + x)
     if validacion.revision_visual:
@@ -377,12 +390,45 @@ def modo_construir(args):
         sys.exit(validacion.codigo_salida)
 
 
+def modo_copilot(args):
+    """Regenera el paquete para Copilot desde una construccion existente (por ejemplo con otro limite)."""
+    raiz = Path(args.salida or "salida_corpus").resolve()
+    carpeta = exportar_copilot(raiz, args.max_archivos_copilot)
+    archivos = sorted(carpeta.iterdir())
+    print(f"COPILOT · convertir.py v{VERSION}")
+    print(f"Conocimiento ({len(archivos)} archivos) en {carpeta}:")
+    for p in archivos:
+        print(f"- {p.name} ({p.stat().st_size // 1024} KB)")
+    print(f"Instrucciones del agente: {raiz / ARCHIVO_INSTRUCCIONES}")
+
+
+def modo_matriz(args):
+    """Regenera la matriz Excel desde una construccion existente."""
+    raiz = Path(args.salida or "salida_corpus").resolve()
+    print(f"MATRIZ · convertir.py v{VERSION}")
+    print(f"Matriz Excel: {escribir_matriz(raiz)}")
+
+
+def modo_diagnostico(args):
+    """Comprueba PyMuPDF, pytesseract, Pillow, Tesseract y el idioma español."""
+    print(f"DIAGNÓSTICO · convertir.py v{VERSION}")
+    lineas = diagnostico()
+    for ok, texto in lineas:
+        print(("OK     " if ok else "FALTA  ") + texto)
+    if all(ok for ok, _ in lineas):
+        print("\nTodo listo: las páginas escaneadas se leerán con OCR.")
+    else:
+        print("\nSin OCR las páginas escaneadas quedan sin texto (el resultado será REQUIERE REVISIÓN).")
+        sys.exit(1)
+
+
 # ---------------------------------------------------------------------------
 # Argumentos
 # ---------------------------------------------------------------------------
 
 MODOS = {"inventario": modo_inventario, "convertir": modo_convertir, "contexto": modo_contexto,
-         "construir": modo_construir}
+         "construir": modo_construir, "copilot": modo_copilot,
+         "diagnostico": modo_diagnostico, "matriz": modo_matriz}
 
 
 def crear_parser():
@@ -410,6 +456,9 @@ def crear_parser():
                             help="Nombre del departamento, para convertir sin inventario (piloto).")
         if nombre == "contexto":
             sp.add_argument("--excluir", nargs="*", default=[])
+        if nombre in ("construir", "copilot"):
+            sp.add_argument("--max-archivos-copilot", type=int, default=MAX_ARCHIVOS,
+                            help="Máximo de archivos del paquete para el conocimiento de Copilot.")
         if nombre == "construir":
             sp.add_argument("--contexto", default=None,
                             help="Carpeta separada con organigrama, glosario y otros materiales de contexto.")
