@@ -202,6 +202,22 @@ Las páginas escaneadas se leen con Tesseract. `python scripts/convertir.py diag
 
 Todo es literal del corpus; los cruces por nombre de puesto indican si la coincidencia es exacta o probable. Código: `consulta/matriz.py`.
 
+## v3.5: lectura de PDF escaneados (OCR con estructura)
+
+Tesseract reconoce bien las palabras, pero en un descriptivo escaneado las tablas salían como texto corrido, el texto sobre fondo de color se perdía y el encabezado del formato aparecía en el cuerpo de cada página. Por eso faltaban «Reporta a», las funciones, la versión y la vigencia. `conversion/extractores/ocr_pagina.py` lee cada página escaneada así:
+
+1. **Endereza** la página si está torcida (≥ 0,1°).
+2. **Detecta las líneas de las tablas en la imagen por contraste** con su entorno (no con un umbral fijo), así distingue las líneas grises del fondo gris de las filas. Una franja gruesa es un relleno de color y aporta sus bordes. Una línea algo inclinada sigue siendo línea, porque su grosor se mide por columna.
+3. **Arma la cuadrícula**: líneas horizontales unidas por verticales o por un relleno. En una fila con relleno no se toman como columnas los bordes de las letras claras, y un título de ancho completo no se parte.
+4. **Ubica cada palabra del OCR en su celda** por su posición. Lo demás queda como texto.
+5. **Relee sola cada celda** con fondo de color, con lectura poco confiable o que el OCR dejó vacía teniendo tinta. Invierte el texto claro sobre fondo oscuro y acepta la relectura solo si es más confiable y no pierde texto.
+6. **Limpia**: bordes leídos como caracteres («|», «[»), letras sueltas dudosas, palabras leídas dos veces (negrita) y viñetas leídas como «e» o «+».
+7. **Separa** la tabla de arriba con «Código / Versión / Vigencia / Página» como encabezado (metadatos) y las cajas angostas como organigrama.
+
+Cada documento guarda las páginas leídas con OCR y la **confianza media** de Tesseract (columnas nuevas `paginas_ocr` y `confianza_ocr`, al final del índice). Solo pasa a revisión visual si la confianza es menor que 85 % (`CONFIANZA_OCR_REVISION`); la matriz Excel y el índice de Copilot lo muestran como «OCR» en todos los casos.
+
+Resultado en el descriptivo escaneado real del piloto (4 páginas): 22 de 24 elementos esperados (encabezado, caja del jefe y filas de las tablas), antes 0 tablas. Confianza media del 93 %, y «Reporta a», funciones, versión y vigencia completos. Requiere `numpy`; sin numpy se usa solo el OCR de texto corrido.
+
 ## Paquete para Copilot
 
 Copilot no ejecuta `corpus.py` y acepta pocos archivos de conocimiento. Al terminar, `construir` escribe:

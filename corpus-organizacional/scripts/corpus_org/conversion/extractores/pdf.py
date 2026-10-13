@@ -1,7 +1,6 @@
 """Extractor de PDF (PyMuPDF; pdfplumber y Tesseract son opcionales)."""
 
 import collections
-import io
 import math
 import os
 import re
@@ -13,6 +12,7 @@ from ..modelo import DocumentoExtraido
 from .base import Extractor
 from ..secciones import clave_titulo, es_seccion_conocida
 from .ocr import configurar_pytesseract, idioma_ocr
+from .ocr_pagina import leer_pagina
 from .maquetacion import RE_NUM_INICIO, agrupar_filas, bloques_desde_items
 
 RE_PATRON_ENC = re.compile(r"(p[aá]gina\s*\d+\s*(de|/)\s*\d+|\bversi[oó]n\s*:|\brevisi[oó]n\s*:|c[oó]digo\s*:|"
@@ -27,7 +27,6 @@ MIN_REPETICION = 0.6      # fraccion de paginas en que debe repetirse un encabez
 TOLERANCIA_ALTURA = 4.0   # puntos: un encabezado o pie repetido esta siempre a la misma altura
 SEPARACION_VALOR_ENCABEZADO = 6.0   # puntos entre una etiqueta del encabezado y su valor en la linea de abajo
 COBERTURA_BORDE = 0.9     # fraccion del ancho de una tabla que debe cubrir una linea para ser borde de fila
-DPI_OCR = 300
 
 
 def _importar_fitz():
@@ -456,40 +455,6 @@ def palabras_ocr(lineas):
     return palabras
 
 
-def _ocr_lineas(page, idioma):
-    """OCR de una pagina escaneada; devuelve lineas con posicion (en puntos PDF)."""
-    pytesseract = configurar_pytesseract()
-    from PIL import Image
-    pix = page.get_pixmap(dpi=DPI_OCR)
-    img = Image.open(io.BytesIO(pix.tobytes("png")))
-    datos = pytesseract.image_to_data(img, lang=idioma, output_type=pytesseract.Output.DICT)
-    esc = 72.0 / DPI_OCR
-    lineas = collections.OrderedDict()
-    for k in range(len(datos["text"])):
-        t = (datos["text"][k] or "").strip()
-        try:
-            conf = float(datos["conf"][k])
-        except (TypeError, ValueError):
-            conf = -1
-        if not t or conf < 0:
-            continue
-        clave = (datos["block_num"][k], datos["par_num"][k], datos["line_num"][k])
-        x, y = datos["left"][k] * esc, datos["top"][k] * esc
-        w, h = datos["width"][k] * esc, datos["height"][k] * esc
-        L = lineas.setdefault(clave, {"palabras": [], "x0": x, "y0": y, "x1": x + w, "y1": y + h})
-        L["palabras"].append(t)
-        L["x0"], L["y0"] = min(L["x0"], x), min(L["y0"], y)
-        L["x1"], L["y1"] = max(L["x1"], x + w), max(L["y1"], y + h)
-    salida = []
-    for L in lineas.values():
-        texto = nfc(" ".join(L["palabras"]))
-        texto = re.sub(r"^[e¢«°•*»©]\s+(?=[A-ZÁÉÍÓÚÑ])", "• ", texto)
-        salida.append({"texto": texto, "x0": L["x0"], "y0": L["y0"], "x1": L["x1"], "y1": L["y1"],
-                       "tam": 0.0, "bold": False, "font": "ocr", "spans": [],
-                       "chars": len(texto.replace(" ", "")), "ocr": True})
-    return salida
-
-
 def _idioma_ocr():
     return idioma_ocr()
 
@@ -642,15 +607,25 @@ class _ExtraccionPDF:
             self._marca(i, 0, 0, f"[PÁGINA ESCANEADA SIN TEXTO: página {i + 1}; no se pudo aplicar OCR]")
             return
         try:
-            ocr = _ocr_lineas(page, self.ocr_idioma)
+            res = leer_pagina(page, self.ocr_idioma, configurar_pytesseract())
         except Exception as e:
-            ocr = []
+            res = None
             self.d.notas.append(f"OCR falló en la página {i + 1}: {e}")
         self.d.paginas_ocr.append(i + 1)
-        self.d.crudo_ocr |= palabras_ocr(l["texto"] for l in ocr)
         self.d.idioma_ocr = self.ocr_idioma
         self._marca(i, -1, 0, f"[TEXTO OCR: página {i + 1} escaneada; revisar contra el original]")
-        self.ocr_pendiente.append((i, ocr, self.alturas[i]))
+        if res is None:
+            return
+        textos = [l["texto"] for l in res.lineas] + [c for t in res.tablas for f in t[4] for c in f]
+        textos += [c[2] for c in res.cajas] + res.encabezado
+        self.d.crudo_ocr |= palabras_ocr(textos)
+        self.d.confianzas_ocr += res.confianzas
+        if res.encabezado and not self.encabezado_guardado:
+            self.d.encabezado = list(res.encabezado)
+            self.encabezado_guardado = True
+        for t in res.encabezado:
+            self.d.crudo_encabezado.update(tokens(t))
+        self.ocr_pendiente.append((i, res, self.alturas[i]))
 
     def _aplicar_ocr_pendiente(self):
         """Agrega el texto OCR quitando el encabezado y pie, ubicados con la mediana de las otras paginas."""
@@ -660,12 +635,24 @@ class _ExtraccionPDF:
         infs = [c[1] for c in self.cortes if c[1] is not None]
         lim_sup = statistics.median(sups) if sups else None
         lim_inf = statistics.median(infs) if infs else None
-        for i, ocr, _h in self.ocr_pendiente:
-            quitadas = [l for l in ocr if (lim_sup is not None and l["y1"] <= lim_sup + 2) or
-                        (lim_inf is not None and l["y0"] >= lim_inf - 2)]
-            if quitadas:
-                self.d.notas.append(f"Página {i + 1} (OCR): se quitaron {len(quitadas)} líneas de encabezado o pie.")
-            for f in agrupar_filas([l for l in ocr if l not in quitadas]):
+        for i, res, _h in self.ocr_pendiente:
+            ocr = res.lineas
+            if not res.encabezado:   # sin la tabla del formato: se usa el corte de las paginas digitales
+                quitadas = [l for l in ocr if (lim_sup is not None and l["y1"] <= lim_sup + 2) or
+                            (lim_inf is not None and l["y0"] >= lim_inf - 2)]
+                if quitadas:
+                    self.d.notas.append(f"Página {i + 1} (OCR): se quitaron {len(quitadas)} líneas de encabezado o pie.")
+                ocr = [l for l in ocr if l not in quitadas]
+            for y0, x0, y1, _x1, filas, xs in res.tablas:
+                self.items.append((i, y0, x0, {"tipo": "tabla", "filas": filas, "xs": xs, "y0": y0, "y1": y1,
+                                               "pagina": i, "ocr": True}))
+            if res.cajas:
+                cajas = sorted(res.cajas)
+                self._marca(i, cajas[0][0], cajas[0][1],
+                            f"[ORGANIGRAMA: cajas de arriba hacia abajo; ver página {i + 1} del original]")
+                self.items.append((i, cajas[0][0] + 0.01, cajas[0][1],
+                                   {"tipo": "marca", "texto": " → ".join(c[2] for c in cajas), "pagina": i}))
+            for f in agrupar_filas(ocr):
                 f["pagina"] = i
                 f["ocr"] = True
                 self.items.append((i, f["y0"], f["x0"], f))

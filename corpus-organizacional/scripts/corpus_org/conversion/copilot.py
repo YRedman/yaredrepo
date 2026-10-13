@@ -56,6 +56,8 @@ def _pendientes(raiz):
 def _nota(fila, pendientes):
     if AVISO_ESCANEADO in (fila.get("detalle_avisos") or "") or (fila.get("palabras") or "").strip() == "0":
         return "SIN TEXTO (escaneado): no hay contenido"
+    if (fila.get("paginas_ocr") or "").strip() and (fila.get("codigo") or "").upper() not in pendientes:
+        return "leído con OCR (escaneado)"
     if estado_no_publicable(fila.get("estado_documental", "")):
         return f"excluido ({fila.get('estado_documental')})"
     if (fila.get("codigo") or "").upper() in pendientes:

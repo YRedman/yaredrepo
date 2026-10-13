@@ -35,7 +35,8 @@ def _metadatos_conversion(doc, analisis, codigo, tipo, departamento, archivo, ti
     if analisis.secciones_excluidas:
         lineas.append("> - Secciones no incluidas: " + ", ".join(analisis.secciones_excluidas))
     if doc.paginas_ocr:
-        lineas.append("> - Páginas leídas con OCR: " + ", ".join(map(str, doc.paginas_ocr)))
+        conf = f" (confianza media {doc.confianza_ocr:.0f} %)" if doc.confianza_ocr is not None else ""
+        lineas.append("> - Páginas leídas con OCR: " + ", ".join(map(str, doc.paginas_ocr)) + conf)
     lineas.append("")
     return lineas
 

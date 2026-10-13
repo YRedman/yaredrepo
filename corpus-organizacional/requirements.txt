@@ -8,3 +8,4 @@ lxml>=5,<7                # XML de Word
 openpyxl>=3.1,<4          # matriz organizacional en Excel
 pytesseract>=0.3.10,<1    # OCR de páginas escaneadas (requiere Tesseract instalado aparte)
 pillow>=10,<13            # imágenes para el OCR
+numpy>=1.24,<3            # líneas de las tablas en páginas escaneadas

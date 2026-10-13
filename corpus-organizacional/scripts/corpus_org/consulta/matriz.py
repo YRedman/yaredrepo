@@ -167,8 +167,11 @@ def _lectura(fila):
     avisos = fila.get("detalle_avisos") or ""
     if AVISO_ESCANEADO in avisos or (fila.get("palabras") or "").strip() == "0":
         return "Sin texto (escaneado)"
-    if "OCR en" in avisos:
-        return "OCR (revisar contra el original)"
+    if (fila.get("paginas_ocr") or "").strip() or "OCR en" in avisos:
+        conf = (fila.get("confianza_ocr") or "").strip()
+        detalle = f"confianza {float(conf):.0f} %" if conf else "confianza desconocida"
+        revisar = "OCR en" in avisos or not conf
+        return f"OCR ({detalle}{'; revisar contra el original' if revisar else ''})"
     return "Digital"
 
 
