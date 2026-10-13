@@ -28,17 +28,20 @@ class TipoDocumento:
     plural: str                    # Descriptivos de puesto
     general: bool = False          # True: documento general de contexto (area GEN)
     carpetas: Tuple[str, ...] = ()  # inicio del nombre de la carpeta de entrada (normalizado, sin acentos)
-    palabras: Tuple[str, ...] = ()  # palabras del nombre de archivo que identifican un tipo general
+    palabras: Tuple[str, ...] = ()  # palabras del nombre de archivo o subcarpeta de contexto que identifican el tipo
     anterior: str = ""             # letra del codigo anterior (D-, P-) para la migracion
 
 
 TIPOS_DOCUMENTO = (
     # --- documentos de area: skill corpus-documentos -------------------------------------------
     TipoDocumento("DES", "Descriptivo de puesto", "Descriptivos de puesto", carpetas=("descrip", "perfil"),
-                  anterior="D"),
-    TipoDocumento("PRD", "Procedimiento", "Procedimientos", carpetas=("procedim", "proceso"), anterior="P"),
-    TipoDocumento("PRO", "Protocolo", "Protocolos", carpetas=("protocol",)),
-    TipoDocumento("POL", "Política", "Políticas", carpetas=("politic",)),
+                  palabras=("descriptivo", "perfil de puesto", "perfiles de puesto"), anterior="D"),
+    TipoDocumento("PRD", "Procedimiento", "Procedimientos", carpetas=("procedim", "proceso"),
+                  palabras=("procedimiento", "ficha de proceso", "fichas de proceso", "fdp", "instructivo"),
+                  anterior="P"),
+    TipoDocumento("PRO", "Protocolo", "Protocolos", carpetas=("protocol",), palabras=("protocolo",)),
+    TipoDocumento("POL", "Política", "Políticas", carpetas=("politic", "normativ", "reglament"),
+                  palabras=("politica", "normativa", "reglamento", "lineamiento")),
     # --- documentos generales de contexto (area GEN): skill corpus-contexto ---------------------
     TipoDocumento("ORG", "Organigrama", "Organigramas", general=True,
                   palabras=("organigrama", "estructura organizacional")),
@@ -136,6 +139,23 @@ def tipo_general_de(nombre_archivo_o_carpeta):
                            or any(re.search(rf"(?<!\w){re.escape(p)}", n) for p in td.palabras)):
             return td.codigo
     return None
+
+
+def _con_palabra(texto, palabras):
+    n = norm(re.sub(r"[_\-.]+", " ", texto or ""))
+    return any(re.search(rf"(?<!\w){re.escape(p)}", n) for p in palabras)
+
+
+def tipo_de_material(nombre_archivo_o_carpeta):
+    """Tipo de un material de la carpeta de contexto (subcarpeta o nombre de archivo).
+
+    Primero los tipos de area (un 'Procedimiento de indicadores' es un procedimiento, una 'Normativa' una
+    politica) y luego los generales (organigrama, KPI...). None si no se reconoce."""
+    for td in TIPOS_DOCUMENTO:
+        if not td.general and (_con_palabra(nombre_archivo_o_carpeta, td.palabras)
+                               or tipo_de_carpeta(nombre_archivo_o_carpeta) == td.codigo):
+            return td.codigo
+    return tipo_general_de(nombre_archivo_o_carpeta)
 
 
 def es_area_general(nombre_area):

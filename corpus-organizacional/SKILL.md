@@ -61,7 +61,7 @@ python scripts/corpus.py verificar
 ```
 
 - Los documentos van en `Descriptivos\<Área>\archivo`, `Procedimientos\<Área>\…`, `Protocolos\<Área>\…` o `Políticas\<Área>\…`. Una política o protocolo de varias áreas o de toda la empresa va en la carpeta de área `General` (código `GEN`). Si están directamente en `Descriptivos\` (sin carpeta de área), el área se escribe en `entrada\areas.csv` (`archivo;area`); el script crea ese archivo con la columna `area` vacía. `lista.txt` es opcional: sin ella, la lista se arma con la carpeta de entrada.
-- En la carpeta de contexto, el tipo general sale de la subcarpeta (`Organigramas\`, `Glosarios\`…) o del nombre del archivo (organigrama, kpi, glosario, mapa de procesos); lo demás es `CTX`.
+- En la carpeta de contexto, los procedimientos y fichas de proceso (`PRD`), las políticas, normativas y reglamentos (`POL`), los protocolos (`PRO`) y los descriptivos (`DES`) se tratan como documentos de área: área de la subcarpeta (`Fichas de proceso\Calidad\`), de `areas.csv` o `GEN`. Lo demás es un documento general por su subcarpeta o nombre (organigrama, kpi, glosario, mapa de procesos) o `CTX`.
 - Los documentos sin área quedan como «Sin Área» con códigos provisionales `DES-SAR-NN` y la construcción termina en REQUIERE REVISIÓN. No cites esos códigos como definitivos.
 
 - **REQUIERE REVISIÓN** (código 2): faltan documentos, hay texto del original que no aparece (cobertura < 100 %), palabras que no están en el original, códigos duplicados o errores del contexto.

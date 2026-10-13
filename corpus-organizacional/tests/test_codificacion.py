@@ -55,6 +55,13 @@ class TiposTest(unittest.TestCase):
         self.assertEqual(codigo_nuevo_desde_anterior("P-SEG-102"), "PRD-SEG-102")
         self.assertIsNone(codigo_nuevo_desde_anterior("C-CTX-01"))   # se clasifica por archivo
 
+    def test_material_de_contexto(self):
+        from corpus_org.comun.tipos import tipo_de_material
+        self.assertEqual([tipo_de_material(x) for x in (
+            "ABC-CAL-FDP-01 Ficha de proceso Compras", "Procedimiento de diseño organizacional", "Normativa interna",
+            "Protocolo de emergencias", "Mapa de procesos", "Organigrama", "Fichas de proceso", "notas")],
+            ["PRD", "PRD", "POL", "PRO", "MPR", "ORG", "PRD", None])
+
     def test_carpetas_y_contexto(self):
         self.assertEqual([tipo_de_carpeta(x) for x in ("Descriptivos", "Procedimientos", "Políticas", "Protocolos")],
                          ["DES", "PRD", "POL", "PRO"])
@@ -206,7 +213,8 @@ class DosSkillsIntegracionTest(unittest.TestCase):
         ent, ctx = cls.base / "entrada", cls.base / "contexto"
         carpetas = {"des": ent / "Descriptivos" / "Seguridad", "prd": ent / "Procedimientos" / "Seguridad",
                     "polg": ent / "Políticas" / "General", "pols": ent / "Políticas" / "Seguridad",
-                    "pro": ent / "Protocolos" / "Seguridad", "org": ctx / "Organigramas"}
+                    "pro": ent / "Protocolos" / "Seguridad", "org": ctx / "Organigramas",
+                    "fichas": ctx / "Fichas de proceso" / "Calidad"}
         for c in carpetas.values():
             c.mkdir(parents=True)
         desc(carpetas["des"] / "Jefe de Seguridad.docx", "Jefe de Seguridad", "Gerente General",
@@ -218,6 +226,10 @@ class DosSkillsIntegracionTest(unittest.TestCase):
         proc(carpetas["pols"] / "Política de accesos.docx", "Código: POL-SEG-001", "Controlar los accesos.", pasos, [])
         proc(carpetas["pro"] / "Protocolo de emergencias.docx", "Código: PRT-SEG-001", "Actuar ante emergencias.",
              pasos, [])
+        # procedimiento y normativa en la carpeta de contexto: son documentos de area, no contexto general
+        proc(carpetas["fichas"] / "Ficha de proceso de auditoría.docx", "Código: FP-CAL-001",
+             "Auditar los procesos.", pasos, [])
+        proc(ctx / "Reglamento interno.docx", "Código: RG-001", "Normar la convivencia.", pasos, [])
         g = docx.Document()
         g.add_paragraph("Gerente General -> Jefe de Seguridad")
         g.save(carpetas["org"] / "Seguridad.docx")
@@ -234,16 +246,19 @@ class DosSkillsIntegracionTest(unittest.TestCase):
 
     def test_construccion(self):
         self.assertEqual(self.codigo, 0, self.salida)
-        self.assertEqual(sorted(self.indice), ["DES-SEG-01", "KPI-GEN-01", "ORG-GEN-01", "POL-GEN-01", "POL-SEG-01",
-                                               "PRD-SEG-01", "PRO-SEG-01"])
+        self.assertEqual(sorted(self.indice), ["DES-SEG-01", "KPI-GEN-01", "ORG-GEN-01", "POL-GEN-01", "POL-GEN-02",
+                                               "POL-SEG-01", "PRD-CAL-01", "PRD-SEG-01", "PRO-SEG-01"])
+        self.assertEqual(self.indice["PRD-CAL-01"]["archivo_origen"], "Ficha de proceso de auditoría.docx")
+        self.assertEqual(self.indice["POL-GEN-02"]["archivo_origen"], "Reglamento interno.docx")
+        self.assertTrue(self.indice["PRD-CAL-01"]["actividades"])
         self.assertEqual(self.indice["POL-GEN-01"]["area_propietaria"], "Calidad")
         self.assertEqual(self.indice["POL-GEN-01"]["departamento"], "General")
 
     def test_estructura_de_skills(self):
         docs = self.publicado / ayuda.DOCUMENTOS
         self.assertEqual(sorted(p.relative_to(docs).as_posix() for p in docs.rglob("*.md")),
-                         ["DES/DES_SEG.md", "POL/POL_GEN.md", "POL/POL_SEG.md", "PRD/PRD_SEG.md", "PRO/PRO_SEG.md",
-                          "SKILL.md"])
+                         ["DES/DES_SEG.md", "POL/POL_GEN.md", "POL/POL_SEG.md", "PRD/PRD_CAL.md", "PRD/PRD_SEG.md",
+                          "PRO/PRO_SEG.md", "SKILL.md"])
         datos = self.publicado / ayuda.DATOS
         self.assertTrue({"ORG_GEN.md", "KPI_GEN.md", "huellas.sha256", "matriz_organizacional.xlsx",
                          "inventario_contexto.csv"} <= {p.name for p in datos.iterdir()})
@@ -262,6 +277,9 @@ class DosSkillsIntegracionTest(unittest.TestCase):
             filas = list(csv.reader(f, delimiter=";"))
         self.assertEqual(filas[0][:4], ["Código", "Tipo", "Área de aplicación", "Área propietaria"])
         self.assertIn(["POL-GEN-01", "Política", "General", "Calidad"], [r[:4] for r in filas[1:]])
+        self.assertIn("POL-GEN-02", [r[0] for r in filas[1:]])
+        with open(matriz / "08_procedimientos.csv", encoding="utf-8-sig") as f:
+            self.assertIn("PRD-CAL-01", [r[0] for r in csv.reader(f, delimiter=";")])
         with open(matriz / "02_resumen.csv", encoding="utf-8-sig") as f:
             resumen = list(csv.reader(f, delimiter=";"))
         self.assertEqual(resumen[-1][:2], ["Total", "1"])

@@ -26,7 +26,8 @@ from .copilot import ARCHIVO_INSTRUCCIONES, MAX_ARCHIVOS, exportar_copilot
 from .entradas import buscar_entradas, entrada_por_defecto, localizar, partes_ruta
 from .huella import huella
 from .inventario import (RE_CODIGO_DEP, actualizar_plantilla_areas, candidatos_codigo, clave_documento,
-                         construir_inventario, escribir_equivalencias, inventario_contexto, inventario_provisional,
+                         construir_inventario, documentos_de_area_en_contexto, escribir_equivalencias,
+                         inventario_contexto, inventario_provisional,
                          leer_areas, leer_base, leer_catalogo_codigos, leer_equivalencias, migrar_fila,
                          parsear_lista, tipo_de_carpeta)
 from .lote import Grupo, OpcionesConversion, procesar_grupo
@@ -53,16 +54,19 @@ def _opciones(args):
 # inventario
 # ---------------------------------------------------------------------------
 
-def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None, incluir_duplicados=False, base=None):
+def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None, incluir_duplicados=False, base=None,
+                       extra_filas=None):
     """Lee lista.txt y escribe inventario_maestro.csv y catalogo.csv en ``salida``.
 
-    ``base`` es un inventario anterior: sus codigos se conservan (codigos estables).
+    ``base`` es un inventario anterior: sus codigos se conservan (codigos estables). ``extra_filas`` son
+    documentos de area que estan fuera de la entrada (procedimientos, politicas... de la carpeta de contexto).
     """
     lista = localizar(nombre_lista, entrada)
     if not lista:
         raise CorpusError(f"No encontré la lista de archivos '{nombre_lista}'. Adjúntala al chat.")
     ruta_areas = localizar(ARCHIVO_AREAS_DOCUMENTOS, entrada) or Path(entrada) / ARCHIVO_AREAS_DOCUMENTOS
     filas, ignoradas = parsear_lista(lista, leer_areas(ruta_areas) if Path(ruta_areas).is_file() else None)
+    filas += list(extra_filas or [])
     if not filas:
         raise CorpusError("La lista no contiene rutas válidas. Use carpetas Descriptivos\\<Área>\\archivo.pdf "
                           "o Descriptivos\\archivo.pdf con el área en areas.csv.")
@@ -99,7 +103,7 @@ def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None, incl
 def modo_inventario(args):
     salida = carpeta_salida(args)
     inv = generar_inventario(args.entrada, salida, args.lista, args.catalogo, args.incluir_duplicados,
-                             getattr(args, "base", None))
+                             getattr(args, "base", None), getattr(args, "extra_filas", None))
     activos = inventario_activo(inv.documentos)
     print(f"INVENTARIO · convertir.py v{VERSION} · huella {huella()}")
     print()
@@ -186,7 +190,7 @@ def _imprimir_resumen_conversion(resultados, asignacion):
 def ejecutar_conversion(args):
     opciones = _opciones(args)
     salida = carpeta_salida(args)
-    entradas = buscar_entradas(Path(args.entrada), salida)
+    entradas = buscar_entradas(Path(args.entrada), salida) + list(getattr(args, "extra_entradas", None) or [])
     inventario, tipo_filtro, dep_filtro = _inventario_para_convertir(args, entradas)
     asignacion = asignar_archivos(inventario, entradas, tipo_filtro, dep_filtro, raiz=args.entrada)
     if asignacion.ambiguos and not (tipo_filtro and dep_filtro):
@@ -254,6 +258,9 @@ def ejecutar_contexto(args):
     entradas = sorted((p for p in entradas
                        if norm(p.name) not in excluir and not norm(p.name).startswith(ARCHIVOS_NO_CONTEXTO)),
                       key=lambda p: norm(p.name))
+    if not entradas and excluir:
+        print("CONTEXTO: no hay documentos generales (todo el material de contexto es de área o son datos).")
+        return ResultadoContexto([], [])
     if not entradas:
         raise CorpusError("No encontré PDF, Word, .md, .csv ni .txt para el contexto.")
     inv_path = salida / ARCHIVO_INVENTARIO_CONTEXTO
@@ -319,7 +326,7 @@ def migrar_inventario(path):
     return equivalencias
 
 
-def _inventario_para_construir(args, entrada, control, raiz_salida):
+def _inventario_para_construir(args, entrada, control, raiz_salida, extra_filas=()):
     """Con lista.txt el inventario se regenera conservando los codigos del anterior (si existe).
     Sin lista.txt, la lista se arma con las carpetas de tipo (Descriptivos, Procedimientos, Protocolos,
     Políticas) de la entrada; si no las hay, se usa el inventario adjunto tal cual."""
@@ -330,6 +337,9 @@ def _inventario_para_construir(args, entrada, control, raiz_salida):
         generada = _lista_desde_carpeta(entrada, raiz_salida, control)
         if generada:
             args.lista = str(generada)
+        elif extra_filas:   # solo hay documentos de area en la carpeta de contexto
+            (control / "lista.txt").write_text("", encoding="utf-8")
+            args.lista = str(control / "lista.txt")
     if localizar(args.lista, entrada):
         base = None
         if previo:
@@ -338,7 +348,7 @@ def _inventario_para_construir(args, entrada, control, raiz_salida):
                 shutil.copy2(previo, base)
         modo_inventario(argparse.Namespace(entrada=str(entrada), salida=str(control), lista=args.lista,
                                            catalogo=args.catalogo, incluir_duplicados=args.incluir_duplicados,
-                                           base=str(base) if base else None))
+                                           base=str(base) if base else None, extra_filas=list(extra_filas)))
     elif previo:
         if Path(previo).resolve() != base_control.resolve():
             shutil.copy2(previo, base_control)
@@ -350,6 +360,32 @@ def _inventario_para_construir(args, entrada, control, raiz_salida):
         raise CorpusError("No hay documentos en carpetas de tipo (" + ", ".join(
             tipo_documento(t).plural for t in TIPOS_AREA) + ") dentro de la entrada "
             "(ni lista.txt o inventario_maestro.csv).")
+
+
+def documentos_de_area_del_contexto(contexto, entrada, raiz_salida):
+    """Filas de inventario de los documentos de area (PRD, POL, PRO, DES) de la carpeta de contexto."""
+    archivos = [p for p in buscar_entradas(contexto, raiz_salida)
+                if not norm(p.name).startswith(ARCHIVOS_NO_CONTEXTO)]
+    ruta_areas = localizar(ARCHIVO_AREAS_DOCUMENTOS, entrada) or Path(entrada) / ARCHIVO_AREAS_DOCUMENTOS
+    areas = leer_areas(ruta_areas) if Path(ruta_areas).is_file() else None
+    return documentos_de_area_en_contexto(archivos, contexto, areas)
+
+
+def equivalencias_de_contexto(control, de_area, anteriores):
+    """(codigo anterior, codigo nuevo) de los materiales de contexto que ahora son documentos de area: su
+    C-CTX-NN de la codificacion anterior o su codigo general (CTX-GEN-NN...) de una construccion previa."""
+    rutas = {f["ruta"] for f in de_area}
+    nuevos = {clave_documento(f["archivo"]): f["codigo"] for f in leer_csv(control / ARCHIVO_INVENTARIO)
+              if f.get("ruta_original") in rutas}
+    previos = control / ARCHIVO_INVENTARIO_CONTEXTO
+    generales = {clave_documento(f.get("archivo", "")): f["codigo"]
+                 for f in (inventario_activo(leer_csv(previos)) if previos.is_file() else [])}
+    pares = []
+    for clave, nuevo in nuevos.items():
+        for viejo in (anteriores.get(clave), generales.get(clave)):
+            if viejo and viejo != nuevo:
+                pares.append((viejo, nuevo))
+    return pares
 
 
 def contexto_anterior(control, publicado):
@@ -407,20 +443,31 @@ def modo_construir(args):
     anteriores = contexto_anterior(control, publicado)
     limpiar_generados(control)
 
+    # Los procedimientos, politicas/normativas, protocolos y descriptivos que estan en la carpeta de contexto
+    # son documentos de area: se inventarian, convierten y validan como los de la entrada.
+    de_area = documentos_de_area_del_contexto(contexto, entrada, raiz_salida) if contexto is not None else []
+
     # 1) Inventario (codigos estables si ya habia uno; los codigos D-/P- anteriores se migran).
-    _inventario_para_construir(args, entrada, control, raiz_salida)
+    _inventario_para_construir(args, entrada, control, raiz_salida, de_area)
+    if de_area:
+        print(f"Documentos de área en la carpeta de contexto: {len(de_area)} "
+              f"({', '.join(sorted({f['tipo'] for f in de_area}))})")
+        escribir_equivalencias(control / ARCHIVO_EQUIVALENCIAS,
+                               equivalencias_de_contexto(control, de_area, anteriores))
 
     # 2) Conversion de los documentos de area (DES, PRD, PRO, POL).
     comunes = dict(salida=str(control), sin_verificacion_cruzada=args.sin_verificacion_cruzada,
                    tiempo_max=args.tiempo_max)
     ejecutar_conversion(argparse.Namespace(entrada=str(entrada), inventario=str(control / ARCHIVO_INVENTARIO),
-                                           tipo=None, dep=None, departamento=None, **comunes))
+                                           tipo=None, dep=None, departamento=None,
+                                           extra_entradas=[Path(f["ruta"]) for f in de_area], **comunes))
 
     # 3) Contexto opcional (documentos generales ORG-GEN, KPI-GEN...), en carpeta separada para no
     #    convertir documentos operativos como contexto.
     errores_contexto = []
     if contexto is not None:
         no_contexto = _datos_de_contexto(contexto, control)
+        no_contexto += [f["archivo"] for f in de_area]
         res = ejecutar_contexto(argparse.Namespace(entrada=str(contexto), excluir=no_contexto,
                                                    anteriores=anteriores, **comunes))
         errores_contexto = [f"{r.codigo} {r.archivo}: {r.estado} {r.error}".strip() for r in res.documentos if not r.ok]

@@ -6,6 +6,7 @@ import itertools
 import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List
 
 from ..comun.archivos import escribir_csv, leer_csv, leer_texto
@@ -14,7 +15,8 @@ from ..comun.esquema import AREA_SIN_ASIGNAR, COLUMNAS_EQUIVALENCIAS, INVENTARIO
 from ..comun.texto import nfc, norm, sin_acentos
 from ..comun.tipos import (AREA_GENERAL, NOMBRE_AREA_GENERAL, TIPO_CONTEXTO_POR_DEFECTO, TIPOS_AREA,
                            TIPOS_DOCUMENTO, codigo_nuevo_desde_anterior, es_area_general,
-                           tipo_de_carpeta, tipo_desde_texto, tipo_general_de, RE_CODIGO_ANTERIOR)
+                           tipo_de_carpeta, tipo_de_material, tipo_desde_texto, tipo_general_de,
+                           RE_CODIGO_ANTERIOR)
 from ..comun.tipos import tipo as tipo_documento
 from .configuracion import EXT_RECONOCIDAS, PALABRAS_VACIAS_DEP, PREFERENCIA_EXT
 from .entradas import es_archivo_ignorado, partes_ruta
@@ -372,17 +374,57 @@ def inventario_provisional(entradas, tipo, codigo_dep, departamento):
 # Documentos generales de contexto (ORG-GEN-01, KPI-GEN-01...)
 # ---------------------------------------------------------------------------
 
-def tipo_de_contexto(path, carpeta_contexto=None):
-    """Tipo general de un material de contexto: por su subcarpeta (Organigramas\\...) o por su nombre."""
+def clasificar_material(path, carpeta_contexto=None):
+    """(tipo, area) de un archivo de la carpeta de contexto.
+
+    El tipo sale de la subcarpeta mas cercana que lo indique (Procedimientos\\, Políticas\\, Normativas\\,
+    Organigramas\\...) o, si ninguna lo indica, del nombre del archivo (ficha de proceso, procedimiento,
+    politica, organigrama, kpi...). Para un documento de area (DES, PRD, PRO, POL) el area es la subcarpeta
+    que sigue a la del tipo (Procedimientos\\Calidad\\x.pdf), o '' si no la hay. Solo PDF y Word pueden
+    ser documentos de area; lo demas es un documento general (CTX si no se reconoce)."""
+    partes = []
     if carpeta_contexto is not None:
         try:
-            for parte in reversed(path.relative_to(carpeta_contexto).parts[:-1]):
-                t = tipo_general_de(parte)
-                if t:
-                    return t
+            partes = list(Path(path).relative_to(carpeta_contexto).parts[:-1])
         except ValueError:
-            pass
-    return tipo_general_de(os.path.splitext(path.name)[0]) or TIPO_CONTEXTO_POR_DEFECTO
+            partes = []
+    t, area = None, ""
+    for i in range(len(partes) - 1, -1, -1):
+        t = tipo_de_material(partes[i])
+        if t:
+            area = partes[i + 1] if i + 1 < len(partes) else ""
+            break
+    if not t:
+        t = tipo_de_material(os.path.splitext(Path(path).name)[0])
+    if t in TIPOS_AREA and Path(path).suffix.lower() not in EXT_RECONOCIDAS:
+        t = tipo_general_de(os.path.splitext(Path(path).name)[0])
+    if t is None or t in TIPOS_AREA:
+        return (t or TIPO_CONTEXTO_POR_DEFECTO), (nfc(area).strip() if t in TIPOS_AREA else "")
+    return t, ""
+
+
+def tipo_de_contexto(path, carpeta_contexto=None):
+    """Tipo general (ORG, KPI, GLO, MPR o CTX) de un material de contexto que no es documento de area."""
+    t, _ = clasificar_material(path, carpeta_contexto)
+    return TIPO_CONTEXTO_POR_DEFECTO if t in TIPOS_AREA else t
+
+
+def documentos_de_area_en_contexto(archivos, carpeta_contexto, areas=None):
+    """Filas de lista (como las de ``parsear_lista``) de los procedimientos, politicas, protocolos y
+    descriptivos que estan en la carpeta de contexto: se inventarian y convierten como los de la entrada.
+
+    El area es la subcarpeta de area, la de areas.csv o, si no hay ninguna, General (GEN): un material
+    de contexto sin area se toma como de toda la empresa."""
+    areas = areas or {}
+    filas = []
+    for p in archivos:
+        t, area = clasificar_material(p, carpeta_contexto)
+        if t not in TIPOS_AREA:
+            continue
+        area = area or areas.get(clave_documento(p.name), "") or NOMBRE_AREA_GENERAL
+        filas.append({"tipo": t, "departamento": area, "archivo": nfc(p.name).strip(), "ruta": str(p),
+                      "desde_contexto": True})
+    return filas
 
 
 def inventario_contexto(archivos, carpeta_contexto=None, base=(), anteriores=None):
@@ -431,7 +473,7 @@ def inventario_contexto(archivos, carpeta_contexto=None, base=(), anteriores=Non
     for clave, f in previos.items():
         if clave not in vistos and (f.get("estado_inventario") or INVENTARIO_ACTIVO) != INVENTARIO_RETIRADO:
             filas.append(dict(f, estado_inventario=INVENTARIO_RETIRADO,
-                              observaciones="RETIRADO: ya no está en la carpeta de contexto; el código queda reservado"))
+                              observaciones="RETIRADO: ya no es un documento general del contexto; el código queda reservado"))
         elif clave not in vistos:
             filas.append(f)
     filas.sort(key=lambda f: (_orden_tipo(f["codigo"].split("-")[0]), f["codigo"]))
