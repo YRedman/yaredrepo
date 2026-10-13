@@ -7,6 +7,29 @@ Scripts del skill `corpus-organizacional` (ver `SKILL.md`):
 
 La línea de comandos y el formato de los archivos generados son los mismos de la v2.0, así que un corpus publicado con la v2.0 se puede seguir consultando. Conviene reconstruirlo para aprovechar las correcciones de metadatos.
 
+## Instalación
+
+Requisitos: Python 3.10 o superior (se recomienda 3.12 o 3.13) y, para los PDF escaneados, Tesseract con el idioma español.
+
+**Windows (un solo paso):** desde la carpeta del proyecto,
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\instalar.ps1
+```
+
+El script busca Python, crea el entorno virtual `.venv`, instala `requirements.txt`, instala Tesseract con `winget` si falta, descarga el idioma español (`spa.traineddata`) y termina con `convertir.py diagnostico`. Opciones: `-SinOCR` (no instala Tesseract) y `-Pruebas` (instala también `requirements-dev.txt`). Después, en cada terminal nueva: `.\.venv\Scripts\Activate.ps1`.
+
+**A mano (cualquier sistema):**
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate          # Linux/macOS: source .venv/bin/activate
+python -m pip install -r requirements.txt
+python scripts/convertir.py diagnostico
+```
+
+Tesseract no se instala con pip: en Windows, instalador de UB Mannheim (marcar *Additional language data → Spanish*); en Linux, `apt install tesseract-ocr tesseract-ocr-spa`; en macOS, `brew install tesseract tesseract-lang`.
+
 ## Estructura
 
 ```
@@ -194,6 +217,7 @@ Copilot no ejecuta `corpus.py` y acepta pocos archivos de conocimiento. Al termi
 ## Pruebas
 
 ```bash
+python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -t .      # o: python -m pytest tests
 ```
 

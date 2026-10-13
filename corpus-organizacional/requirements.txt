@@ -1,0 +1,10 @@
+# Dependencias de Python del proyecto (equivalente a package.json):
+#   python -m pip install -r requirements.txt
+# En Windows, instalar.ps1 crea el entorno virtual, instala esto y configura el OCR.
+pymupdf>=1.24,<2          # lectura de PDF (texto, tablas, dibujos)
+pdfplumber>=0.10,<1       # verificación cruzada del texto de los PDF
+python-docx>=1.1,<2       # lectura de Word (.docx)
+lxml>=5,<7                # XML de Word
+openpyxl>=3.1,<4          # matriz organizacional en Excel
+pytesseract>=0.3.10,<1    # OCR de páginas escaneadas (requiere Tesseract instalado aparte)
+pillow>=10,<13            # imágenes para el OCR

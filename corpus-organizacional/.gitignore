@@ -8,3 +8,7 @@ salida/
 salida_corpus/
 publicado/
 datos/
+
+# Entorno virtual de Python
+.venv/
+venv/
