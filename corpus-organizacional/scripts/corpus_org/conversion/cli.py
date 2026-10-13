@@ -16,7 +16,7 @@ from ..comun.texto import norm
 from .asignacion import asignar_archivos, grupos_a_convertir
 from .configuracion import EXT_RECONOCIDAS, EXT_TEXTO
 from .extractores.ocr import diagnostico
-from ..consulta.matriz import escribir_matriz
+from ..consulta.matriz import ARCHIVO_MATRIZ, escribir_matriz
 from .copilot import ARCHIVO_INSTRUCCIONES, MAX_ARCHIVOS, exportar_copilot
 from .entradas import buscar_entradas, entrada_por_defecto, localizar, partes_ruta
 from .huella import huella
@@ -363,19 +363,28 @@ def modo_construir(args):
     escribir_huellas(publicado)
     resumen_path = raiz_salida / ARCHIVO_RESUMEN
     escribir_resumen_construccion(resumen_path, validacion, publicados)
-    carpeta_copilot = exportar_copilot(raiz_salida, args.max_archivos_copilot)
+    # salidas derivadas: un problema aqui (archivo abierto, permisos) no debe perder la construccion
+    try:
+        carpeta_copilot = exportar_copilot(raiz_salida, args.max_archivos_copilot)
+    except (CorpusError, OSError) as e:
+        carpeta_copilot = None
+        validacion.avisos.append(f"No se generó el paquete para Copilot: {getattr(e, 'mensaje', e)}")
     try:
         matriz = escribir_matriz(raiz_salida)
-    except CorpusError as e:
+        if matriz.name != ARCHIVO_MATRIZ:
+            validacion.avisos.append(f"{ARCHIVO_MATRIZ} estaba abierto (¿en Excel?); la matriz nueva se guardó "
+                                     f"como «{matriz.name}». Cierre el archivo anterior y reemplácelo.")
+    except (CorpusError, OSError) as e:
         matriz = None
-        validacion.avisos.append(f"No se generó la matriz Excel: {e.mensaje}")
+        validacion.avisos.append(f"No se generó la matriz Excel: {getattr(e, 'mensaje', e)}")
     print("\nCONSTRUIR CORPUS · convertir.py v" + VERSION)
     print("Resultado: " + validacion.estado)
     print(f"Publicado: {publicado}")
     print(f"Control: {control}")
     print(f"Resumen: {resumen_path}")
-    print(f"Copilot: {carpeta_copilot} ({len(list(carpeta_copilot.iterdir()))} archivos de conocimiento; "
-          f"instrucciones en {raiz_salida / ARCHIVO_INSTRUCCIONES})")
+    if carpeta_copilot:
+        print(f"Copilot: {carpeta_copilot} ({len(list(carpeta_copilot.iterdir()))} archivos de conocimiento; "
+              f"instrucciones en {raiz_salida / ARCHIVO_INSTRUCCIONES})")
     if matriz:
         print(f"Matriz Excel: {matriz}")
     for x in validacion.problemas:

@@ -347,8 +347,22 @@ def escribir_matriz(raiz, destino=None):
     _leeme(leeme, corpus, hojas, raiz, fuente)
     _resumen(wb.create_sheet("Resumen", 1), hojas, fuente)
     wb.calculation.fullCalcOnLoad = True
-    wb.save(destino)
-    return destino
+    return guardar_libro(wb, destino)
+
+
+def guardar_libro(wb, destino):
+    """Guarda el libro; si el archivo esta abierto (Excel lo bloquea en Windows) lo guarda con otro nombre.
+
+    Devuelve la ruta donde quedo guardado. Asi una construccion larga no termina en error por un
+    archivo abierto: la matriz nueva queda al lado, con la fecha y hora en el nombre.
+    """
+    try:
+        wb.save(destino)
+        return destino
+    except PermissionError:
+        alterno = destino.with_name(f"{destino.stem} {datetime.datetime.now():%Y-%m-%d %H%M%S}{destino.suffix}")
+        wb.save(alterno)
+        return alterno
 
 
 def _leeme(ws, corpus, hojas, raiz, fuente):
