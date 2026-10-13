@@ -1,0 +1,4 @@
+# Para ejecutar las pruebas: python -m pip install -r requirements-dev.txt
+-r requirements.txt
+reportlab>=4,<6           # genera los PDF sintéticos de las pruebas
+pyflakes>=3,<4            # revisión estática del código
