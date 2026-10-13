@@ -1,5 +1,6 @@
 from ...comun.errores import CorpusError
 from ...comun.esquema import area_de
+from ...comun.tipos import es_general
 from ...comun.texto import norm, recortar_palabras as recortar
 from ..indicadores import kpis_relacionados, sin_medicion
 from ..salida import resumir_lista
@@ -40,7 +41,7 @@ class Indicadores(Comando):
 
     def _relacionar(self, ctx, args, ks):
         cp, s = ctx.corpus, ctx.salida
-        cods = [c for c in sorted(cp.docs) if not c.startswith("C-")]
+        cods = [c for c in sorted(cp.docs) if not es_general(c)]
         if args.area:
             cod = ctx.area(args.area)
             cods = [c for c in cods if area_de(c) == cod]

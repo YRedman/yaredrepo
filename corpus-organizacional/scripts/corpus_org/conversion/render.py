@@ -2,7 +2,8 @@
 
 import re
 
-from ..comun.esquema import NO_ESPECIFICADO, TIPOS, TITULO_ENCABEZADO_PIE
+from ..comun.esquema import NO_ESPECIFICADO, TITULO_ENCABEZADO_PIE
+from ..comun.tipos import familia, tipo as tipo_documento
 from ..comun.markdown import esc_linea, lineas_tabla
 
 _ETIQUETAS_META = (("version", "Versión"), ("estado_documental", "Estado documental"),
@@ -12,13 +13,16 @@ _ETIQUETAS_META = (("version", "Versión"), ("estado_documental", "Estado docume
 
 def _metadatos_conversion(doc, analisis, codigo, tipo, departamento, archivo, titulo):
     meta = analisis.metadatos
+    td = tipo_documento(tipo)
     lineas = [f"## [{codigo}] {titulo}",
               "> **Metadatos de conversión (no forman parte del documento original)**",
               f"> - Código: {codigo}",
-              f"> - Tipo: {TIPOS.get(tipo, tipo)}"]
+              f"> - Tipo: {td.nombre if td else tipo}"]
     if departamento:
         lineas.append(f"> - Departamento: {departamento}")
     lineas.append(f"> - Archivo origen: {archivo}")
+    if meta.area_propietaria:
+        lineas.append(f"> - Área propietaria: {meta.area_propietaria}")
     if meta.codigo_interno:
         lineas.append(f"> - Código interno: {meta.codigo_interno}")
     for atributo, etiqueta in _ETIQUETAS_META:
@@ -27,7 +31,7 @@ def _metadatos_conversion(doc, analisis, codigo, tipo, departamento, archivo, ti
             lineas.append(f"> - {etiqueta}: {valor}")
     if doc.paginas:
         lineas.append(f"> - Páginas: {doc.paginas}")
-    if tipo in ("P", "D"):
+    if familia(tipo) in ("P", "D"):
         if analisis.faltantes:
             lineas += [f"> - {f}: {NO_ESPECIFICADO}" for f in analisis.faltantes]
         else:

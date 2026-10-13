@@ -49,6 +49,9 @@ CAMPOS = (
     CampoMetadato("responsable", ("Responsable del documento", "Responsable", "Elaborado por"),
                   r"[^·|]{2,80}", 10),
     CampoMetadato("proceso", ("Proceso",), r"[^·|]{2,120}", 12),
+    CampoMetadato("area_propietaria", ("Área propietaria", "Area propietaria", "Área emisora", "Area emisora",
+                                       "Área responsable", "Area responsable", "Área dueña", "Area duena"),
+                  r"[^·|]{2,80}", 10),
 )
 
 # Etiquetas que no se extraen pero que delimitan el valor de la etiqueta anterior.

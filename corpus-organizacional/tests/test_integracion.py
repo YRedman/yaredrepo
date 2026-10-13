@@ -60,7 +60,7 @@ class IntegracionTest(unittest.TestCase):
         generar(cls.base)
         cls.codigo, cls.salida = construir(cls.base)
         cls.publicado = cls.base / "entrada" / "salida_corpus" / "publicado"
-        with open(cls.publicado / "indice_corpus.csv", encoding="utf-8-sig") as f:
+        with open(cls.publicado / ayuda.DATOS / "indice_corpus.csv", encoding="utf-8-sig") as f:
             cls.indice = {r["codigo"]: r for r in csv.DictReader(f, delimiter=";")}
 
     @classmethod
@@ -72,15 +72,15 @@ class IntegracionTest(unittest.TestCase):
         self.assertIn("LISTO PARA PUBLICAR", self.salida)
 
     def test_metadatos_sin_falsos_positivos(self):
-        self.assertEqual(self.indice["D-ALM-01"]["estado_documental"], "")
-        self.assertEqual(self.indice["P-COM-01"]["estado_documental"], "Vigente")
-        self.assertEqual(self.indice["P-COM-01"]["propietario"], "Gerente de Compras")
-        self.assertEqual(self.indice["P-COM-02"]["version"], "")
-        self.assertEqual(self.indice["P-COM-02"]["estado_documental"], "Obsoleto")
-        self.assertEqual(self.indice["P-COM-01"]["codigos_citados"], "PR-ALM-001")
+        self.assertEqual(self.indice["DES-ALM-01"]["estado_documental"], "")
+        self.assertEqual(self.indice["PRD-COM-01"]["estado_documental"], "Vigente")
+        self.assertEqual(self.indice["PRD-COM-01"]["propietario"], "Gerente de Compras")
+        self.assertEqual(self.indice["PRD-COM-02"]["version"], "")
+        self.assertEqual(self.indice["PRD-COM-02"]["estado_documental"], "Obsoleto")
+        self.assertEqual(self.indice["PRD-COM-01"]["codigos_citados"], "PR-ALM-001")
 
     def test_pdf(self):
-        r = self.indice["P-ALM-01"]
+        r = self.indice["PRD-ALM-01"]
         self.assertEqual((r["codigo_interno"], r["version"], r["cobertura"]), ("PR-ALM-001", "1", "100.0 %"))
 
     def test_obsoleto_excluido_de_forma_coherente(self):
@@ -91,9 +91,9 @@ class IntegracionTest(unittest.TestCase):
         self.assertIn("Resultado: sin problemas", verif)
         _, busq = consultar(self.publicado, "buscar", "urgente")
         self.assertIn("Sin coincidencias", busq)
-        codigo, doc = consultar(self.publicado, "doc", "P-COM-02")
+        codigo, doc = consultar(self.publicado, "doc", "PRD-COM-02")
         self.assertEqual(codigo, 2)
-        _, todos = consultar(self.publicado, "doc", "P-COM-02", entorno={"CORPUS_INCLUIR_NO_VIGENTES": "1"})
+        _, todos = consultar(self.publicado, "doc", "PRD-COM-02", entorno={"CORPUS_INCLUIR_NO_VIGENTES": "1"})
         self.assertIn("Compra urgente", todos)
 
     def test_participacion_por_oracion(self):
@@ -108,10 +108,10 @@ class IntegracionTest(unittest.TestCase):
 
     def test_reconstruir_no_deja_archivos_viejos(self):
         control = self.base / "entrada" / "salida_corpus" / "control"
-        (control / "DIC_P_COM_01-01.csv").write_bytes((control / "DIC_P_COM.csv").read_bytes())
+        (control / "DIC_PRD_COM_01-01.csv").write_bytes((control / "DIC_PRD_COM.csv").read_bytes())
         codigo, salida = construir(self.base)
         self.assertEqual(codigo, 0, salida)
-        self.assertFalse((control / "DIC_P_COM_01-01.csv").exists())
+        self.assertFalse((control / "DIC_PRD_COM_01-01.csv").exists())
 
 
 if __name__ == "__main__":

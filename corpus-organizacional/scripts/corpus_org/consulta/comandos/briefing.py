@@ -4,6 +4,7 @@ import re
 from ...comun.errores import CorpusError
 from ...comun.esquema import NO_ESPECIFICADO, SEPARADOR_LISTA
 from ...comun.texto import norm, recortar_palabras as recortar
+from ...comun.tipos import familia, tipo_de_codigo
 from ..indicadores import kpis_relacionados, sin_medicion
 from ..participacion import calcular_participacion
 from ..relaciones import AnalizadorRelaciones
@@ -48,8 +49,8 @@ class Briefing(Comando):
                 + (f" · siguiente: briefing \"{cod}\" --parte {args.parte + 1}" if args.parte < total
                    else " · última parte"))
         analizador = AnalizadorRelaciones(cp)
-        self._puestos(ctx, [c for c in lote if c.startswith("D-")])
-        self._procedimientos(ctx, analizador, cod, [c for c in lote if c.startswith("P-")])
+        self._puestos(ctx, [c for c in lote if familia(tipo_de_codigo(c)) == "D"])
+        self._procedimientos(ctx, analizador, cod, [c for c in lote if familia(tipo_de_codigo(c)) == "P"])
         if args.parte == 1:
             self._toda_el_area(ctx, analizador, cod)
         s.linea()
@@ -116,7 +117,7 @@ class Briefing(Comando):
         else:
             s.linea("No hay menciones explícitas de otras áreas del corpus.")
         imprimir_no_resueltas(s, no_resueltas, 20)
-        procedimientos = [c for c in a.procedimientos if c in cp.docs]
+        procedimientos = [c for c in a.codigos("P") if c in cp.docs]
         participaciones = calcular_participacion(cp, procedimientos) if procedimientos else None
         if participaciones and participaciones.filas:
             s.linea()

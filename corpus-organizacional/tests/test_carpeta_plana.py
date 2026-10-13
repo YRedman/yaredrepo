@@ -42,7 +42,7 @@ class ListaPlanaTest(unittest.TestCase):
         """Una carpeta de area llamada "Procesos ..." dentro de Descriptivos sigue siendo el area."""
         with tempfile.TemporaryDirectory() as tmp:
             filas, _ = parsear_lista(_lista(tmp, r"Descriptivos\Procesos Industriales\Operador.pdf"))
-        self.assertEqual((filas[0]["tipo"], filas[0]["departamento"]), ("D", "Procesos Industriales"))
+        self.assertEqual((filas[0]["tipo"], filas[0]["departamento"]), ("DES", "Procesos Industriales"))
 
     def test_copias_ocupan_una_fila_de_areas_csv(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -60,8 +60,8 @@ class ListaPlanaTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "inventario.csv"
             p.write_text("codigo;tipo;codigo_departamento;departamento;archivo\n"
-                         f"D-SAR-01;Descriptivo;SAR;{AREA_SIN_ASIGNAR};a.pdf\n"
-                         "D-COM-01;Descriptivo;COM;Compras;b.pdf\n", encoding="utf-8")
+                         f"DES-SAR-01;Descriptivo;SAR;{AREA_SIN_ASIGNAR};a.pdf\n"
+                         "DES-COM-01;Descriptivo;COM;Compras;b.pdf\n", encoding="utf-8")
             base = leer_base(p)
         self.assertEqual(list(base.departamentos.values()), ["COM"])
         self.assertEqual(len(base.documentos), 1)
@@ -97,53 +97,55 @@ class ConstruirSinListaTest(unittest.TestCase):
             self.assertEqual(_construir(entrada, salida), 2)
             plantilla = (entrada / "areas.csv").read_text(encoding="utf-8-sig")
             self.assertIn("Comprador.docx;", plantilla)
-            self.assertEqual({c for c, _ in _inventario(salida).values()}, {"D-SAR-01", "D-SAR-02"})
+            self.assertEqual({c for c, _ in _inventario(salida).values()}, {"DES-SAR-01", "DES-SAR-02"})
 
             # 2) con las areas escritas: codigos definitivos y sin restos de los provisionales
             (entrada / "areas.csv").write_text("archivo;area\nComprador.docx;Compras\nAlmacenista.docx;Almacén\n",
                                                encoding="utf-8")
             self.assertEqual(_construir(entrada, salida), 0)
-            self.assertEqual(_inventario(salida), {"Comprador.docx": ("D-COM-01", "ACTIVO"),
-                                                   "Almacenista.docx": ("D-ALM-01", "ACTIVO")})
+            self.assertEqual(_inventario(salida), {"Comprador.docx": ("DES-COM-01", "ACTIVO"),
+                                                   "Almacenista.docx": ("DES-ALM-01", "ACTIVO")})
 
             # 3) un archivo nuevo se agrega a la lista sola y a la plantilla, sin cambiar los codigos
             descriptivo(carpeta / "Cotizador.docx", [("Nombre del puesto", "Cotizador")], ["Cotizar."])
             self.assertEqual(_construir(entrada, salida), 2)
             inv = _inventario(salida)
-            self.assertEqual(inv["Comprador.docx"], ("D-COM-01", "ACTIVO"))
-            self.assertEqual(inv["Cotizador.docx"], ("D-SAR-01", "ACTIVO"))
+            self.assertEqual(inv["Comprador.docx"], ("DES-COM-01", "ACTIVO"))
+            self.assertEqual(inv["Cotizador.docx"], ("DES-SAR-01", "ACTIVO"))
             self.assertIn("Cotizador.docx;", (entrada / "areas.csv").read_text(encoding="utf-8-sig"))
 
 
 class CopiasYEscaneadosTest(unittest.TestCase):
     def test_se_convierte_el_original_y_no_la_copia(self):
-        fila = {"codigo": "D-SAR-01", "tipo": "Descriptivo", "codigo_departamento": "SAR", "archivo": "Jefe.pdf",
+        fila = {"codigo": "DES-SAR-01", "tipo": "Descriptivo", "codigo_departamento": "SAR", "archivo": "Jefe.pdf",
                 "ruta_original": r"C:\e\Descriptivos\Jefe.pdf"}
         for orden in ((Path("e/Descriptivos/Jefe (1).pdf"), Path("e/Descriptivos/Jefe.pdf")),
                       (Path("e/Descriptivos/Jefe.pdf"), Path("e/Descriptivos/Jefe (1).pdf"))):
             a = asignar_archivos([fila], list(orden))
-            self.assertEqual(a.asignados[("D", "SAR")]["D-SAR-01"].name, "Jefe.pdf")
+            self.assertEqual(a.asignados[("DES", "SAR")]["DES-SAR-01"].name, "Jefe.pdf")
 
     def test_original_con_espacios_dobles(self):
         """El inventario (CSV) guarda «5. Soporte .pdf» aunque el archivo se llame «5.  Soporte .pdf»."""
-        fila = {"codigo": "D-TIN-07", "tipo": "Descriptivo", "codigo_departamento": "TIN",
+        fila = {"codigo": "DES-TIN-07", "tipo": "Descriptivo", "codigo_departamento": "TIN",
                 "archivo": "5. Soporte Técnico .pdf", "ruta_original": r"C:\e\Descriptivos\5. Soporte Técnico .pdf"}
         copia, original = Path("e/Descriptivos/5.  Soporte Técnico  (2).pdf"), Path("e/Descriptivos/5.  Soporte Técnico .pdf")
         for orden in ((copia, original), (original, copia)):
             a = asignar_archivos([fila], list(orden))
-            self.assertEqual(a.asignados[("D", "TIN")]["D-TIN-07"], original)
+            self.assertEqual(a.asignados[("DES", "TIN")]["DES-TIN-07"], original)
 
     def test_escaneado_sin_texto_es_problema(self):
         with tempfile.TemporaryDirectory() as tmp:
             pub = Path(tmp)
-            filas = [{"codigo": "D-COM-01", "cobertura": "100.0 %", "avisos_estructura": "1",
+            (pub / ayuda.DATOS).mkdir(parents=True)
+            (pub / ayuda.DOCUMENTOS / "DES").mkdir(parents=True)
+            filas = [{"codigo": "DES-COM-01", "cobertura": "100.0 %", "avisos_estructura": "1",
                       "detalle_avisos": AVISO_ESCANEADO + ": 1, 2"},
-                     {"codigo": "D-COM-02", "cobertura": "100.0 %", "avisos_estructura": "0"}]
-            escribir_csv(pub / "indice_corpus.csv", COLUMNAS_INDICE, filas)
-            (pub / "D_COM.md").write_text("## [D-COM-01] A\n\n## [D-COM-02] B\n", encoding="utf-8")
+                     {"codigo": "DES-COM-02", "cobertura": "100.0 %", "avisos_estructura": "0"}]
+            escribir_csv(pub / ayuda.DATOS / "indice_corpus.csv", COLUMNAS_INDICE, filas)
+            (pub / ayuda.DOCUMENTOS / "DES" / "DES_COM.md").write_text("## [DES-COM-01] A\n\n## [DES-COM-02] B\n", encoding="utf-8")
             v = validar_publicacion(pub, muestra=0)
         self.assertEqual(v.estado, "REQUIERE REVISIÓN")
-        self.assertTrue(any("escaneadas" in x and "D-COM-01" in x and "D-COM-02" not in x for x in v.problemas))
+        self.assertTrue(any("escaneadas" in x and "DES-COM-01" in x and "DES-COM-02" not in x for x in v.problemas))
 
 
 if __name__ == "__main__":

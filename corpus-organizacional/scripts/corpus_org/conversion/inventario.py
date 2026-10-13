@@ -10,8 +10,12 @@ from typing import Dict, List
 
 from ..comun.archivos import escribir_csv, leer_csv, leer_texto
 from ..comun.errores import CorpusError
-from ..comun.esquema import AREA_SIN_ASIGNAR, INVENTARIO_ACTIVO, INVENTARIO_RETIRADO, TIPOS
+from ..comun.esquema import AREA_SIN_ASIGNAR, COLUMNAS_EQUIVALENCIAS, INVENTARIO_ACTIVO, INVENTARIO_RETIRADO
 from ..comun.texto import nfc, norm, sin_acentos
+from ..comun.tipos import (AREA_GENERAL, NOMBRE_AREA_GENERAL, TIPO_CONTEXTO_POR_DEFECTO, TIPOS_AREA,
+                           TIPOS_DOCUMENTO, codigo_nuevo_desde_anterior, es_area_general,
+                           tipo_de_carpeta, tipo_desde_texto, tipo_general_de, RE_CODIGO_ANTERIOR)
+from ..comun.tipos import tipo as tipo_documento
 from .configuracion import EXT_RECONOCIDAS, PALABRAS_VACIAS_DEP, PREFERENCIA_EXT
 from .entradas import es_archivo_ignorado, partes_ruta
 
@@ -27,15 +31,6 @@ class Inventario:
     ignoradas: List[tuple] = field(default_factory=list)   # (ruta, motivo)
     departamentos: Dict[str, str] = field(default_factory=dict)
     rutas_validas: int = 0
-
-
-def tipo_de_carpeta(nombre):
-    n = norm(nombre)
-    if n.startswith(("procedim", "proceso")):
-        return "P"
-    if n.startswith(("descrip", "perfil")):
-        return "D"
-    return None
 
 
 def candidatos_codigo(nombre):
@@ -97,7 +92,8 @@ def parsear_lista(path, areas=None):
             continue
         tipo = tipo_de_carpeta(partes[-3])
         if not tipo:
-            ignoradas.append((l, f"la carpeta '{partes[-3]}' no es 'Procedimiento' ni 'Descriptivo'"))
+            ignoradas.append((l, f"la carpeta '{partes[-3]}' no es de un tipo conocido "
+                                 f"({', '.join(tipo_documento(t).plural for t in TIPOS_AREA)})"))
             continue
         filas.append({"tipo": tipo, "departamento": nfc(partes[-2]).strip(), "archivo": nfc(nombre).strip(),
                       "ruta": l})
@@ -135,7 +131,7 @@ def quitar_duplicados(filas, incluir=False):
         lista_f.sort(key=lambda f: (_es_copia(f["archivo"]),
                                     PREFERENCIA_EXT.get(os.path.splitext(f["archivo"])[1].lower(), 9), f["archivo"]))
         salida.append(lista_f[0])
-        avisos.append(f"Duplicado en {TIPOS[tipo]}/{lista_f[0]['departamento']}: se usa «{lista_f[0]['archivo']}» "
+        avisos.append(f"Duplicado en {_plural(tipo)}/{lista_f[0]['departamento']}: se usa «{lista_f[0]['archivo']}» "
                       f"y se descarta {', '.join('«' + f['archivo'] + '»' for f in lista_f[1:])}")
     return salida, avisos
 
@@ -192,9 +188,35 @@ def leer_catalogo_codigos(path):
     return codigos
 
 
+def _plural(codigo_tipo):
+    t = tipo_documento(codigo_tipo)
+    return t.plural if t else codigo_tipo
+
+
+def _nombre(codigo_tipo):
+    t = tipo_documento(codigo_tipo)
+    return t.nombre if t else codigo_tipo
+
+
+_ORDEN_TIPOS = {t.codigo: i for i, t in enumerate(TIPOS_DOCUMENTO)}
+
+
+def _orden_tipo(codigo_tipo):
+    return _ORDEN_TIPOS.get(codigo_tipo, len(_ORDEN_TIPOS))
+
+
+def nombre_departamento(nombre):
+    """El area que significa 'toda la empresa' (General, Corporativo...) se unifica como 'General' (GEN)."""
+    return NOMBRE_AREA_GENERAL if es_area_general(nombre) else nombre
+
+
 def _asignar_codigos(departamentos, fijados, reservados=()):
+    """Codigo de 3 letras por departamento. GEN queda reservado para el area general."""
     codigos = dict(fijados)
-    usados = set(codigos.values()) | set(reservados)
+    for k in departamentos:
+        if k == norm(NOMBRE_AREA_GENERAL):
+            codigos[k] = AREA_GENERAL
+    usados = set(codigos.values()) | set(reservados) | {AREA_GENERAL}
     for k, nombre in departamentos.items():
         if k in codigos:
             continue
@@ -216,16 +238,35 @@ class InventarioBase:
     documentos: Dict[tuple, dict] = field(default_factory=dict)   # (tipo, depto, documento) -> fila
     departamentos: Dict[str, str] = field(default_factory=dict)   # depto normalizado -> codigo
     maximos: collections.Counter = field(default_factory=collections.Counter)   # (tipo, codigo_dep) -> mayor numero
+    equivalencias: List[tuple] = field(default_factory=list)       # (codigo_anterior, codigo_nuevo) migrados
 
 
-def _tipo_inventario(fila):
-    return "P" if (fila.get("tipo") or "").lower().startswith("p") else "D"
+def tipo_de_fila(fila):
+    """Codigo de tipo de una fila de inventario o indice: 'DES', o desde 'Descriptivo'/'D' (formato anterior)."""
+    t = tipo_desde_texto(fila.get("tipo"))
+    if t:
+        return t
+    return (fila.get("codigo") or "").split("-")[0].upper() or "PRD"
+
+
+def migrar_fila(f, equivalencias=None):
+    """Fila del inventario con el codigo anterior (D-/P-) pasada a la codificacion TTT-AAA-NN."""
+    anterior = (f.get("codigo") or "").strip().upper()
+    nuevo = codigo_nuevo_desde_anterior(anterior) if RE_CODIGO_ANTERIOR.match(anterior) else None
+    t = tipo_de_fila(f)
+    f = dict(f, tipo=tipo_documento(t).nombre if tipo_documento(t) else f.get("tipo", ""))
+    if nuevo:
+        f["codigo"] = nuevo
+        if equivalencias is not None:
+            equivalencias.append((anterior, nuevo))
+    return f
 
 
 def leer_base(path):
     base = InventarioBase()
     for f in leer_csv(path):
-        t = _tipo_inventario(f)
+        f = migrar_fila(f, base.equivalencias)
+        t = tipo_de_fila(f)
         dep = (f.get("departamento") or "").strip()
         cod_dep = (f.get("codigo_departamento") or "").strip().upper()
         if norm(dep) == norm(AREA_SIN_ASIGNAR):
@@ -241,8 +282,8 @@ def leer_base(path):
     return base
 
 
-def _fila(codigo, tipo, cod_dep, departamento, f, obs):
-    return {"codigo": codigo, "tipo": TIPOS[tipo], "codigo_departamento": cod_dep, "departamento": departamento,
+def _fila(codigo, codigo_tipo, cod_dep, departamento, f, obs):
+    return {"codigo": codigo, "tipo": tipo_documento(codigo_tipo).nombre, "codigo_departamento": cod_dep, "departamento": departamento,
             "archivo": f["archivo"], "ruta_original": f["ruta"], "observaciones": obs,
             "estado_inventario": INVENTARIO_ACTIVO}
 
@@ -256,6 +297,7 @@ def construir_inventario(filas, ignoradas, codigos_fijados=None, incluir_duplica
     """
     base = base or InventarioBase()
     inv = Inventario(ignoradas=ignoradas, rutas_validas=len(filas))
+    filas = [dict(f, departamento=nombre_departamento(f["departamento"])) for f in filas]
     filas, inv.avisos = quitar_duplicados(filas, incluir_duplicados)
     deps = collections.OrderedDict()
     for f in sorted(filas, key=lambda f: norm(f["departamento"])):
@@ -270,11 +312,11 @@ def construir_inventario(filas, ignoradas, codigos_fijados=None, incluir_duplica
     for f in filas:
         grupos[(f["tipo"], norm(f["departamento"]))].append(f)
     nuevos, vistos = [], set()
-    for (tipo, kdep), lista_f in sorted(grupos.items(), key=lambda kv: (kv[0][0] != "D", codigos[kv[0][1]])):
+    for (tipo, kdep), lista_f in sorted(grupos.items(), key=lambda kv: (_orden_tipo(kv[0][0]), codigos[kv[0][1]])):
         lista_f.sort(key=lambda f: (norm(os.path.splitext(f["archivo"])[0]), f["archivo"]))
         for n, c in collections.Counter(norm(f["archivo"]) for f in lista_f).items():
             if c > 1:
-                inv.avisos.append(f"Archivo repetido en {TIPOS[tipo]}/{deps[kdep]}: {n}")
+                inv.avisos.append(f"Archivo repetido en {_plural(tipo)}/{deps[kdep]}: {n}")
         cod_dep = codigos[kdep]
         siguiente = base.maximos[(tipo, cod_dep)]
         ancho = ancho_numeracion(max(len(lista_f), siguiente))
@@ -302,16 +344,15 @@ def construir_inventario(filas, ignoradas, codigos_fijados=None, incluir_duplica
         inv.avisos.append(f"Documentos nuevos (códigos agregados al final): {', '.join(nuevos)}")
     if retirados:
         inv.avisos.append(f"Documentos del inventario base que ya no están (códigos reservados): {', '.join(retirados)}")
-    inv.documentos.sort(key=lambda f: (f["codigo"][0] != "D", f["codigo"]))
+    inv.documentos.sort(key=lambda f: (_orden_tipo(f["codigo"].split("-")[0]), f["codigo"]))
     for a, b in itertools.combinations(list(deps), 2):
         if difflib.SequenceMatcher(None, a, b).ratio() >= 0.85:
             inv.avisos.append(f"Nombres de departamento muy parecidos (¿son el mismo?): '{deps[a]}' y '{deps[b]}'")
     for k, nombre in deps.items():
-        inv.catalogo.append({
-            "departamento": nombre, "codigo": codigos[k],
-            "descriptivos": sum(1 for f in filas if norm(f["departamento"]) == k and f["tipo"] == "D"),
-            "procedimientos": sum(1 for f in filas if norm(f["departamento"]) == k and f["tipo"] == "P"),
-        })
+        fila_cat = {"departamento": nombre, "codigo": codigos[k]}
+        for t in TIPOS_AREA:
+            fila_cat[t] = sum(1 for f in filas if norm(f["departamento"]) == k and f["tipo"] == t)
+        inv.catalogo.append(fila_cat)
     inv.catalogo.sort(key=lambda r: r["codigo"])
     return inv
 
@@ -323,5 +364,96 @@ def inventario_provisional(entradas, tipo, codigo_dep, departamento):
     filas, _avisos = quitar_duplicados(filas)
     docs = sorted((f["path"] for f in filas), key=lambda p: (norm(os.path.splitext(p.name)[0]), p.name))
     ancho = ancho_numeracion(len(docs))
-    return [{"codigo": f"{tipo}-{codigo_dep}-{i:0{ancho}d}", "tipo": TIPOS[tipo], "codigo_departamento": codigo_dep,
+    return [{"codigo": f"{tipo}-{codigo_dep}-{i:0{ancho}d}", "tipo": _nombre(tipo), "codigo_departamento": codigo_dep,
              "departamento": departamento, "archivo": p.name} for i, p in enumerate(docs, 1)]
+
+
+# ---------------------------------------------------------------------------
+# Documentos generales de contexto (ORG-GEN-01, KPI-GEN-01...)
+# ---------------------------------------------------------------------------
+
+def tipo_de_contexto(path, carpeta_contexto=None):
+    """Tipo general de un material de contexto: por su subcarpeta (Organigramas\\...) o por su nombre."""
+    if carpeta_contexto is not None:
+        try:
+            for parte in reversed(path.relative_to(carpeta_contexto).parts[:-1]):
+                t = tipo_general_de(parte)
+                if t:
+                    return t
+        except ValueError:
+            pass
+    return tipo_general_de(os.path.splitext(path.name)[0]) or TIPO_CONTEXTO_POR_DEFECTO
+
+
+def inventario_contexto(archivos, carpeta_contexto=None, base=(), anteriores=None):
+    """Filas de inventario de los materiales de contexto, numerados por tipo dentro de GEN.
+
+    ``base`` son las filas del inventario de contexto anterior: cada material conserva su codigo, los
+    nuevos van al final de su tipo y los que ya no estan quedan RETIRADOS (codigo reservado).
+    ``anteriores`` es {clave_documento: codigo C-CTX-NN} de una construccion con la codificacion anterior:
+    esos materiales se numeran primero, en su orden anterior. Devuelve (filas, [(anterior, nuevo)]).
+    """
+    anteriores = anteriores or {}
+    previos, maximos = {}, collections.Counter()
+    for f in base:
+        t = tipo_de_fila(f)
+        try:
+            maximos[t] = max(maximos[t], int(f["codigo"].rsplit("-", 1)[1]))
+        except (KeyError, ValueError, IndexError):
+            continue
+        previos[(t, clave_documento(f.get("archivo", "")))] = f
+    por_tipo = collections.defaultdict(list)
+    for p in archivos:
+        por_tipo[tipo_de_contexto(p, carpeta_contexto)].append(p)
+    filas, equivalencias, vistos = [], [], set()
+    for t in sorted(por_tipo, key=_orden_tipo):
+        def orden(p):
+            ant = anteriores.get(clave_documento(p.name), "")
+            return (0, ant) if ant else (1, norm(p.name))
+        lista_p = sorted(por_tipo[t], key=orden)
+        siguiente = maximos[t]
+        ancho = ancho_numeracion(max(len(lista_p), siguiente))
+        for p in lista_p:
+            clave = (t, clave_documento(p.name))
+            ruta = str(p.relative_to(carpeta_contexto)) if carpeta_contexto is not None else p.name
+            if clave in previos:
+                codigo = previos[clave]["codigo"]
+                vistos.add(clave)
+            else:
+                siguiente += 1
+                codigo = f"{t}-{AREA_GENERAL}-{siguiente:0{ancho}d}"
+            ant = anteriores.get(clave_documento(p.name))
+            if ant:
+                equivalencias.append((ant, codigo))
+            filas.append({"codigo": codigo, "tipo": _nombre(t), "codigo_departamento": AREA_GENERAL,
+                          "departamento": NOMBRE_AREA_GENERAL, "archivo": p.name, "ruta_original": ruta,
+                          "observaciones": "", "estado_inventario": INVENTARIO_ACTIVO, "path": p})
+    for clave, f in previos.items():
+        if clave not in vistos and (f.get("estado_inventario") or INVENTARIO_ACTIVO) != INVENTARIO_RETIRADO:
+            filas.append(dict(f, estado_inventario=INVENTARIO_RETIRADO,
+                              observaciones="RETIRADO: ya no está en la carpeta de contexto; el código queda reservado"))
+        elif clave not in vistos:
+            filas.append(f)
+    filas.sort(key=lambda f: (_orden_tipo(f["codigo"].split("-")[0]), f["codigo"]))
+    return filas, equivalencias
+
+
+def escribir_equivalencias(path, nuevas):
+    """Agrega a equivalencias_codigos.csv (codigo_anterior;codigo_nuevo) las equivalencias nuevas, sin repetir."""
+    existentes = leer_csv(path) if path.is_file() else []
+    vistos = {(r.get("codigo_anterior", ""), r.get("codigo_nuevo", "")) for r in existentes}
+    filas = [{"codigo_anterior": r.get("codigo_anterior", ""), "codigo_nuevo": r.get("codigo_nuevo", "")}
+             for r in existentes]
+    for ant, nuevo in nuevas:
+        if (ant, nuevo) not in vistos and ant != nuevo:
+            vistos.add((ant, nuevo))
+            filas.append({"codigo_anterior": ant, "codigo_nuevo": nuevo})
+    if filas:
+        escribir_csv(path, COLUMNAS_EQUIVALENCIAS, filas)
+    return filas
+
+
+def leer_equivalencias(path):
+    """{codigo_anterior: codigo_nuevo} de equivalencias_codigos.csv."""
+    return {(r.get("codigo_anterior") or "").strip().upper(): (r.get("codigo_nuevo") or "").strip().upper()
+            for r in (leer_csv(path) if path.is_file() else []) if r.get("codigo_anterior")}

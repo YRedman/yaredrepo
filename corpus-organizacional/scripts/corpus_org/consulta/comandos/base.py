@@ -1,11 +1,21 @@
 """Contrato de los comandos de consulta y contexto compartido."""
 
+import argparse
 import difflib
 from abc import ABC, abstractmethod
 
 from ...comun.errores import AreaNoEncontrada, CorpusError
 from ...comun.esquema import RE_CODIGO, area_de
+from ...comun.tipos import FILTROS_TIPO, cumple_tipo, es_general, filtro_tipo
 from ..areas import ResolutorAreas
+
+
+def argumento_tipo(texto):
+    """Tipo de --tipo para argparse: DES, PRD, PRO, POL o GEN."""
+    try:
+        return filtro_tipo(texto)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e))
 
 
 class Contexto:
@@ -38,17 +48,21 @@ class Contexto:
         raise CorpusError(f"No existe el documento {c}." + (f" ¿Quisiste decir: {', '.join(cerca)}?" if cerca else ""), 2)
 
     def codigos_objetivo(self, texto, tipo=None):
-        """Codigos con texto de un documento (si ``texto`` es un codigo) o de un area."""
+        """Codigos con texto de un documento (si ``texto`` es un codigo) o de un area.
+
+        ``tipo``: un filtro de --tipo (DES, PRD, PRO, POL, GEN) o la familia 'D'/'P' (ver Area.codigos)."""
         if RE_CODIGO.match(texto.strip()):
             return [self.exigir_documento(texto)]
         a = self.corpus.areas[self.area(texto)]
+        if tipo in FILTROS_TIPO:
+            return [c for c in a.codigos() if c in self.corpus.docs and cumple_tipo(c, tipo)]
         return [c for c in a.codigos(tipo) if c in self.corpus.docs]
 
     def filtrar_area(self, codigos, texto_area):
         if not texto_area:
             return list(codigos)
         cod = self.area(texto_area)
-        return [c for c in codigos if not c.startswith("C-") and area_de(c) == cod]
+        return [c for c in codigos if not es_general(c) and area_de(c) == cod]
 
 
 class Comando(ABC):

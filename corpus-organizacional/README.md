@@ -1,11 +1,11 @@
 # Corpus organizacional
 
-Scripts del skill `corpus-organizacional` (ver `SKILL.md`):
+Scripts del corpus organizacional para un agente de Copilot (ver `SKILL.md`, que es el del skill `corpus-contexto`):
 
-- `scripts/convertir.py`: convierte descriptivos de puesto y procedimientos (PDF/Word) a Markdown, construye el índice y publica el corpus.
-- `scripts/corpus.py`: consulta el corpus publicado (solo biblioteca estándar).
+- `scripts/convertir.py`: convierte descriptivos de puesto, procedimientos, protocolos y políticas (PDF/Word) a Markdown, construye el índice y publica el corpus en dos skills: `corpus-documentos` y `corpus-contexto`.
+- `scripts/corpus.py`: consulta el corpus publicado (solo biblioteca estándar: en Copilot no hay red ni instalación de paquetes).
 
-La línea de comandos y el formato de los archivos generados son los mismos de la v2.0, así que un corpus publicado con la v2.0 se puede seguir consultando. Conviene reconstruirlo para aprovechar las correcciones de metadatos.
+Desde la v4.0 los códigos son `TTT-AAA-NN` (ver «v4.0» más abajo). Un corpus construido con la codificación anterior (`D-`, `P-`, `C-CTX-`) se migra solo al volver a construir.
 
 ## Instalación
 
@@ -37,6 +37,8 @@ scripts/
   convertir.py, corpus.py        Puntos de entrada (solo llaman a main)
   corpus_org/
     comun/                       Compartido por ambos scripts (solo biblioteca estándar)
+      tipos.py                   Tabla de tipos de documento (DES, PRD, PRO, POL, ORG, KPI...) y patrones de código
+      estructura.py              Las dos skills publicadas y sus carpetas
       esquema.py                 Contrato de datos: columnas del índice, códigos, estados no publicables
       texto.py, archivos.py, markdown.py, errores.py
     conversion/
@@ -45,11 +47,12 @@ scripts/
       analisis.py                Secciones, campos, actividades y códigos citados
       metadatos.py               Versión, estado, vigencia, propietario... (solo con etiqueta explícita)
       render.py, verificacion.py, reportes.py
-      inventario.py, entradas.py, asignacion.py, lote.py, publicacion.py
+      inventario.py, entradas.py, asignacion.py, lote.py, publicacion.py, skills.py
       cli.py                     Argumentos y orquestación de los modos
     consulta/
       repositorio.py             Carga del corpus publicado y exclusión de no vigentes
       parser.py                  Recorrido único del Markdown de un documento
+      ubicacion.py               Carpetas datos/ y corpus-documentos (en Copilot, por el nombre del skill)
       areas.py, entidades.py, puestos.py, roles.py, relaciones.py, participacion.py, indicadores.py, integridad.py
       comandos/                  Un archivo por comando (catalogo, area, briefing, ficha, doc, kpis, ...)
       cli.py
@@ -123,7 +126,7 @@ Resultado en el caso de prueba de la v2.1: 60 de 60 filas, en orden, en una sola
 | Avisos de estructura | Cada documento registra señales de que la estructura pudo leerse mal aunque el texto esté completo: tabla tratada como texto, líneas fuera de celdas, tabla partida con líneas sueltas, filas sin primera celda, párrafos repetidos, contenido sobre todo en imágenes, posible diagrama vectorial, nombre del puesto distinto del archivo, números que no aparecen completos (`45.000,00` → `45.000`) y OCR. Columnas nuevas del índice: `palabras_agregadas`, `avisos_estructura`, `detalle_avisos` (al final; las anteriores no se mueven) | `extractores/pdf.py`, `analisis.avisos_de_estructura`, `modelo.DocumentoConvertido.avisos` |
 | Validación más estricta | Cobertura < 100 %, palabras que no están en el original y errores del contexto pasan a ser **problemas** (antes eran avisos) | `publicacion.validar_publicacion` |
 | Revisión visual | Los documentos con avisos y una muestra reproducible del 10 % quedan pendientes hasta anotar su código en `revision_visual_ok.txt`. Tres estados con código de salida: LISTO (0), REQUIERE REVISIÓN (2), PENDIENTE DE REVISIÓN VISUAL (3). `--muestra-revision` ajusta la muestra | `publicacion.py`, `cli.modo_construir` |
-| Huellas SHA-256 | `publicado/huellas.sha256`; `corpus.py verificar` detecta archivos editados o borrados después de la conversión | `publicacion.escribir_huellas`, `consulta/integridad.py` |
+| Huellas SHA-256 | `huellas.sha256` (desde la v4.0 en `corpus-contexto/datos/`); `corpus.py verificar` detecta archivos editados o borrados después de la conversión | `publicacion.escribir_huellas`, `consulta/integridad.py` |
 | Códigos estables | Al reconstruir con `lista.txt`, el inventario anterior es la base: cada documento conserva su código, los nuevos van al final de su grupo y los que ya no están quedan `RETIRADO` reservando su código (`inventario --base`) | `inventario.construir_inventario` |
 | Datos del contexto | Los `kpi*.csv` de la carpeta de contexto se unen en `kpis.csv` y `areas_extra.csv` se publica tal cual (no se convierte a `contexto.md`) | `cli._datos_de_contexto` |
 
@@ -170,7 +173,7 @@ Ajustes hechos al probar el lector con descriptivos reales (procesados fuera del
 
 - Si `entrada` no tiene `lista.txt`, `construir` la arma con los documentos que están en una carpeta `Descriptivos` o `Procedimientos` (directamente o en una subcarpeta de área) y la guarda en `control/lista.txt`. Se regenera en cada construcción, así que los archivos nuevos entran solos.
 - Se aceptan dos estructuras: `Descriptivos\<Área>\archivo.pdf` (el área es la carpeta) y `Descriptivos\archivo.pdf`. En la segunda, el área se toma de `entrada\areas.csv` (columnas `archivo;area`). El script crea ese archivo con todos los documentos y la columna `area` vacía, y agrega los nuevos en cada construcción sin tocar lo ya escrito.
-- Un documento sin área queda en «Sin Área» con un código provisional (`D-SAR-NN`) y la construcción termina en REQUIERE REVISIÓN. Los códigos provisionales no se conservan: al escribir el área, el documento recibe su código definitivo sin dejar filas `RETIRADO`.
+- Un documento sin área queda en «Sin Área» con un código provisional (`DES-SAR-NN`) y la construcción termina en REQUIERE REVISIÓN. Los códigos provisionales no se conservan: al escribir el área, el documento recibe su código definitivo sin dejar filas `RETIRADO`.
 
 - Un documento y sus copias (`archivo (1).pdf`) ocupan una sola fila en `areas.csv`, y se convierte el archivo que se llama igual que la fila del inventario (el original), no la copia.
 - Un PDF con páginas escaneadas que no se pudieron leer (no hay Tesseract instalado) es un **problema**, no solo un aviso: su texto no está en el corpus aunque la cobertura diga 100 %.
@@ -185,7 +188,7 @@ Las páginas escaneadas se leen con Tesseract. `python scripts/convertir.py diag
 
 ## Matriz organizacional (Excel)
 
-`construir` escribe `salida_corpus/matriz_organizacional.xlsx` (requiere `openpyxl`), una base de datos para revisar el corpus sin ejecutar código. `python scripts/convertir.py matriz --salida salida_corpus` la regenera sin volver a convertir. Hojas:
+`construir` escribe `salida_corpus/matriz_organizacional.xlsx` (requiere `openpyxl`), una base de datos para revisar el corpus sin ejecutar código. Desde la v4.0 también la copia a `corpus-contexto/datos/` junto con un CSV por hoja (`datos/matriz/`). `python scripts/convertir.py matriz --salida salida_corpus` la regenera sin volver a convertir. Hojas:
 
 | Hoja | Contenido |
 |---|---|
@@ -229,6 +232,40 @@ Copilot no ejecuta `corpus.py` y acepta pocos archivos de conocimiento. Al termi
 - `salida_corpus/instrucciones_copilot.md`: el texto para el campo de instrucciones del agente. No se sube como conocimiento.
 
 `python scripts/convertir.py copilot --salida salida_corpus --max-archivos-copilot 15` regenera el paquete con otro límite sin volver a convertir. Código: `conversion/copilot.py`.
+
+## v4.0: codificación TTT-AAA-NN y dos skills de Copilot
+
+**Codificación.** `TTT` = tipo (3 letras), `AAA` = área (3 letras), `NN` = número (dos dígitos; tres si el grupo pasa de 99). Los tipos están en una sola tabla, `corpus_org/comun/tipos.py` (`TIPOS_DOCUMENTO`): para agregar uno basta una fila; los patrones, los nombres de archivo, los filtros `--tipo` y las carpetas se derivan de ella.
+
+| Tipo | Documento | Área | Carpeta de entrada |
+|---|---|---|---|
+| `DES` | Descriptivo de puesto | la del puesto | `Descriptivos\<Área>\` |
+| `PRD` | Procedimiento | la del procedimiento | `Procedimientos\<Área>\` |
+| `PRO` | Protocolo | una área, o `GEN` si aplica a varias o a toda la empresa | `Protocolos\<Área o General>\` |
+| `POL` | Política | ídem | `Políticas\<Área o General>\` |
+| `ORG`, `KPI`, `GLO`, `MPR` | Organigrama, indicadores, glosario, mapa de procesos | siempre `GEN` | carpeta de contexto (subcarpeta o nombre del archivo) |
+| `CTX` | Otro material de contexto | `GEN` | carpeta de contexto |
+
+- Una carpeta de área llamada `General`, `Toda la empresa`, `Corporativo`… (o ese valor en `areas.csv`) es el área `GEN`. El área que emite una política o protocolo se guarda aparte, en `area_propietaria` (índice, matriz y metadatos del Markdown), si el documento trae «Área propietaria», «Área emisora» o «Área responsable».
+- Numeración por tipo + área desde 01. Al reconstruir, los códigos no cambian: los nuevos van al final y los retirados reservan su código. El contexto tiene su propio inventario estable, `inventario_contexto.csv`.
+- **Migración:** `D-AAA-NN` → `DES-AAA-NN` y `P-AAA-NN` → `PRD-AAA-NN` con el mismo número; los `C-CTX-NN` se clasifican por tipo y se numeran dentro de `GEN` en su orden anterior. Todo queda en `equivalencias_codigos.csv` (`codigo_anterior;codigo_nuevo`, acumulativo), y `revision_visual_ok.txt` acepta los códigos anteriores.
+- Cada documento empieza con `## [TTT-AAA-NN] Título`. Un archivo por tipo y área (`DES_SEG.md`, `PRD_SEG.md`, `POL_GEN.md`…) y uno por tipo general (`ORG_GEN.md`, `GLO_GEN.md`…).
+
+**Dos skills** (`salida_corpus/publicado/`):
+
+```
+corpus-documentos/            Skill de datos: DES/, PRD/, PRO/, POL/ con un .md por tipo y área + SKILL.md
+corpus-contexto/              SKILL.md, scripts/corpus.py, scripts/corpus_org/
+  datos/                      índice, inventarios, catálogo, equivalencias, kpis, areas_extra,
+                              documentos generales (*_GEN.md), matriz_organizacional.xlsx,
+                              matriz/*.csv (una hoja por CSV, UTF-8, separador ;) y huellas.sha256
+```
+
+En Copilot cada skill queda en `/home/oai/skills/appCatalog/<id>/<nombre-skill>/` y el `<id>` cambia. `corpus.py` toma los datos de `CORPUS_DATOS` o de su propio `datos/`, y busca `corpus-documentos` en `CORPUS_DOCUMENTOS`, junto a su skill, en `/home/oai/skills/appCatalog/*/` y en las carpetas superiores; si no la encuentra, termina con un mensaje que lista dónde buscó. La consulta usa solo la biblioteca estándar (una prueba la ejecuta con `python -I -S`). Las huellas usan rutas `<skill>/<ruta>`, así se verifican aunque las skills estén en carpetas distintas.
+
+**Consulta:** `--tipo DES|PRD|PRO|POL|GEN` en `buscar` y `ficha` (`GEN` = documentos con área `GEN`); `catalogo` y `area` cuentan por tipo; `participacion` y la matriz incluyen protocolos y políticas; la matriz tiene las hojas nuevas «Políticas y protocolos» y «Documentos generales».
+
+Código: `comun/tipos.py`, `comun/estructura.py`, `conversion/inventario.py` (`migrar_fila`, `inventario_contexto`, `escribir_equivalencias`), `conversion/publicacion.py`, `conversion/skills.py`, `consulta/ubicacion.py`, `consulta/matriz.py` (`exportar_csv`). La conversión y la verificación no cambian.
 
 ## Pruebas
 

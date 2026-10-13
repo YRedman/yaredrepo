@@ -1,12 +1,15 @@
 """Carga del corpus publicado: indice, Markdown e inventario."""
 
 import collections
+from pathlib import Path
 
 from ..comun.archivos import leer_csv
 from ..comun.errores import CorpusError
 from ..comun.esquema import (ARCHIVO_AREAS_EXTRA, ARCHIVO_INDICE, ARCHIVO_INVENTARIO, ARCHIVO_KPIS, ARCHIVO_RESUMEN,
                              COLUMNAS_INDICE, PREFIJO_DIC, PREFIJO_REPORTE, RE_TITULO_DOC, area_de,
                              INVENTARIO_RETIRADO, estado_no_publicable, inventario_activo, tipo_desde_texto)
+from ..comun.estructura import CARPETA_DATOS, SKILL_CONTEXTO, SKILL_DOCUMENTOS, markdown_de_documentos
+from ..comun.tipos import TIPOS_AREA, es_general, tipo as tipo_documento
 from . import parser
 from .areas import construir_alias
 from .entidades import leer_areas_extra
@@ -17,8 +20,9 @@ class Corpus:
     """Corpus publicado en memoria. Solo lectura; no imprime ni termina el programa."""
 
     def __init__(self, carpeta, meta, docs, archivos_md, inventario, fuente_indice, duplicados, excluidos,
-                 extra=(), exclusiones=(), kpis=()):
-        self.carpeta = carpeta
+                 extra=(), exclusiones=(), kpis=(), carpeta_documentos=None):
+        self.carpeta = carpeta              # datos/ del skill corpus-contexto
+        self.carpeta_documentos = carpeta_documentos   # skill corpus-documentos (None: todo en ``carpeta``)
         self.meta = meta                    # codigo -> fila del indice
         self.docs = docs                    # codigo -> DocumentoCorpus
         self.archivos_md = archivos_md
@@ -32,7 +36,7 @@ class Corpus:
         self.exclusiones = list(exclusiones)
         self.kpis = list(kpis)
         self.areas = _construir_areas(meta, docs, self.inventario)
-        self.alias = construir_alias(self.areas, [d for c, d in docs.items() if c.startswith("C-")], self.extra)
+        self.alias = construir_alias(self.areas, [d for c, d in docs.items() if es_general(c)], self.extra)
 
     # -- consultas basicas -----------------------------------------------------
 
@@ -55,7 +59,7 @@ class Corpus:
         return parser.celdas_contenido(self.docs.get(c))
 
     def contexto(self):
-        return sorted(c for c in self.docs if c.startswith("C-"))
+        return sorted(c for c in self.docs if es_general(c))
 
     def inventario_de_area(self, cod):
         return [f for f in self.inventario if (f.get("codigo_departamento") or "").upper() == cod]
@@ -72,13 +76,17 @@ class Corpus:
         return bool(self.inventario) and not self.faltantes_de_inventario()
 
     def cobertura(self, cod=None):
-        """'X/Y descriptivos · Z/W procedimientos' contra el inventario (de un area o de todo el corpus)."""
+        """'X/Y descriptivos de puesto · Z/W procedimientos…' contra el inventario (de un area o de todo
+        el corpus). Los tipos sin documentos ni inventario no se muestran (salvo descriptivos y procedimientos)."""
         partes = []
-        for tipo, nombre in (("D", "descriptivos"), ("P", "procedimientos")):
+        for tipo in TIPOS_AREA:
+            nombre = tipo_documento(tipo).plural.lower()
             esperados = [f for f in (self.inventario_de_area(cod) if cod else self.inventario)
-                         if (tipo_desde_texto(f.get("tipo")) or "P") == tipo]
+                         if _tipo_inventario(f) == tipo]
             presentes = [c for c in (self.areas[cod].codigos(tipo) if cod else self.docs)
-                         if c in self.docs and c[0] == tipo]
+                         if c in self.docs and c.split("-")[0] == tipo]
+            if not esperados and not presentes and tipo not in ("DES", "PRD"):
+                continue
             if not self.inventario:
                 partes.append(f"{len(presentes)} {nombre} (sin inventario: no se puede confirmar)")
                 continue
@@ -98,6 +106,10 @@ class Corpus:
 # ---------------------------------------------------------------------------
 # Carga
 # ---------------------------------------------------------------------------
+
+def _tipo_inventario(fila):
+    return tipo_desde_texto(fila.get("tipo")) or (fila.get("codigo") or "").split("-")[0].upper()
+
 
 def _es_markdown_de_datos(p):
     return not p.name.upper().startswith((PREFIJO_REPORTE, ARCHIVO_RESUMEN.rsplit(".", 1)[0]))
@@ -121,9 +133,13 @@ def _leer_indice(carpeta):
     return meta, duplicados, nombre, bool(fuentes)
 
 
-def _leer_markdown(archivos):
+def _leer_markdown(archivos, carpeta_documentos=None):
     docs, duplicados = {}, []
     for p in archivos:
+        try:
+            nombre = p.relative_to(carpeta_documentos).as_posix() if carpeta_documentos else p.name
+        except ValueError:
+            nombre = p.name
         lineas = p.read_text(encoding="utf-8", errors="replace").splitlines()
         inicios = [(i, RE_TITULO_DOC.match(l)) for i, l in enumerate(lineas)]
         inicios = [(i, m) for i, m in inicios if m]
@@ -135,14 +151,14 @@ def _leer_markdown(archivos):
             ls = lineas[i:fin]
             while ls and ls[-1].strip() in ("", "---"):
                 ls.pop()
-            docs[c] = DocumentoCorpus(c, p.name, i, fin, m.group(2).strip(), ls)
+            docs[c] = DocumentoCorpus(c, nombre, i, fin, m.group(2).strip(), ls, p)
     return docs, duplicados
 
 
 def _construir_areas(meta, docs, inventario):
     areas = collections.OrderedDict()
     for c in sorted(set(meta) | set(docs)):
-        if c.startswith("C-"):
+        if es_general(c):
             continue
         cod = area_de(c)
         nombre = (meta.get(c, {}).get("departamento") or "").strip()
@@ -157,19 +173,26 @@ def _construir_areas(meta, docs, inventario):
     return areas
 
 
-def cargar_corpus(carpeta, incluir_no_vigentes=False):
-    """Lee la carpeta publicada. Los documentos con estado no publicable se separan en ``excluidos``.
-
-    La exclusion se aplica al indice y al texto a la vez; asi un documento obsoleto no aparece
-    en busquedas ni se reporta como "documento sin fila en el indice".
+def cargar_corpus(carpeta, incluir_no_vigentes=False, documentos=None):
+    """Lee el corpus publicado: ``carpeta`` es datos/ del skill corpus-contexto (indice, inventario y
+    documentos generales) y ``documentos`` la carpeta del skill corpus-documentos. Si ``carpeta`` es
+    salida_corpus/publicado/ se usan sus dos skills. Los documentos con estado no publicable se separan
+    en ``excluidos``: la exclusion se aplica al indice y al texto a la vez; asi un documento obsoleto no
+    aparece en busquedas ni se reporta como "documento sin fila en el indice".
     """
+    carpeta = Path(carpeta)
+    if (carpeta / SKILL_CONTEXTO / CARPETA_DATOS).is_dir():
+        documentos = documentos or carpeta / SKILL_DOCUMENTOS
+        carpeta = carpeta / SKILL_CONTEXTO / CARPETA_DATOS
     if not carpeta.is_dir():
         raise CorpusError(f"No existe la carpeta de datos: {carpeta}")
-    archivos_md = sorted(p for p in carpeta.glob("*.md") if _es_markdown_de_datos(p))
+    documentos = Path(documentos) if documentos else None
+    archivos_md = (markdown_de_documentos(documentos) if documentos else []) \
+        + sorted(p for p in carpeta.glob("*.md") if _es_markdown_de_datos(p))
     meta, dup_indice, fuente, hay_indice = _leer_indice(carpeta)
     if not archivos_md and not hay_indice:
         raise CorpusError(f"El corpus está vacío: {carpeta} no contiene Markdown ni índice.")
-    docs, dup_md = _leer_markdown(archivos_md)
+    docs, dup_md = _leer_markdown(archivos_md, documentos)
     excluidos = {}
     if not incluir_no_vigentes:
         excluidos = {c: f.get("estado_documental", "") for c, f in meta.items()
@@ -182,4 +205,4 @@ def cargar_corpus(carpeta, incluir_no_vigentes=False):
     kp = carpeta / ARCHIVO_KPIS
     kpis = leer_csv(kp) if kp.is_file() else []
     return Corpus(carpeta, meta, docs, archivos_md, inventario, fuente, dup_indice + dup_md, excluidos,
-                  extra, exclusiones, kpis)
+                  extra, exclusiones, kpis, documentos)

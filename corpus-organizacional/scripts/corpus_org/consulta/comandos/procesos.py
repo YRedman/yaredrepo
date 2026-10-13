@@ -1,4 +1,5 @@
 from ...comun.esquema import SEPARADOR_LISTA
+from ...comun.tipos import tipo_de_codigo
 from ...comun.texto import recortar_palabras as recortar
 from .base import Comando
 
@@ -12,7 +13,7 @@ class Procesos(Comando):
 
     def ejecutar(self, ctx, args):
         cp, s = ctx.corpus, ctx.salida
-        cods = ctx.filtrar_area(sorted(c for c in cp.meta if c.startswith("P-")), args.area)
+        cods = ctx.filtrar_area(sorted(c for c in cp.meta if tipo_de_codigo(c) == "PRD"), args.area)
         filas = []
         for c in cods:
             f = cp.meta[c]

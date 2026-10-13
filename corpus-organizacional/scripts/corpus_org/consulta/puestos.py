@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 from ..comun.esquema import area_de
+from ..comun.tipos import tipo_de_codigo
 from ..comun.texto import norm
 
 PATRON_PUESTO = re.compile(
@@ -80,7 +81,7 @@ class DetectorPuestos:
     def desde_corpus(cls, corpus):
         puestos = []
         for c, f in sorted(corpus.meta.items()):
-            if c.startswith("D-"):
+            if tipo_de_codigo(c) == "DES":
                 nombre = (f.get("nombre_puesto") or f.get("nombre") or "").strip()
                 if nombre:
                     puestos.append(Puesto(c, nombre))
