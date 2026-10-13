@@ -60,6 +60,7 @@ class Metadatos:
     propietario: str = ""
     responsable: str = ""
     proceso: str = ""
+    area_propietaria: str = ""     # area que emite una politica o protocolo
 
 
 @dataclass

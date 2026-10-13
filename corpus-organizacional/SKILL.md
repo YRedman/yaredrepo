@@ -1,33 +1,43 @@
 ---
-name: corpus-organizacional
+name: corpus-contexto
 description: >-
-  Consulta exacta del corpus publicado de descriptivos de puesto, procedimientos, contexto organizacional e indicadores (KPIs). Úsalo cuando el usuario mencione un área, departamento, puesto, procedimiento, proceso, actividad, código, responsable, propietario, versión, vigencia, relación entre áreas, indicador, KPI, meta o preparación de reuniones.
+  Consulta exacta del corpus organizacional publicado (descriptivos de puesto, procedimientos, protocolos, políticas, documentos generales e indicadores) con scripts/corpus.py. Trabaja junto con el skill corpus-documentos, que tiene el texto de los documentos. Úsalo cuando el usuario mencione un área, departamento, puesto, procedimiento, proceso, actividad, código, responsable, propietario, versión, vigencia, relación entre áreas, indicador, KPI, meta o preparación de reuniones.
 ---
 
 # Corpus organizacional
 
-> Compatible con `convertir.py` v3.5 y `corpus.py` v3.5.
+> Compatible con `convertir.py` v4.0 y `corpus.py` v4.0.
 
 Este skill consulta exclusivamente el corpus publicado. Los documentos son la fuente de verdad; el índice sirve para localizar, contar y filtrar, pero los datos sustantivos se confirman en el Markdown original.
 
 ## 1. Estructura
 
-- `salida_corpus/publicado/D_<ÁREA>.md` y `P_<ÁREA>.md`: descriptivos y procedimientos.
-- `salida_corpus/publicado/contexto.md`: organigrama, glosario y otros materiales, con códigos `C-CTX-NN`. El contexto puede venir en PDF, Word o transcrito a mano en `.md`, `.csv` o `.txt` (por ejemplo, capturas de un tablero).
-- `salida_corpus/publicado/indice_corpus.csv`: índice maestro, una fila por documento.
-- `salida_corpus/publicado/inventario_maestro.csv`: documentos que deberían existir. Las filas `RETIRADO` solo reservan su código.
-- `salida_corpus/publicado/kpis.csv`: indicadores transcritos (meta, medición, unidad, estado según el color), si el contexto trae un CSV cuyo nombre empieza con `kpi`.
-- `salida_corpus/publicado/areas_extra.csv`: áreas y entidades sin documentos propios (internas, externas) y frases que no son menciones de un área.
-- `salida_corpus/publicado/huellas.sha256`: SHA-256 de cada archivo publicado (integridad).
-- `salida_corpus/RESUMEN_CONSTRUCCION.md`: resultado de la última construcción.
-- `salida_corpus/control/`: reportes de QA. No es fuente de respuestas.
-- `scripts/convertir.py` construye; `scripts/corpus.py` consulta; `scripts/corpus_org/` es el paquete con la lógica de ambos (cópialo siempre junto con ellos).
+El corpus se publica en dos skills (en `salida_corpus/publicado/`):
 
-`corpus.py` busca el corpus en `CORPUS_DATOS`, luego `salida_corpus/publicado/`, `publicado/` y `datos/`.
+**`corpus-documentos`** (solo datos): un Markdown por tipo y área, en una carpeta por tipo.
+
+- `DES/DES_<ÁREA>.md` descriptivos de puesto, `PRD/PRD_<ÁREA>.md` procedimientos, `PRO/PRO_<ÁREA>.md` protocolos y `POL/POL_<ÁREA>.md` políticas. Las políticas y protocolos que aplican a más de un área o a toda la empresa están en `POL_GEN.md` / `PRO_GEN.md`.
+
+**`corpus-contexto`** (este skill):
+
+- `scripts/corpus.py` consulta; `scripts/corpus_org/` es el paquete con la lógica (solo biblioteca estándar).
+- `datos/<TTT>_GEN.md`: documentos generales: `ORG_GEN.md` organigramas, `KPI_GEN.md` indicadores, `GLO_GEN.md` glosarios, `MPR_GEN.md` mapas de procesos y `CTX_GEN.md` otro contexto. Pueden venir en PDF, Word o transcritos a mano en `.md`, `.csv` o `.txt`.
+- `datos/indice_corpus.csv`: índice maestro, una fila por documento (con `area_propietaria` para políticas y protocolos).
+- `datos/inventario_maestro.csv` e `inventario_contexto.csv`: documentos que deberían existir. Las filas `RETIRADO` solo reservan su código.
+- `datos/equivalencias_codigos.csv`: `codigo_anterior;codigo_nuevo` de la codificación anterior (`D-`, `P-`, `C-CTX-`).
+- `datos/matriz_organizacional.xlsx` y `datos/matriz/*.csv`: la matriz maestra, una hoja por CSV (UTF-8, separador `;`).
+- `datos/kpis.csv`: indicadores transcritos (meta, medición, unidad, estado según el color), si el contexto trae un CSV cuyo nombre empieza con `kpi`.
+- `datos/areas_extra.csv`: áreas y entidades sin documentos propios (internas, externas) y frases que no son menciones de un área.
+- `datos/huellas.sha256`: SHA-256 de cada archivo publicado en las dos skills (integridad).
+
+Fuera de los skills: `salida_corpus/RESUMEN_CONSTRUCCION.md` (resultado de la última construcción) y `salida_corpus/control/` (reportes de QA; no es fuente de respuestas). `scripts/convertir.py` construye.
+
+`corpus.py` busca los datos en `CORPUS_DATOS`, luego en `datos/` de su propio skill y en `salida_corpus/publicado/corpus-contexto/datos/`. La carpeta `corpus-documentos` se busca en `CORPUS_DOCUMENTOS`, junto al skill y por su nombre en `/home/oai/skills/appCatalog/<id>/corpus-documentos` (en Copilot el `<id>` cambia). Si no la encuentra, lo dice con la lista de lugares revisados.
 
 ## 2. Interpretación de documentos
 
-- Cada documento empieza con `## [CÓDIGO] Título`. `D-XXX-NN` descriptivo, `P-XXX-NN` procedimiento, `C-CTX-NN` contexto.
+- Cada documento empieza con `## [TTT-AAA-NN] Título`. TTT es el tipo: `DES` descriptivo de puesto, `PRD` procedimiento, `PRO` protocolo, `POL` política; y los generales `ORG` organigrama, `KPI` indicadores, `GLO` glosario, `MPR` mapa de procesos, `CTX` otro contexto. AAA es el área (3 letras); `GEN` = aplica a varias áreas o a toda la empresa, o documento general. NN es el número (tres dígitos si el grupo pasa de 99).
+- En políticas y protocolos, «Área propietaria» es el área que los emite (si el documento la trae); el área del código es a quién aplican.
 - Las líneas que empiezan con `>` son metadatos de conversión, no texto original.
 - `[NO ESPECIFICADO]`: el original no trae el campo.
 - `[DIAGRAMA: la sección «…» no se transcribe…]`, `[DIAGRAMA O IMAGEN…]`, `[CELDA COMBINADA]`, `[TEXTO OCR…]` e `[IMAGEN OMITIDA]` son marcas de conversión. El contenido de un diagrama no está en el corpus: remite a la página del original.
@@ -50,13 +60,14 @@ python scripts/convertir.py construir --entrada <carpeta_documentos> --contexto 
 python scripts/corpus.py verificar
 ```
 
-- Los documentos van en `Descriptivos\<Área>\archivo` o `Procedimientos\<Área>\archivo`. Si están directamente en `Descriptivos\` (sin carpeta de área), el área se escribe en `entrada\areas.csv` (`archivo;area`); el script crea ese archivo con la columna `area` vacía. `lista.txt` es opcional: sin ella, la lista se arma con la carpeta de entrada.
-- Los documentos sin área quedan como «Sin Área» con códigos provisionales `D-SAR-NN` y la construcción termina en REQUIERE REVISIÓN. No cites esos códigos como definitivos.
+- Los documentos van en `Descriptivos\<Área>\archivo`, `Procedimientos\<Área>\…`, `Protocolos\<Área>\…` o `Políticas\<Área>\…`. Una política o protocolo de varias áreas o de toda la empresa va en la carpeta de área `General` (código `GEN`). Si están directamente en `Descriptivos\` (sin carpeta de área), el área se escribe en `entrada\areas.csv` (`archivo;area`); el script crea ese archivo con la columna `area` vacía. `lista.txt` es opcional: sin ella, la lista se arma con la carpeta de entrada.
+- En la carpeta de contexto, los procedimientos y fichas de proceso (`PRD`), las políticas, normativas y reglamentos (`POL`), los protocolos (`PRO`) y los descriptivos (`DES`) se tratan como documentos de área: área de la subcarpeta (`Fichas de proceso\Calidad\`), de `areas.csv` o `GEN`. Lo demás es un documento general por su subcarpeta o nombre (organigrama, kpi, glosario, mapa de procesos) o `CTX`.
+- Los documentos sin área quedan como «Sin Área» con códigos provisionales `DES-SAR-NN` y la construcción termina en REQUIERE REVISIÓN. No cites esos códigos como definitivos.
 
 - **REQUIERE REVISIÓN** (código 2): faltan documentos, hay texto del original que no aparece (cobertura < 100 %), palabras que no están en el original, códigos duplicados o errores del contexto.
 - **PENDIENTE DE REVISIÓN VISUAL** (código 3): documentos con avisos de estructura (tabla leída como texto, filas partidas, posible diagrama, números incompletos, OCR…) y una muestra del 10 % de los demás. Una persona compara cada uno con su original y anota su código en `revision_visual_ok.txt` (uno por línea); luego se vuelve a construir. `--muestra-revision 0` desactiva la muestra.
 - **LISTO PARA PUBLICAR** (código 0).
-- Inventario: se ignoran temporales (`~$…`, `Thumbs.db`); el mismo documento en `.docx` y `.pdf` o una copia `(1)` se inventaría una vez (`--incluir-duplicados` conserva todos); los archivos se emparejan por su ruta `Tipo/Departamento/Archivo`. Al reconstruir, los códigos no cambian: los documentos nuevos van al final y los retirados reservan su código.
+- Inventario: se ignoran temporales (`~$…`, `Thumbs.db`); el mismo documento en `.docx` y `.pdf` o una copia `(1)` se inventaría una vez (`--incluir-duplicados` conserva todos); los archivos se emparejan por su ruta `Tipo/Departamento/Archivo`. Al reconstruir, los códigos no cambian: los documentos nuevos van al final y los retirados reservan su código. Un corpus construido con la codificación anterior se migra solo (`D-` → `DES-`, `P-` → `PRD-` con el mismo número; `C-CTX-` por tipo dentro de `GEN`) y `revision_visual_ok.txt` puede seguir con los códigos anteriores.
 
 ## 4. Herramienta de consulta
 
@@ -71,9 +82,9 @@ python scripts/corpus.py <comando> <argumentos>
 | `catalogo` | Áreas, cobertura, contexto, KPIs y entidades sin documentos |
 | `area "<área>"` | Índice completo del área |
 | `briefing "<área>" [--parte N]` | Tablas del briefing ya calculadas, 15 documentos por parte |
-| `ficha "<área o código>" [--tipo D\|P]` | Secciones y campos clave literales |
+| `ficha "<área o código>" [--tipo DES\|PRD\|PRO\|POL\|GEN]` | Secciones y campos clave literales |
 | `doc <CÓDIGO> [--seccion "<texto>"]` | Documento completo o una sección |
-| `buscar "<t1\|t2\|t3*>" [--area "<área>"] [--tipo D\|P]` | Búsqueda literal normalizada |
+| `buscar "<t1\|t2\|t3*>" [--area "<área>"] [--tipo DES\|PRD\|PRO\|POL\|GEN]` | Búsqueda literal normalizada |
 | `relaciones "<área A>" ["<área B>"]` | Menciones explícitas entre áreas y menciones no resueltas |
 | `participacion "<área o código>" [--detalle N\|todo]` | Resumen por puesto (completo) y detalle acotado |
 | `gobierno [--area "<área>"]` | Versión, estado, vigencia, propietario y responsable |
@@ -84,6 +95,8 @@ python scripts/corpus.py <comando> <argumentos>
 ### Reglas de uso
 
 - El área puede escribirse por nombre, código o alias (glosario o `areas_extra.csv`).
+- `--tipo GEN` filtra los documentos con área `GEN`: los generales (organigramas, indicadores, glosario…) y las políticas y protocolos de toda la empresa.
+- En `participacion` y en la matriz, los protocolos y las políticas cuentan como procedimientos (tienen responsables y actividades); `procesos` muestra solo procedimientos (`PRD`).
 - `AMBIGUO`: muestra las opciones y formula una sola pregunta.
 - `AVISO: '<texto>' se interpretó como el área …`: menciona esa interpretación en la respuesta.
 - `NO ENCONTRADO`: indica qué revisaste y muestra las alternativas, incluidas las áreas o entidades sin documentos propios.
@@ -170,7 +183,7 @@ CORPUS_INCLUIR_NO_VIGENTES=1 python scripts/corpus.py gobierno
 
 ## 11. Reglas para redactar respuestas
 
-- Todo dato lleva su código (`D-`, `P-`, `C-CTX-`, ID del KPI).
+- Todo dato lleva su código (`DES-SEG-01`, `PRD-SEG-01`, `POL-GEN-01`, `ORG-GEN-01`, ID del KPI).
 - Citas literales: frase breve entre comillas.
 - Toda conclusión propia lleva `[Inferido]` y sus códigos base.
 - Si algo no está: “No encontrado en los documentos”, indicando qué se revisó.

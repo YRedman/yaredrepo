@@ -46,11 +46,17 @@ def campo_csv(s):
 
 
 def escribir_csv(path, columnas, filas):
+    """CSV (UTF-8 con BOM, separador ';') con ``filas`` como diccionarios por nombre de columna."""
+    escribir_csv_filas(path, columnas, [[fila.get(c) for c in columnas] for fila in filas])
+
+
+def escribir_csv_filas(path, cabecera, filas):
+    """CSV (UTF-8 con BOM, separador ';') con ``filas`` como listas en el orden de ``cabecera``."""
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, delimiter=";", quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
-        w.writerow(columnas)
+        w.writerow([campo_csv(str(c)) for c in cabecera])
         for fila in filas:
-            w.writerow([campo_csv("" if fila.get(c) is None else str(fila.get(c))) for c in columnas])
+            w.writerow([campo_csv("" if x is None else str(x)) for x in fila])
 
 
 def huella_codigo(raiz):

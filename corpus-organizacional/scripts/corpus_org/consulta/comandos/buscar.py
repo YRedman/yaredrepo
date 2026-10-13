@@ -2,9 +2,10 @@ import collections
 import re
 
 from ...comun.errores import CorpusError
-from ...comun.esquema import area_de, tipo_desde_texto
+from ...comun.esquema import area_de
+from ...comun.tipos import FILTROS_TIPO, cumple_tipo
 from ...comun.texto import norm, patron_termino, recortar_palabras as recortar
-from .base import Comando
+from .base import Comando, argumento_tipo
 
 MAX_COINCIDENCIAS_POR_DOC = 4
 MAX_FILAS = 80
@@ -25,7 +26,7 @@ class Buscar(Comando):
     def configurar(self, parser):
         parser.add_argument("terminos", metavar="termino1|termino2")
         parser.add_argument("--area", default=None)
-        parser.add_argument("--tipo", type=tipo_desde_texto, default=None)
+        parser.add_argument("--tipo", type=argumento_tipo, default=None, help="|".join(FILTROS_TIPO))
 
     def ejecutar(self, ctx, args):
         cp, s = ctx.corpus, ctx.salida
@@ -37,7 +38,7 @@ class Buscar(Comando):
             cod = ctx.area(args.area)
             cods = [c for c in cods if area_de(c) == cod]
         if args.tipo:
-            cods = [c for c in cods if c[0] == args.tipo]
+            cods = [c for c in cods if cumple_tipo(c, args.tipo)]
         pats = [patron_termino(t) for t in terminos]
         resultados = collections.OrderedDict()
         for c in cods:

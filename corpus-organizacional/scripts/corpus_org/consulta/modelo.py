@@ -1,9 +1,10 @@
 """Modelo de lectura del corpus publicado."""
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import Dict, List
 
 from ..comun.esquema import area_de
+from ..comun.tipos import TIPOS_AREA, familia, tipo_de_codigo
 
 
 @dataclass
@@ -15,9 +16,11 @@ class DocumentoCorpus:
     titulo: str
     lineas: List[str] = field(default_factory=list)
 
+    archivo_ruta: object = None   # Path del Markdown (archivo es la ruta relativa al skill)
+
     @property
     def tipo(self):
-        return self.codigo[0]
+        return tipo_de_codigo(self.codigo)
 
     @property
     def area(self):
@@ -30,14 +33,25 @@ class DocumentoCorpus:
 
 @dataclass
 class Area:
+    """Documentos de un area, por tipo (DES, PRD, PRO, POL)."""
     codigo: str
     nombre: str = ""
-    descriptivos: List[str] = field(default_factory=list)
-    procedimientos: List[str] = field(default_factory=list)
+    por_tipo: Dict[str, List[str]] = field(default_factory=dict)
+
+    @property
+    def descriptivos(self):
+        return self.por_tipo.get("DES", [])
+
+    @property
+    def procedimientos(self):
+        return self.por_tipo.get("PRD", [])
 
     def codigos(self, tipo=None):
-        return ((self.descriptivos if tipo in (None, "D") else [])
-                + (self.procedimientos if tipo in (None, "P") else []))
+        """Codigos del area. ``tipo``: None (todos), un codigo (DES, PRD, PRO, POL) o la familia de analisis
+        'D' (descriptivos) o 'P' (procedimientos, protocolos y politicas: documentos con actividades)."""
+        orden = list(TIPOS_AREA) + sorted(set(self.por_tipo) - set(TIPOS_AREA))
+        return [c for t in orden for c in self.por_tipo.get(t, [])
+                if tipo is None or t == tipo or (tipo in ("D", "P") and familia(t) == tipo)]
 
     def agregar(self, codigo):
-        (self.descriptivos if codigo.startswith("D-") else self.procedimientos).append(codigo)
+        self.por_tipo.setdefault(tipo_de_codigo(codigo), []).append(codigo)

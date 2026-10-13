@@ -50,10 +50,10 @@ def _convertir(etiqueta_vigencia):
         fixtures_plantilla.generar(entrada / "Analista de Pruebas.pdf", etiqueta_vigencia)
         with redirect_stdout(io.StringIO()):
             conversion_cli.main(["convertir", "--entrada", str(entrada), "--salida", str(salida),
-                                 "--departamento", "Pruebas", "--tipo", "D", "--dep", "PRU",
+                                 "--departamento", "Pruebas", "--tipo", "DES", "--dep", "PRU",
                                  "--sin-verificacion-cruzada"])
-        md = (salida / "D_PRU.md").read_text(encoding="utf-8")
-        with open(salida / "DIC_D_PRU.csv", encoding="utf-8-sig", newline="") as f:
+        md = (salida / "DES_PRU.md").read_text(encoding="utf-8")
+        with open(salida / "DIC_DES_PRU.csv", encoding="utf-8-sig", newline="") as f:
             fila = next(csv.DictReader(f, delimiter=";"))
     return md, fila
 
@@ -63,7 +63,7 @@ class PlantillaRealTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.md, cls.fila = _convertir("Vigencia:")
-        cls.cuerpo = cls.md[cls.md.index("### [D-PRU-01]"):cls.md.index("Datos de encabezado y pie")]
+        cls.cuerpo = cls.md[cls.md.index("### [DES-PRU-01]"):cls.md.index("Datos de encabezado y pie")]
 
     def test_campos_clave(self):
         f = self.fila
@@ -83,7 +83,7 @@ class PlantillaRealTest(unittest.TestCase):
         objetivo = " ".join(fixtures_plantilla.OBJETIVO)
         self.assertEqual(self.fila["proposito_literal"], objetivo)
         self.assertIn("\n" + objetivo + "\n", self.cuerpo)
-        self.assertNotIn("### [D-PRU-01] la aplicación", self.cuerpo)
+        self.assertNotIn("### [DES-PRU-01] la aplicación", self.cuerpo)
 
     def test_organigrama_una_sola_vez(self):
         self.assertEqual(self.cuerpo.count("[ORGANIGRAMA"), 1)

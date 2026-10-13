@@ -8,7 +8,9 @@ from typing import Dict, List
 from pathlib import Path
 
 from ..comun.texto import nfc
+from ..comun.tipos import nombre_archivo
 from .entradas import clave_archivo, clave_ruta, partes_ruta
+from .inventario import tipo_de_fila
 from .lote import Grupo
 
 RE_COPIA = re.compile(r"\s*\(\d+\)$")
@@ -23,10 +25,6 @@ class Asignacion:
     @property
     def usados(self):
         return {str(p) for m in self.asignados.values() for p in m.values()}
-
-
-def _tipo_fila(fila):
-    return "P" if fila["tipo"].lower().startswith("p") else "D"
 
 
 def _indice_por_ruta(entradas, raiz):
@@ -73,7 +71,7 @@ def asignar_archivos(inventario, entradas, tipo_filtro=None, dep_filtro=None, ra
     por_nombre = set()
     grupos = collections.OrderedDict()
     for f in inventario:
-        grupos.setdefault((_tipo_fila(f), f["codigo_departamento"]), []).append(f)
+        grupos.setdefault((tipo_de_fila(f), f["codigo_departamento"]), []).append(f)
     asignados = {}
     for (t, dep), filas in grupos.items():
         if (tipo_filtro and t != tipo_filtro) or (dep_filtro and dep != dep_filtro):
@@ -109,7 +107,7 @@ def grupos_a_convertir(asignacion):
         filas = sorted(asignacion.grupos[(t, dep)], key=lambda f: f["codigo"])
         completo = len(mapa) == len(filas)
         if completo:
-            nombre_base, filas_proc = f"{t}_{dep}", filas
+            nombre_base, filas_proc = nombre_archivo(t, dep)[:-3], filas
         else:
             nums = [_numero(f["codigo"]) for f in filas if f["codigo"] in mapa]
             lo, hi = min(nums), max(nums)

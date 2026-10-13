@@ -52,7 +52,7 @@ class InventarioTest(unittest.TestCase):
         self.assertEqual(ignoradas[0][1], "archivo temporal o del sistema")
 
     def test_duplicados(self):
-        filas = [{"tipo": "P", "departamento": "Compras", "archivo": n}
+        filas = [{"tipo": "PRD", "departamento": "Compras", "archivo": n}
                  for n in ("Compra.pdf", "Compra (1).docx", "Compra.docx", "Otra.docx")]
         salida, avisos = quitar_duplicados(filas)
         self.assertEqual([f["archivo"] for f in salida], ["Compra.docx", "Otra.docx"])
@@ -68,13 +68,13 @@ class InventarioTest(unittest.TestCase):
                 p.parent.mkdir(parents=True)
                 p.write_bytes(b"")
                 archivos.append(p)
-            inventario = [{"codigo": f"D-{c}-01", "tipo": "Descriptivo", "codigo_departamento": c, "archivo": "Asistente.docx",
+            inventario = [{"codigo": f"DES-{c}-01", "tipo": "Descriptivo", "codigo_departamento": c, "archivo": "Asistente.docx",
                            "ruta_original": f"C:\\E\\Descriptivos\\{dep}\\Asistente.docx"}
                           for c, dep in (("COM", "Compras"), ("ALM", "Almacen"))]
             a = asignar_archivos(inventario, archivos, raiz=raiz)
         self.assertEqual(a.ambiguos, [])
-        self.assertEqual(a.asignados[("D", "COM")]["D-COM-01"].parent.name, "Compras")
-        self.assertEqual(a.asignados[("D", "ALM")]["D-ALM-01"].parent.name, "Almacen")
+        self.assertEqual(a.asignados[("DES", "COM")]["DES-COM-01"].parent.name, "Compras")
+        self.assertEqual(a.asignados[("DES", "ALM")]["DES-ALM-01"].parent.name, "Almacen")
 
 
 class DescriptivoTest(unittest.TestCase):
@@ -158,10 +158,10 @@ class TextoEnZonaDeEncabezadoTest(unittest.TestCase):
             c.save()
             with redirect_stdout(io.StringIO()):
                 conversion_cli.main(["convertir", "--entrada", str(entrada), "--salida", str(salida),
-                                     "--departamento", "Pruebas", "--tipo", "P", "--dep", "PRU",
+                                     "--departamento", "Pruebas", "--tipo", "PRD", "--dep", "PRU",
                                      "--sin-verificacion-cruzada"])
-            md = (salida / "P_PRU.md").read_text(encoding="utf-8")
-            reporte = (salida / "REPORTE_P_PRU.md").read_text(encoding="utf-8")
+            md = (salida / "PRD_PRU.md").read_text(encoding="utf-8")
+            reporte = (salida / "REPORTE_PRD_PRU.md").read_text(encoding="utf-8")
         cuerpo = md[:md.index("Datos de encabezado y pie")]
         self.assertIn("Aviso exclusivo de la segunda hoja", cuerpo)
         self.assertIn("se conservaron como contenido", reporte)
@@ -182,11 +182,11 @@ class ContextoTextoTest(unittest.TestCase):
 
 class PuestosRolesTest(unittest.TestCase):
     def setUp(self):
-        self.det = DetectorPuestos([Puesto("D-COM-01", "Asistente Administrativo"),
-                                    Puesto("D-ALM-01", "Asistente Administrativo")])
+        self.det = DetectorPuestos([Puesto("DES-COM-01", "Asistente Administrativo"),
+                                    Puesto("DES-ALM-01", "Asistente Administrativo")])
 
     def test_homonimo_por_area_del_documento(self):
-        self.assertEqual(self.det.detectar("El Asistente Administrativo archiva", "ALM")[0].puesto.codigo, "D-ALM-01")
+        self.assertEqual(self.det.detectar("El Asistente Administrativo archiva", "ALM")[0].puesto.codigo, "DES-ALM-01")
         m = self.det.detectar("El Asistente Administrativo archiva", "CAL")[0]
         self.assertEqual(m.tipo, "ambigua")
         self.assertEqual(len(m.candidatos), 2)
@@ -231,10 +231,10 @@ class CasosIntegracionTest(unittest.TestCase):
         generar(cls.base)
         cls.codigo, cls.salida = _construir(cls.base)
         cls.publicado = cls.base / "entrada" / "salida_corpus" / "publicado"
-        with open(cls.publicado / "indice_corpus.csv", encoding="utf-8-sig") as f:
+        with open(cls.publicado / ayuda.DATOS / "indice_corpus.csv", encoding="utf-8-sig") as f:
             filas = list(csv.DictReader(f, delimiter=";"))
         cls.por_archivo = {(r["codigo_departamento"], r["archivo_origen"]): r for r in filas}
-        cls.inventario = (cls.publicado / "inventario_maestro.csv").read_text(encoding="utf-8-sig")
+        cls.inventario = (cls.publicado / ayuda.DATOS / "inventario_maestro.csv").read_text(encoding="utf-8-sig")
 
     @classmethod
     def tearDownClass(cls):
@@ -259,29 +259,29 @@ class CasosIntegracionTest(unittest.TestCase):
         self.assertEqual((r["nombre_puesto"], r["reporta_a"]), ("Gerente de Control de Calidad", "Director General"))
 
     def test_diagrama_marcado(self):
-        md = (self.publicado / "P_COM.md").read_text(encoding="utf-8")
+        md = (self.publicado / ayuda.DOCUMENTOS / "PRD" / "PRD_COM.md").read_text(encoding="utf-8")
         self.assertIn("[DIAGRAMA: la sección «Diagrama de flujo» no se transcribe", md)
         self.assertNotIn("¿Aprobada?", md)
 
     def test_contexto_md_y_csv(self):
-        md = (self.publicado / "contexto.md").read_text(encoding="utf-8")
+        md = "\n".join(p.read_text(encoding="utf-8") for p in (self.publicado / ayuda.DATOS).glob("*_GEN.md"))
         self.assertIn("| RRHH | Recursos Humanos |", md)
         self.assertIn("| I-01 | Tiempo de entrega | 5 días |", md)
 
     def test_participacion(self):
         _, out = _consultar(self.publicado, "participacion", "Compras")
-        self.assertIn("- Gerente de Calidad: P-COM-01 · posibles:", out)
-        self.assertIn("- comité de compras: P-COM-01", out)
-        self.assertIn("- coordinadores de logística: P-COM-01", out)
-        self.assertIn("Asistente Administrativo (D-COM-", out)
-        self.assertNotIn("Asistente Administrativo (D-ALM-", out)
+        self.assertIn("- Gerente de Calidad: PRD-COM-01 · posibles:", out)
+        self.assertIn("- comité de compras: PRD-COM-01", out)
+        self.assertIn("- coordinadores de logística: PRD-COM-01", out)
+        self.assertIn("Asistente Administrativo (DES-COM-", out)
+        self.assertNotIn("Asistente Administrativo (DES-ALM-", out)
 
     def test_homonimo_no_crea_relacion(self):
         _, out = _consultar(self.publicado, "relaciones", "Almacen", "Compras")
         self.assertNotIn("puesto Asistente Administrativo", out)
 
     def test_titulos_con_numeracion_automatica_de_word(self):
-        md = (self.publicado / "P_ALM.md").read_text(encoding="utf-8")
+        md = (self.publicado / ayuda.DOCUMENTOS / "PRD" / "PRD_ALM.md").read_text(encoding="utf-8")
         self.assertIn("] 1. Objetivo", md)
         self.assertIn("] 2. Alcance", md)
         r = self.por_archivo[("ALM", "Control de inventario.docx")]
@@ -313,8 +313,8 @@ class PDFTest(unittest.TestCase):
         salida = base / "salida"
         with redirect_stdout(io.StringIO()):
             conversion_cli.main(["convertir", "--entrada", str(carpeta), "--salida", str(salida),
-                                 "--departamento", "Pruebas", "--tipo", "P", "--dep", "PRU"])
-        cls.md = "\n".join(p.read_text(encoding="utf-8") for p in salida.glob("P_PRU*.md"))
+                                 "--departamento", "Pruebas", "--tipo", "PRD", "--dep", "PRU"])
+        cls.md = "\n".join(p.read_text(encoding="utf-8") for p in salida.glob("PRD_PRU*.md"))
         cls.reporte = "\n".join(p.read_text(encoding="utf-8") for p in salida.glob("REPORTE_*.md"))
 
     @classmethod
@@ -338,7 +338,7 @@ class PDFTest(unittest.TestCase):
         self.assertEqual(numeros, list(range(1, 61)))
         self.assertEqual(doc.count("|---|---|---|"), 1)
         self.assertNotIn("Datos de encabezado y pie", doc)
-        self.assertIn("### [P-PRU-", doc)
+        self.assertIn("### [PRD-PRU-", doc)
         self.assertNotIn("Desarrollo del proceso: [NO ESPECIFICADO]", doc)
 
 

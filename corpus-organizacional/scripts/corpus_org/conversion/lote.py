@@ -8,8 +8,9 @@ from typing import Dict, List
 
 from ..comun.archivos import escribir_csv
 from ..comun.esquema import (COLUMNAS_INDICE, NO_ESPECIFICADO, PREFIJO_DIC, PREFIJO_REPORTE, RE_MARCAS,
-                             SEPARADOR_LISTA, TIPOS, TIPOS_PLURAL)
+                             SEPARADOR_LISTA)
 from ..comun.texto import recortar_palabras, tokens
+from ..comun.tipos import familia, tipo as tipo_documento
 from .analisis import analizar, avisar_nombre_puesto
 from .extractores import extractor_para
 from .modelo import DocumentoConvertido
@@ -30,23 +31,30 @@ class OpcionesConversion:
 
 @dataclass
 class Grupo:
-    tipo: str                      # P, D o C
+    tipo: str                      # codigo de tipo: DES, PRD, PRO, POL u ORG, KPI... (generales)
     codigo_dep: str
     departamento: str
     filas: List[dict]              # filas del inventario a procesar
     archivos: Dict[str, object]    # codigo -> Path del archivo adjunto
-    nombre_base: str               # P_COM, D_ALM_01-05, contexto...
+    nombre_base: str               # PRD_COM, DES_ALM_01-05, ORG_GEN...
     completo: bool = True
 
     @property
     def es_contexto(self):
-        return self.tipo == "C"
+        return familia(self.tipo) == "C"
+
+    @property
+    def familia(self):
+        """'D', 'P' o 'C': como se analiza el documento (ver comun/tipos.py)."""
+        return familia(self.tipo)
 
     @property
     def titulo(self):
+        td = tipo_documento(self.tipo)
+        plural = td.plural if td else self.tipo
         if self.es_contexto:
-            return "Contexto"
-        return f"{TIPOS_PLURAL[self.tipo]} · {self.departamento} ({self.codigo_dep})"
+            return f"{plural} · General ({self.codigo_dep})"
+        return f"{plural} · {self.departamento} ({self.codigo_dep})"
 
 
 @dataclass
@@ -63,12 +71,12 @@ class ResultadoGrupo:
 def convertir_documento(path, fila, grupo, opciones):
     """Extrae, analiza, renderiza y verifica un archivo. Devuelve (DocumentoConvertido, lineas_md, cuerpo)."""
     doc = extractor_para(path, opciones.verificacion_cruzada).extraer(path)
-    bloques, analisis = analizar(doc, grupo.tipo)
+    bloques, analisis = analizar(doc, grupo.familia)
     titulo = os.path.splitext(fila["archivo"])[0]
-    if grupo.tipo == "D":
+    if grupo.familia == "D":
         avisar_nombre_puesto(analisis, titulo)
     md, cuerpo = render_documento(doc, bloques, analisis, fila["codigo"], grupo.tipo,
-                                  "" if grupo.es_contexto else grupo.departamento, fila["archivo"], titulo)
+                                  grupo.departamento, fila["archivo"], titulo)
     v = verificar(doc, bloques, analisis, cuerpo)
     r = DocumentoConvertido(codigo=fila["codigo"], archivo=fila["archivo"], estado="OK", doc=doc,
                             analisis=analisis, verificacion=v, palabras=len(tokens(RE_MARCAS.sub(" ", cuerpo))))
@@ -80,10 +88,11 @@ def fila_indice(r, grupo, archivo_md, linea_ini, linea_fin):
     a, meta, ctx = r.analisis, r.analisis.metadatos, grupo.es_contexto
     campos = a.campos
     proposito = recortar_palabras(campos.get("objetivo") or campos.get("proposito", ""), 40)
-    es_d = grupo.tipo == "D"
+    es_d = grupo.familia == "D"
+    td = tipo_documento(grupo.tipo)
     return {
-        "codigo": r.codigo, "tipo": TIPOS[grupo.tipo], "codigo_departamento": "" if ctx else grupo.codigo_dep,
-        "departamento": "" if ctx else grupo.departamento, "nombre": os.path.splitext(r.archivo)[0],
+        "codigo": r.codigo, "tipo": td.nombre if td else grupo.tipo, "codigo_departamento": grupo.codigo_dep,
+        "departamento": grupo.departamento, "nombre": os.path.splitext(r.archivo)[0],
         "archivo_origen": r.archivo, "codigo_interno": meta.codigo_interno, "version": meta.version,
         "estado_documental": meta.estado_documental, "fecha_vigencia": meta.fecha_vigencia,
         "propietario": meta.propietario, "responsable": meta.responsable,
@@ -104,12 +113,14 @@ def fila_indice(r, grupo, archivo_md, linea_ini, linea_fin):
         "avisos_estructura": len(r.avisos), "detalle_avisos": SEPARADOR_LISTA.join(r.avisos),
         "paginas_ocr": ", ".join(map(str, r.doc.paginas_ocr)),
         "confianza_ocr": f"{r.doc.confianza_ocr:.1f}" if r.doc.confianza_ocr is not None else "",
+        "area_propietaria": meta.area_propietaria,
     }
 
 
 def _encabezado_md(grupo):
     if grupo.es_contexto:
-        intro = "Materiales de contexto. Cada material empieza con \"## [C-NN]\"; lo demás es el texto original."
+        intro = ("Documentos generales de contexto: {N}. Cada material empieza con \"## [CÓDIGO] Título\"; "
+                 "lo demás es el texto original.")
     else:
         intro = ("Documentos de este archivo: {N}. Cada documento empieza con \"## [CÓDIGO]\"; "
                  "el bloque con \">\" son metadatos de conversión y lo demás es el texto original.")

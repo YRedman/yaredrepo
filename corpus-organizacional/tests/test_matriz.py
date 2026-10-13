@@ -9,28 +9,28 @@ from corpus_org.comun.archivos import escribir_csv
 from corpus_org.comun.esquema import COLUMNAS_INDICE
 from corpus_org.consulta.matriz import datos_matriz, escribir_matriz, guardar_libro
 
-DOCS = """## [D-PRU-01] Coordinador de Pruebas
-> - Código: D-PRU-01
+DOCS = """## [DES-PRU-01] Coordinador de Pruebas
+> - Código: DES-PRU-01
 
-### [D-PRU-01] 1. Coordinador de Pruebas.
+### [DES-PRU-01] 1. Coordinador de Pruebas.
 
-Coordinar las pruebas según la Política de Calidad y el procedimiento P-PRU-01.
+Coordinar las pruebas según la Política de Calidad y el procedimiento PRD-PRU-01.
 
-### [D-PRU-01] Datos de encabezado y pie del documento original
+### [DES-PRU-01] Datos de encabezado y pie del documento original
 
 Código: DP-FOR-001
 
-## [D-PRU-02] Analista de Pruebas
-> - Código: D-PRU-02
+## [DES-PRU-02] Analista de Pruebas
+> - Código: DES-PRU-02
 
-### [D-PRU-02] 1. Analista de Pruebas.
+### [DES-PRU-02] 1. Analista de Pruebas.
 
 | FUNCIONES ESPECÍFICAS | EVIDENCIA DE CUMPLIMENTO / ENTREGABLES |
 |---|---|
 | Ejecutar los casos de prueba. | • Casos ejecutados. |
 | Registrar hallazgos según el protocolo de pruebas. | • Registro. |
 
-### [D-PRU-02] Áreas de Relacionamiento:
+### [DES-PRU-02] Áreas de Relacionamiento:
 
 | Área de Interacción | Tipo de Relación |
 |---|---|
@@ -41,10 +41,10 @@ Código: DP-FOR-001
 |---|---|
 | Nivel de Educación Formal | Ingeniería o afines. |
 """
-PROC = """## [P-PRU-01] Ejecución de pruebas
-> - Código: P-PRU-01
+PROC = """## [PRD-PRU-01] Ejecución de pruebas
+> - Código: PRD-PRU-01
 
-### [P-PRU-01] Desarrollo del proceso
+### [PRD-PRU-01] Desarrollo del proceso
 
 | No. | Actividad | Responsable |
 |---|---|---|
@@ -56,15 +56,15 @@ PROC = """## [P-PRU-01] Ejecución de pruebas
 def _corpus(raiz):
     pub = raiz / "publicado"
     pub.mkdir(parents=True)
-    (pub / "D_PRU.md").write_text(DOCS, encoding="utf-8")
-    (pub / "P_PRU.md").write_text(PROC, encoding="utf-8")
-    filas = [{"codigo": "D-PRU-01", "tipo": "Descriptivo", "departamento": "Pruebas",
-              "nombre_puesto": "Coordinador de Pruebas", "archivo_md": "D_PRU.md"},
-             {"codigo": "D-PRU-02", "tipo": "Descriptivo", "departamento": "Pruebas",
+    (pub / "DES_PRU.md").write_text(DOCS, encoding="utf-8")
+    (pub / "PRD_PRU.md").write_text(PROC, encoding="utf-8")
+    filas = [{"codigo": "DES-PRU-01", "tipo": "Descriptivo", "departamento": "Pruebas",
+              "nombre_puesto": "Coordinador de Pruebas", "archivo_md": "DES_PRU.md"},
+             {"codigo": "DES-PRU-02", "tipo": "Descriptivo", "departamento": "Pruebas",
               "nombre_puesto": "Analista de Pruebas", "reporta_a": "Coordinador de Pruebas",
-              "detalle_avisos": "OCR en páginas 1: revisar contra el original", "archivo_md": "D_PRU.md"},
-             {"codigo": "P-PRU-01", "tipo": "Procedimiento", "departamento": "Pruebas",
-              "nombre": "Ejecución de pruebas", "archivo_md": "P_PRU.md"}]
+              "detalle_avisos": "OCR en páginas 1: revisar contra el original", "archivo_md": "DES_PRU.md"},
+             {"codigo": "PRD-PRU-01", "tipo": "Procedimiento", "departamento": "Pruebas",
+              "nombre": "Ejecución de pruebas", "archivo_md": "PRD_PRU.md"}]
     escribir_csv(pub / "indice_corpus.csv", COLUMNAS_INDICE, filas)
     (raiz / "RESUMEN_CONSTRUCCION.md").write_text("- Resultado: **LISTO PARA PUBLICAR**\n", encoding="utf-8")
 
@@ -82,30 +82,30 @@ class MatrizTest(unittest.TestCase):
         cls.tmp.cleanup()
 
     def test_puestos_y_jefe_del_corpus(self):
-        analista = next(f for f in self.hojas["Puestos"] if f[0] == "D-PRU-02")
-        self.assertEqual((analista[3], analista[4]), ("Coordinador de Pruebas", "D-PRU-01"))
+        analista = next(f for f in self.hojas["Puestos"] if f[0] == "DES-PRU-02")
+        self.assertEqual((analista[3], analista[4]), ("Coordinador de Pruebas", "DES-PRU-01"))
         self.assertEqual(analista[12], "OCR (confianza desconocida; revisar contra el original)")
 
     def test_funciones_relaciones_y_perfil(self):
         self.assertEqual([f[4:] for f in self.hojas["Funciones"]],
                          [["Ejecutar los casos de prueba.", "• Casos ejecutados."],
                           ["Registrar hallazgos según el protocolo de pruebas.", "• Registro."]])
-        self.assertIn(["D-PRU-02", "Pruebas", "Analista de Pruebas", "Coordinador de Pruebas",
-                       "Subordinación directa", "D-PRU-01", "Coordinador de Pruebas"], self.hojas["Relaciones"])
-        self.assertIn(["D-PRU-02", "Pruebas", "Analista de Pruebas", "Requisitos del Puesto",
+        self.assertIn(["DES-PRU-02", "Pruebas", "Analista de Pruebas", "Coordinador de Pruebas",
+                       "Subordinación directa", "DES-PRU-01", "Coordinador de Pruebas"], self.hojas["Relaciones"])
+        self.assertIn(["DES-PRU-02", "Pruebas", "Analista de Pruebas", "Requisitos del Puesto",
                        "Nivel de Educación Formal", "Ingeniería o afines."], self.hojas["Perfil y requisitos"])
 
     def test_normativa_citada(self):
         tipos = {(f[0], f[3]) for f in self.hojas["Normativa citada"]}
-        self.assertTrue({("D-PRU-01", "Política"), ("D-PRU-01", "Procedimiento"), ("D-PRU-02", "Protocolo")} <= tipos)
+        self.assertTrue({("DES-PRU-01", "Política"), ("DES-PRU-01", "Procedimiento"), ("DES-PRU-02", "Protocolo")} <= tipos)
         # el codigo del encabezado del formato no es una cita
         self.assertFalse(any("DP-FOR-001" in f[4] for f in self.hojas["Normativa citada"]))
 
     def test_participacion_en_procedimientos(self):
         roles = {(f[0], f[2]) for f in self.hojas["Participación"]}
-        self.assertEqual(roles, {("D-PRU-02", "P-PRU-01"), ("D-PRU-01", "P-PRU-01")})
+        self.assertEqual(roles, {("DES-PRU-02", "PRD-PRU-01"), ("DES-PRU-01", "PRD-PRU-01")})
         matriz = self.hojas["Puestos x Procedimientos"]
-        self.assertEqual(matriz[0], ["Código", "Puesto", "P-PRU-01"])
+        self.assertEqual(matriz[0], ["Código", "Puesto", "PRD-PRU-01"])
 
     def test_libro(self):
         try:

@@ -9,7 +9,7 @@ from .comandos import COMANDOS
 from .comandos.base import Contexto
 from .repositorio import cargar_corpus
 from .salida import Salida
-from .ubicacion import incluir_no_vigentes, resolver_carpeta_datos
+from .ubicacion import incluir_no_vigentes, resolver_ubicacion
 
 RAIZ_SKILL = Path(__file__).resolve().parents[3]   # <skill>/scripts/corpus_org/consulta/cli.py
 
@@ -55,7 +55,10 @@ def main(argv=None, uso="", flujo=None):
         return 0 if not argv else 1
     try:
         args = crear_parser().parse_args(argv)
-        corpus = cargar_corpus(resolver_carpeta_datos(RAIZ_SKILL), incluir_no_vigentes())
+        u = resolver_ubicacion(RAIZ_SKILL)
+        for aviso in u.avisos:
+            s.linea("AVISO: " + aviso)
+        corpus = cargar_corpus(u.datos, incluir_no_vigentes(), u.documentos)
         COMANDOS[args.comando].ejecutar(Contexto(corpus, s), args)
     except CorpusError as e:
         _mostrar_error(e, s)

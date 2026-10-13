@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import List
 
 from ..comun.esquema import ARCHIVO_HUELLAS
+from ..comun.estructura import SKILL_CONTEXTO, SKILL_DOCUMENTOS
 
 
 @dataclass
@@ -18,7 +19,19 @@ class ResultadoHuellas:
         return self.existe and not self.modificados and not self.faltantes
 
 
-def verificar_huellas(carpeta):
+def _ruta(nombre, carpeta, documentos):
+    """Archivo de una linea de huellas: '<skill>/<ruta>' se resuelve en la carpeta de ese skill (en Copilot
+    cada skill esta en otra carpeta); un nombre sin skill (version anterior) esta junto a las huellas."""
+    skill, _, resto = nombre.partition("/")
+    if skill == SKILL_CONTEXTO and resto:
+        return carpeta.parent / resto           # carpeta = <corpus-contexto>/datos
+    if skill == SKILL_DOCUMENTOS and resto:
+        return (documentos or carpeta.parent.parent / SKILL_DOCUMENTOS) / resto
+    return carpeta / nombre
+
+
+def verificar_huellas(carpeta, documentos=None):
+    """Compara los archivos con huellas.sha256 de ``carpeta`` (datos/). ``documentos``: skill corpus-documentos."""
     p = carpeta / ARCHIVO_HUELLAS
     if not p.is_file():
         return ResultadoHuellas(existe=False)
@@ -28,7 +41,7 @@ def verificar_huellas(carpeta):
             continue
         esperado, nombre = linea.split(None, 1)
         nombre = nombre.strip()
-        archivo = carpeta / nombre
+        archivo = _ruta(nombre, carpeta, documentos)
         if not archivo.is_file():
             r.faltantes.append(nombre)
         elif hashlib.sha256(archivo.read_bytes()).hexdigest() != esperado:

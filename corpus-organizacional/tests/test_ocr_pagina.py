@@ -134,10 +134,10 @@ class DescriptivoEscaneadoTest(unittest.TestCase):
         escaneado.save(entrada / "Analista de Pruebas.pdf")
         with redirect_stdout(io.StringIO()):
             conversion_cli.main(["convertir", "--entrada", str(entrada), "--salida", str(salida),
-                                 "--departamento", "Pruebas", "--tipo", "D", "--dep", "PRU",
+                                 "--departamento", "Pruebas", "--tipo", "DES", "--dep", "PRU",
                                  "--sin-verificacion-cruzada"])
-        cls.md = (salida / "D_PRU.md").read_text(encoding="utf-8")
-        with open(salida / "DIC_D_PRU.csv", encoding="utf-8-sig", newline="") as f:
+        cls.md = (salida / "DES_PRU.md").read_text(encoding="utf-8")
+        with open(salida / "DIC_DES_PRU.csv", encoding="utf-8-sig", newline="") as f:
             cls.fila = next(csv.DictReader(f, delimiter=";"))
 
     @classmethod

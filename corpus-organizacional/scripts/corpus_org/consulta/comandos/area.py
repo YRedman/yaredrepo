@@ -1,4 +1,5 @@
 from ...comun.esquema import tipo_desde_texto
+from ...comun.tipos import TIPOS_AREA, tipo as tipo_documento
 from ...comun.texto import recortar_palabras as recortar
 from ..salida import resumir_lista
 from .base import Comando
@@ -16,11 +17,13 @@ class IndiceArea(Comando):
         cod = ctx.area(args.area)
         a = cp.areas[cod]
         s.linea(f"ÁREA · {a.nombre} ({cod})")
-        linea = f"Descriptivos: {len(a.descriptivos)} · Procedimientos: {len(a.procedimientos)}"
+        tipos = [t for t in TIPOS_AREA if t in ("DES", "PRD") or a.codigos(t)]
+        linea = " · ".join(f"{tipo_documento(t).plural}: {len(a.codigos(t))}" for t in tipos)
         if cp.inventario:
             inv = cp.inventario_de_area(cod)
-            esperado_d = sum(1 for f in inv if tipo_desde_texto(f.get("tipo")) == "D")
-            linea += f" · En inventario: {esperado_d} descriptivos, {len(inv) - esperado_d} procedimientos"
+            por_tipo = [(t, sum(1 for f in inv if tipo_desde_texto(f.get("tipo")) == t)) for t in TIPOS_AREA]
+            linea += " · En inventario: " + ", ".join(f"{n} {tipo_documento(t).plural.lower()}"
+                                                     for t, n in por_tipo if n or t in ("DES", "PRD"))
             faltan = cp.faltantes_de_inventario(inv)
             if faltan:
                 linea += f" · NO CONVERTIDOS: {resumir_lista(faltan)}"
@@ -51,6 +54,19 @@ class IndiceArea(Comando):
             s.linea("Procedimientos")
             s.tabla(["Código", "Procedimiento", "Macroproceso", "Objetivo", "Subprocesos", "Códigos citados",
                      "No especificado", "Archivo:líneas"], filas)
+        for t in TIPOS_AREA:
+            if t in ("DES", "PRD") or not a.codigos(t):
+                continue
+            filas = []
+            for c in a.codigos(t):
+                f, d = cp.meta.get(c, {}), cp.docs.get(c)
+                filas.append([c, cp.nombre(c), f.get("area_propietaria", ""),
+                              recortar(f.get("proposito_literal", ""), 25), f.get("codigos_citados", ""),
+                              f.get("campos_no_especificados", ""), d.ubicacion if d else "?:1-0"])
+            s.linea()
+            s.linea(tipo_documento(t).plural)
+            s.tabla(["Código", "Documento", "Área propietaria", "Objetivo", "Códigos citados", "No especificado",
+                     "Archivo:líneas"], filas)
         sin_doc = [c for c in a.codigos() if c not in cp.docs]
         if sin_doc:
             s.linea()

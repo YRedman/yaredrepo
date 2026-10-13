@@ -19,7 +19,7 @@ def areas(*pares):
 class AliasTest(unittest.TestCase):
     def test_solo_siglas_del_glosario(self):
         ar = areas(("COM", "Compras"), ("RHU", "Recursos Humanos"))
-        glosario = DocumentoCorpus("C-CTX-01", "contexto.md", 0, 5, "Glosario", [
+        glosario = DocumentoCorpus("GLO-GEN-01", "GLO_GEN.md", 0, 5, "Glosario", [
             "| Sigla | Significado |", "|---|---|", "| RRHH | Recursos Humanos |",
             "| Responsable | Compras |", "| Área | Compras |"])
         alias = construir_alias(ar, [glosario])
@@ -52,20 +52,20 @@ class ResolutorTest(unittest.TestCase):
 
 class PuestosTest(unittest.TestCase):
     def setUp(self):
-        self.det = DetectorPuestos([Puesto("D-COM-01", "Gerente de Compras Nacionales"),
-                                    Puesto("D-COM-02", "Gerente de Compras Internacionales"),
-                                    Puesto("D-ALM-01", "Jefe de Almacén")])
+        self.det = DetectorPuestos([Puesto("DES-COM-01", "Gerente de Compras Nacionales"),
+                                    Puesto("DES-COM-02", "Gerente de Compras Internacionales"),
+                                    Puesto("DES-ALM-01", "Jefe de Almacén")])
 
     def test_exacta(self):
         m = self.det.detectar("El Jefe de Almacén recibe")
-        self.assertEqual([(x.tipo, x.puesto.codigo) for x in m], [("exacta", "D-ALM-01")])
+        self.assertEqual([(x.tipo, x.puesto.codigo) for x in m], [("exacta", "DES-ALM-01")])
 
     def test_empate_no_se_asigna(self):
         m = self.det.detectar("El Gerente de Compras aprueba")
         self.assertEqual(len(m), 1)
         self.assertEqual(m[0].tipo, "ambigua")
         self.assertFalse(m[0].asignada)
-        self.assertEqual({p.codigo for p in m[0].candidatos}, {"D-COM-01", "D-COM-02"})
+        self.assertEqual({p.codigo for p in m[0].candidatos}, {"DES-COM-01", "DES-COM-02"})
 
 
 class RolesTest(unittest.TestCase):

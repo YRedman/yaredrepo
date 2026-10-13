@@ -1,7 +1,8 @@
 """Matriz organizacional en Excel: base de datos del corpus publicado para revisarla sin ejecutar codigo.
 
-Hojas: Léeme (resumen con formulas), Puestos, Funciones, Relaciones, Perfil y requisitos,
-Normativa citada, Procedimientos, Participación, Puestos x Procedimientos, Indicadores y Revisión.
+Hojas: Léeme, Resumen (formulas), Puestos, Funciones, Relaciones, Perfil y requisitos, Normativa citada,
+Procedimientos, Políticas y protocolos, Documentos generales, Participación, Puestos x Procedimientos,
+Indicadores y Revisión. Cada hoja se exporta tambien a un CSV (UTF-8, separador ';') en matriz/.
 Todo sale del corpus publicado: lo que no esta en un documento no se completa.
 """
 
@@ -12,11 +13,12 @@ from dataclasses import dataclass, field
 from typing import List
 
 from .. import VERSION
-from ..comun.archivos import leer_csv, leer_texto
+from ..comun.archivos import escribir_csv_filas, leer_csv, leer_texto
 from ..comun.errores import CorpusError
 from ..comun.esquema import ARCHIVO_RESUMEN, ARCHIVO_REVISION, AVISO_ESCANEADO, area_de
 from ..comun.markdown import celdas
-from ..comun.texto import norm
+from ..comun.texto import norm, sin_acentos
+from ..comun.tipos import es_general, familia, tipo as tipo_documento, tipo_de_codigo
 from .parser import lineas_contenido
 from .participacion import calcular_participacion
 from .puestos import DetectorPuestos
@@ -183,6 +185,11 @@ def _jefe(detector, texto, codigo):
     return "", ""
 
 
+def _nombre_tipo(codigo):
+    t = tipo_documento(tipo_de_codigo(codigo))
+    return t.nombre if t else tipo_de_codigo(codigo)
+
+
 def datos_matriz(raiz):
     """Filas de cada hoja (listas de listas) calculadas del corpus publicado en ``raiz``/publicado."""
     corpus = cargar_corpus(raiz / "publicado", incluir_no_vigentes=True)
@@ -190,16 +197,28 @@ def datos_matriz(raiz):
     revision = _revision(raiz)
     hojas = collections.OrderedDict((k, []) for k in (
         "Puestos", "Funciones", "Relaciones", "Perfil y requisitos", "Normativa citada", "Procedimientos",
-        "Participación", "Puestos x Procedimientos", "Indicadores", "Revisión"))
-    descriptivos = sorted(c for c in corpus.meta if c.startswith("D-"))
-    procedimientos = sorted(c for c in corpus.meta if c.startswith("P-"))
-    for c in descriptivos + procedimientos:
+        "Políticas y protocolos", "Documentos generales", "Participación", "Puestos x Procedimientos",
+        "Indicadores", "Revisión"))
+    descriptivos = sorted(c for c in corpus.meta if tipo_de_codigo(c) == "DES")
+    procedimientos = sorted(c for c in corpus.meta if tipo_de_codigo(c) == "PRD")
+    normativos = sorted(c for c in corpus.meta if familia(tipo_de_codigo(c)) == "P" and c not in procedimientos)
+    for c in sorted(c for c in corpus.meta if es_general(c)):
+        f = corpus.meta[c]
+        hojas["Documentos generales"].append([c, _nombre_tipo(c), corpus.nombre(c), f.get("archivo_origen", ""),
+                                              _lectura(f), corpus.doc(c).ubicacion if corpus.doc(c) else ""])
+    for c in descriptivos + procedimientos + normativos:
         f, doc = corpus.meta[c], corpus.doc(c)
         area, nombre = f.get("departamento", ""), corpus.nombre(c)
         lectura = _lectura(f)
         pendiente = c in revision and not revision[c]
         estado_rev = "Pendiente" if pendiente else ("Revisado" if c in revision else "No requerida")
-        if c.startswith("D-"):
+        if c in normativos:
+            hojas["Políticas y protocolos"].append([
+                c, _nombre_tipo(c), area, f.get("area_propietaria", ""), nombre, f.get("proposito_literal", ""),
+                f.get("propietario", ""), f.get("responsable", ""), f.get("codigo_interno", ""),
+                f.get("version", ""), f.get("fecha_vigencia", ""), f.get("estado_documental", ""), lectura,
+                estado_rev])
+        elif tipo_de_codigo(c) == "DES":
             jefe, coincidencia = _jefe(detector, f.get("reporta_a"), c)
             hojas["Puestos"].append([
                 c, area, nombre, f.get("reporta_a", ""), jefe, coincidencia, f.get("supervisa_a", ""),
@@ -225,7 +244,7 @@ def datos_matriz(raiz):
             hojas["Revisión"].append([c, area, nombre, lectura, f.get("detalle_avisos", "") or
                                       ("muestra aleatoria" if c in revision else ""),
                                       "Pendiente" if pendiente or c not in revision else "Revisado", ""])
-    part = calcular_participacion(corpus, procedimientos, detector)
+    part = calcular_participacion(corpus, procedimientos + normativos, detector)
     cruces = collections.defaultdict(set)
     for fp in part.filas:
         hojas["Participación"].append([fp.puesto.codigo, fp.puesto.nombre, fp.procedimiento,
@@ -268,6 +287,12 @@ COLUMNAS = {
     "Participación": [("Código del puesto", 14), ("Puesto", 34), ("Procedimiento", 14),
                       ("Nombre del procedimiento", 34), ("Rol", 18), ("Coincidencia", 22),
                       ("Evidencia (texto literal)", 80)],
+    "Políticas y protocolos": [("Código", 12), ("Tipo", 12), ("Área de aplicación", 22),
+                               ("Área propietaria", 22), ("Documento", 34), ("Propósito", 50), ("Propietario", 24),
+                               ("Responsable", 24), ("Código interno", 18), ("Versión", 9), ("Vigencia", 12),
+                               ("Estado documental", 14), ("Calidad de lectura", 22), ("Revisión visual", 14)],
+    "Documentos generales": [("Código", 12), ("Tipo", 18), ("Documento", 40), ("Archivo original", 40),
+                             ("Calidad de lectura", 22), ("Ubicación en el corpus", 22)],
     "Revisión": [("Código", 12), ("Área", 22), ("Documento", 34), ("Calidad de lectura", 22),
                  ("Motivo de la revisión", 70), ("Estado", 12), ("Observaciones del auditor", 50)],
 }
@@ -277,6 +302,9 @@ VACIAS = {
     "Participación": "Sin procedimientos en el corpus: no hay participación de puestos que mostrar.",
     "Puestos x Procedimientos": "Sin procedimientos en el corpus: la matriz se llena cuando se agreguen.",
     "Indicadores": "El contexto no trae un archivo kpi*.csv.",
+    "Políticas y protocolos": "El corpus todavía no tiene políticas ni protocolos (carpetas Políticas y "
+                              "Protocolos de la entrada).",
+    "Documentos generales": "La construcción no tuvo carpeta de contexto (organigramas, indicadores, glosario…).",
 }
 DESCRIPCIONES = [
     ("Resumen", "Conteos por área (puestos, OCR, funciones, relaciones, pendientes) calculados con fórmulas."),
@@ -289,23 +317,99 @@ DESCRIPCIONES = [
     ("Normativa citada", "Cada texto donde un documento menciona una política, protocolo, procedimiento, norma, "
                          "reglamento, manual, ley o código de documento. Es la cita literal: no interpreta."),
     ("Procedimientos", "Un procedimiento por fila con propietario, responsable, versión y actividades."),
-    ("Participación", "Qué puesto aparece en qué procedimiento y con qué rol (ejecuta, aprueba, revisa…)."),
-    ("Puestos x Procedimientos", "Matriz: filas = puestos, columnas = procedimientos, celda = rol."),
+    ("Políticas y protocolos", "Una política o protocolo por fila. «Área de aplicación» es General si aplica a "
+                               "varias áreas o a toda la empresa; «Área propietaria» es el área que la emite, si "
+                               "el documento la indica."),
+    ("Documentos generales", "Organigramas, indicadores, glosarios, mapas de procesos y otros documentos de "
+                             "contexto (área GEN)."),
+    ("Participación", "Qué puesto aparece en qué procedimiento, protocolo o política y con qué rol (ejecuta, "
+                      "aprueba, revisa…)."),
+    ("Puestos x Procedimientos", "Matriz: filas = puestos, columnas = procedimientos, protocolos y políticas, "
+                                 "celda = rol."),
     ("Indicadores", "KPIs del contexto (meta y medición)."),
     ("Revisión", "Documentos que deben compararse con el original (OCR, tablas partidas, muestra). La columna "
                  "amarilla es para las observaciones del auditor."),
 ]
 
 
-def escribir_matriz(raiz, destino=None):
-    """Escribe <raiz>/matriz_organizacional.xlsx. Requiere openpyxl. Devuelve la ruta."""
+def _cabecera_y_filas(nombre, filas):
+    """(cabecera, filas, anchos) de una hoja; una hoja vacia lleva una nota que explica por que."""
+    columnas = COLUMNAS.get(nombre)
+    if columnas:
+        cabecera, anchos = [c for c, _ in columnas], [a for _, a in columnas]
+    elif filas:
+        cabecera, filas = filas[0], filas[1:]
+        anchos = [14, 34] + [16] * (len(cabecera) - 2) if nombre == "Puestos x Procedimientos" \
+            else [20] * len(cabecera)
+    else:
+        cabecera, anchos = ["Nota"], [100]
+    filas = [[str(x)[:MAX_TEXTO_CELDA] if isinstance(x, str) else x for x in f] for f in filas]
+    if not filas and nombre in VACIAS:
+        filas = [[VACIAS[nombre]] + [""] * (len(cabecera) - 1)]
+    return cabecera, filas, anchos
+
+
+COLUMNAS_RESUMEN = ["Área", "Puestos", "Leídos con OCR", "Sin texto", "Funciones", "Relaciones",
+                    "Pendientes de revisión"]
+
+
+def _areas_resumen(hojas):
+    return sorted({f[1] for f in hojas["Puestos"]} | {f[1] for f in hojas["Procedimientos"]}
+                  | {f[2] for f in hojas["Políticas y protocolos"]})
+
+
+def valores_resumen(hojas):
+    """Las mismas cuentas de la hoja Resumen (que en Excel son formulas), ya calculadas, con fila Total."""
+    filas = []
+    for area in _areas_resumen(hojas):
+        puestos = [f for f in hojas["Puestos"] if f[1] == area]
+        filas.append([area, len(puestos), sum(1 for f in puestos if str(f[12]).startswith("OCR")),
+                      sum(1 for f in puestos if str(f[12]).startswith("Sin texto")),
+                      sum(1 for f in hojas["Funciones"] if f[1] == area),
+                      sum(1 for f in hojas["Relaciones"] if f[1] == area),
+                      sum(1 for f in hojas["Revisión"] if f[1] == area and f[5] == "Pendiente")])
+    filas.append(["Total"] + [sum(f[k] for f in filas) for k in range(1, len(COLUMNAS_RESUMEN))])
+    return filas
+
+
+def _nombre_csv(i, hoja):
+    slug = re.sub(r"[^a-z0-9]+", "_", sin_acentos(hoja).lower()).strip("_")
+    return f"{i:02d}_{slug}.csv"
+
+
+def exportar_csv(hojas, raiz, carpeta):
+    """Un CSV por hoja de la matriz (UTF-8, separador ';') en ``carpeta``. Devuelve las rutas."""
+    carpeta.mkdir(parents=True, exist_ok=True)
+    for p in carpeta.glob("*.csv"):
+        p.unlink()
+    todas = [("Léeme", ["Hoja", "Contenido"],
+              [["Estado de la construcción", _estado_construccion(raiz)],
+               ["Generada", f"{datetime.date.today():%d/%m/%Y} con convertir.py v{VERSION}"]]
+              + [[n, d] for n, d in DESCRIPCIONES]),
+             ("Resumen", COLUMNAS_RESUMEN, valores_resumen(hojas))]
+    for nombre, filas in hojas.items():
+        cabecera, filas, _ = _cabecera_y_filas(nombre, filas)
+        todas.append((nombre, cabecera, filas))
+    rutas = []
+    for i, (nombre, cabecera, filas) in enumerate(todas, 1):
+        ruta = carpeta / _nombre_csv(i, nombre)
+        escribir_csv_filas(ruta, cabecera, filas)
+        rutas.append(ruta)
+    return rutas
+
+
+def escribir_matriz(raiz, destino=None, carpeta_csv=None):
+    """Escribe <raiz>/matriz_organizacional.xlsx (requiere openpyxl) y, con ``carpeta_csv``, un CSV por
+    hoja (solo biblioteca estandar). Devuelve la ruta del Excel."""
+    corpus, hojas = datos_matriz(raiz)
+    if carpeta_csv is not None:
+        exportar_csv(hojas, raiz, carpeta_csv)
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Alignment, Font, PatternFill
         from openpyxl.utils import get_column_letter
     except ImportError:
         raise CorpusError("Falta openpyxl para escribir el Excel: python -m pip install openpyxl")
-    corpus, hojas = datos_matriz(raiz)
     destino = destino or raiz / ARCHIVO_MATRIZ
     fuente, negrita = Font(name="Arial", size=10), Font(name="Arial", size=10, bold=True, color="FFFFFF")
     relleno_cab = PatternFill("solid", fgColor="1F4E78")
@@ -317,20 +421,10 @@ def escribir_matriz(raiz, destino=None):
     leeme.title = "Léeme"
     for nombre, filas in hojas.items():
         ws = wb.create_sheet(nombre)
-        columnas = COLUMNAS.get(nombre)
-        if columnas:
-            cabecera, anchos = [c for c, _ in columnas], [a for _, a in columnas]
-        elif filas:
-            cabecera, filas = filas[0], filas[1:]
-            anchos = [14, 34] + [16] * (len(cabecera) - 2) if nombre == "Puestos x Procedimientos" \
-                else [20] * len(cabecera)
-        else:
-            cabecera, anchos = ["Nota"], [100]
+        cabecera, filas, anchos = _cabecera_y_filas(nombre, filas)
         ws.append(cabecera)
         for f in filas:
-            ws.append([str(x)[:MAX_TEXTO_CELDA] if isinstance(x, str) else x for x in f])
-        if not filas and nombre in VACIAS:
-            ws.append([VACIAS[nombre]] + [""] * (len(cabecera) - 1))
+            ws.append(f)
         for j, a in enumerate(anchos, 1):
             ws.column_dimensions[get_column_letter(j)].width = a
         for fila in ws.iter_rows():
@@ -399,12 +493,11 @@ def _leeme(ws, corpus, hojas, raiz, fuente):
 def _resumen(ws, hojas, fuente):
     """Conteos por área con fórmulas sobre las otras hojas."""
     from openpyxl.styles import Font, PatternFill
-    ws.append(["Área", "Puestos", "Leídos con OCR", "Sin texto", "Funciones", "Relaciones",
-               "Pendientes de revisión"])
+    ws.append(COLUMNAS_RESUMEN)
     for celda in ws[1]:
         celda.font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
         celda.fill = PatternFill("solid", fgColor="1F4E78")
-    areas = sorted({f[1] for f in hojas["Puestos"]} | {f[1] for f in hojas["Procedimientos"]})
+    areas = _areas_resumen(hojas)
     for r, area in enumerate(areas, 2):
         ws.append([area,
                    f"=COUNTIF('Puestos'!$B:$B,$A{r})",

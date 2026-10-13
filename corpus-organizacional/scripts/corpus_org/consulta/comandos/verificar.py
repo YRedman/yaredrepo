@@ -1,4 +1,5 @@
 from ... import VERSION
+from ...comun.tipos import es_general
 from ..integridad import verificar_huellas
 from ..salida import resumir_lista
 from .base import Comando
@@ -17,12 +18,13 @@ class Verificar(Comando):
 
     def ejecutar(self, ctx, args):
         cp, s = ctx.corpus, ctx.salida
-        s.linea(f"VERIFICACIÓN · corpus.py v{VERSION} · carpeta publicada: {cp.carpeta}")
+        s.linea(f"VERIFICACIÓN · corpus.py v{VERSION} · datos: {cp.carpeta}")
+        s.linea(f"Documentos: {cp.carpeta_documentos or cp.carpeta}")
         s.linea(f"Índice utilizado: {cp.fuente_indice}")
         problemas = []
         if cp.duplicados:
             problemas.append(f"Códigos repetidos: {resumir_lista(sorted(set(cp.duplicados)))}")
-        md_sin_dic = sorted(c for c in cp.docs if c not in cp.meta and not c.startswith("C-"))
+        md_sin_dic = sorted(c for c in cp.docs if c not in cp.meta and not es_general(c))
         if md_sin_dic:
             problemas.append(f"Documentos sin fila en el diccionario: {resumir_lista(md_sin_dic)}")
         dic_sin_md = sorted(c for c in cp.meta if c not in cp.docs)
@@ -31,7 +33,7 @@ class Verificar(Comando):
         if cp.inventario:
             faltan = cp.faltantes_de_inventario()
             inventariados = cp.codigos_inventario()
-            sobran = sorted(c for c in cp.docs if not c.startswith("C-") and c not in inventariados)
+            sobran = sorted(c for c in cp.docs if not es_general(c) and c not in inventariados)
             if faltan:
                 problemas.append(f"Documentos del inventario que no están convertidos ({len(faltan)}): "
                                  f"{resumir_lista(faltan)}")
@@ -45,7 +47,7 @@ class Verificar(Comando):
         agregadas = sorted(c for c, f in cp.meta.items() if (f.get("palabras_agregadas") or "").strip())
         if agregadas:
             problemas.append(f"Documentos con palabras que no están en el original: {resumir_lista(agregadas)}")
-        huellas = verificar_huellas(cp.carpeta)
+        huellas = verificar_huellas(cp.carpeta, cp.carpeta_documentos)
         if huellas.existe and not huellas.correcto:
             problemas.append(f"Archivos modificados después de la conversión: {', '.join(huellas.modificados) or '—'}"
                              f" · faltantes: {', '.join(huellas.faltantes) or '—'}")

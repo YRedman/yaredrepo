@@ -13,13 +13,14 @@ from ..comun.archivos import leer_csv, leer_texto
 from ..comun.errores import CorpusError
 from ..comun.esquema import (ARCHIVO_INDICE, ARCHIVO_KPIS, ARCHIVO_RESUMEN, ARCHIVO_REVISION, AVISO_ESCANEADO,
                              estado_no_publicable)
+from ..comun.estructura import rutas_publicadas
 from ..comun.markdown import esc_celda
+from ..comun.tipos import PATRON_CODIGO, RE_ARCHIVO_DOCUMENTOS, TIPOS_AREA
 
 CARPETA_COPILOT = "copilot"
 ARCHIVO_INSTRUCCIONES = "instrucciones_copilot.md"
 MAX_ARCHIVOS = 20
 RE_RESULTADO = re.compile(r"Resultado:\s*\**([^*\n]+)")
-RE_DOCUMENTO = re.compile(r"^(?:[DP])_([A-Z0-9]{3})\.md$")
 
 
 def _repartir(archivos, cupos):
@@ -71,11 +72,13 @@ def _indice(filas, ubicacion, estado, pendientes):
          f"Estado de la construcción: **{estado}**. Documentos: {len(filas)}; sin texto (escaneados): "
          f"{len(sin_texto)}. Cada documento está en el archivo indicado en la columna «Archivo», donde empieza "
          "con «## [CÓDIGO]».", "",
-         "| Código | Área | Documento / puesto | Reporta a | Supervisa a | Versión | Vigencia | Archivo | Nota |",
-         "|---|---|---|---|---|---|---|---|---|"]
+         "| Código | Tipo | Área | Área propietaria | Documento / puesto | Reporta a | Supervisa a | Versión | "
+         "Vigencia | Archivo | Nota |",
+         "|---|---|---|---|---|---|---|---|---|---|---|"]
     for f in filas:
         nombre = f.get("nombre_puesto") or f.get("nombre") or ""
-        celdas = [f.get("codigo"), f.get("departamento"), nombre, f.get("reporta_a"), f.get("supervisa_a"),
+        celdas = [f.get("codigo"), f.get("tipo"), f.get("departamento"), f.get("area_propietaria"), nombre,
+                  f.get("reporta_a"), f.get("supervisa_a"),
                   f.get("version"), f.get("fecha_vigencia"), ubicacion.get((f.get("codigo") or "").upper(), ""),
                   _nota(f, pendientes)]
         l.append("| " + " | ".join(esc_celda(c or "—") for c in celdas) + " |")
@@ -96,14 +99,14 @@ def _instrucciones(estado):
     return f"""Eres un asistente que responde preguntas sobre la estructura organizacional usando SOLO los archivos de conocimiento del corpus. Son la única fuente de verdad: no uses conocimiento general ni supongas datos.
 
 CÓMO ESTÁ ORGANIZADO
-- "00_indice_corpus.md": una fila por documento con código, área, puesto, a quién reporta, a quién supervisa, versión, vigencia, el archivo donde está el documento y una nota. Úsalo para localizar, contar y filtrar.
-- "descriptivos_*.md" / "procedimientos_*.md": los documentos completos, agrupados por área. Cada uno empieza con "## [CÓDIGO] Título". D-XXX-NN es un descriptivo de puesto y P-XXX-NN un procedimiento (XXX es la sigla del área).
-- "contexto.md" e "indicadores.md" (si están): materiales de contexto e indicadores.
+- "00_indice_corpus.md": una fila por documento con código, tipo, área, área propietaria, puesto, a quién reporta, a quién supervisa, versión, vigencia, el archivo donde está el documento y una nota. Úsalo para localizar, contar y filtrar.
+- "NN_DES_*.md", "NN_PRD_*.md", "NN_PRO_*.md", "NN_POL_*.md": los documentos completos, agrupados por tipo y área. Cada uno empieza con "## [TTT-AAA-NN] Título": TTT es el tipo (DES descriptivo de puesto, PRD procedimiento, PRO protocolo, POL política), AAA la sigla del área (GEN = aplica a varias áreas o a toda la empresa) y NN el número.
+- "01_contexto.md" e "02_indicadores.md" (si están): documentos generales (ORG organigrama, KPI indicadores, GLO glosario, MPR mapa de procesos…, todos con área GEN) e indicadores.
 - Las líneas que empiezan con ">" son metadatos de la conversión, no texto del original.
 - "[NO ESPECIFICADO]" significa que el original no trae ese dato. "[ORGANIGRAMA: …]" seguido de "Jefe → Puesto" resume el organigrama del original.
 
 REGLAS
-1. Cita el código del documento entre corchetes, por ejemplo [D-CAL-01], junto a cada dato.
+1. Cita el código del documento entre corchetes, por ejemplo [DES-CAL-01], junto a cada dato.
 2. Copia literalmente funciones, objetivos y requisitos cuando pidan qué dice el documento. Si resumes, dilo.
 3. Si algo no está en el corpus, responde "No está en los documentos del corpus". No completes con suposiciones.
 4. Marca como [Inferido] cualquier deducción propia y explica de dónde sale.
@@ -123,8 +126,8 @@ def exportar_copilot(raiz, max_archivos=MAX_ARCHIVOS):
     ``raiz`` es la carpeta de salida de ``construir`` (la que contiene publicado/). Devuelve la carpeta.
     """
     raiz = Path(raiz)
-    publicado = raiz / "publicado"
-    indice_p = publicado / ARCHIVO_INDICE
+    _contexto, datos, documentos = rutas_publicadas(raiz / "publicado")
+    indice_p = datos / ARCHIVO_INDICE
     if not indice_p.is_file():
         raise CorpusError(f"No existe {indice_p}: ejecute primero 'construir'.")
     if max_archivos < 4:
@@ -137,34 +140,39 @@ def exportar_copilot(raiz, max_archivos=MAX_ARCHIVOS):
     filas = [f for f in leer_csv(indice_p) if (f.get("codigo") or "").strip()]
     estado, pendientes = _estado(raiz), _pendientes(raiz)
     extras = []
-    if (publicado / "contexto.md").is_file():
-        extras.append(("01_contexto.md", leer_texto(publicado / "contexto.md")))
-    if (publicado / ARCHIVO_KPIS).is_file():
-        texto = _kpis(publicado / ARCHIVO_KPIS)
+    generales = sorted(p for p in datos.glob("*.md") if RE_ARCHIVO_DOCUMENTOS.match(p.name))
+    if generales:
+        extras.append(("01_contexto.md", "\n\n".join(leer_texto(p).strip() for p in generales) + "\n"))
+    if (datos / ARCHIVO_KPIS).is_file():
+        texto = _kpis(datos / ARCHIVO_KPIS)
         if texto:
             extras.append(("02_indicadores.md", texto))
     cupos = max_archivos - 1 - len(extras)
 
+    por_tipo = [(t, sorted((documentos / t).glob(f"{t}_*.md"))) for t in TIPOS_AREA]
+    por_tipo = [(t, docs) for t, docs in por_tipo if docs]
     ubicacion = {}
     n = 3
-    for prefijo, tipo in (("D", "descriptivos"), ("P", "procedimientos")):
-        docs = sorted(p for p in publicado.glob(f"{prefijo}_*.md") if RE_DOCUMENTO.match(p.name))
-        if not docs:
-            continue
-        otros = 1 if prefijo == "D" and any(publicado.glob("P_*.md")) else 0
-        cupos_tipo = max(1, (cupos - otros) if prefijo == "D" else cupos)
+    for k, (t, docs) in enumerate(por_tipo):
+        # cada tipo restante necesita al menos un archivo
+        cupos_tipo = max(1, cupos - (len(por_tipo) - k - 1)) if k == len(por_tipo) - 1 else \
+            max(1, round(cupos * sum(p.stat().st_size for p in docs)
+                         / max(1, sum(p.stat().st_size for _, ds in por_tipo[k:] for p in ds))))
+        cupos_tipo = min(cupos_tipo, max(1, cupos - (len(por_tipo) - k - 1)))
         for grupo in _repartir(docs, cupos_tipo):
-            siglas = [RE_DOCUMENTO.match(p.name).group(1) for p in grupo]
-            nombre = f"{n:02d}_{tipo}_{siglas[0]}" + (f"-{siglas[-1]}" if len(siglas) > 1 else "") + ".md"
+            siglas = [RE_ARCHIVO_DOCUMENTOS.match(p.name).group(2) for p in grupo]
+            nombre = f"{n:02d}_{t}_{siglas[0]}" + (f"-{siglas[-1]}" if len(siglas) > 1 else "") + ".md"
             partes = [leer_texto(p).strip() for p in grupo]
             (destino / nombre).write_text("\n\n".join(partes) + "\n", encoding="utf-8")
-            for t in partes:
-                for codigo in re.findall(r"^## \[([DP]-[A-Z0-9]{3}-\d{2,3})\]", t, re.M):
+            for texto in partes:
+                for codigo in re.findall(rf"^## \[({PATRON_CODIGO})\]", texto, re.M):
                     ubicacion[codigo] = nombre
             n += 1
             cupos -= 1
     for nombre, texto in extras:
         (destino / nombre).write_text(texto, encoding="utf-8")
+        for codigo in re.findall(rf"^## \[({PATRON_CODIGO})\]", texto, re.M):
+            ubicacion[codigo] = nombre
     (destino / "00_indice_corpus.md").write_text(_indice(filas, ubicacion, estado, pendientes), encoding="utf-8")
     (raiz / ARCHIVO_INSTRUCCIONES).write_text(_instrucciones(estado), encoding="utf-8")
     return destino

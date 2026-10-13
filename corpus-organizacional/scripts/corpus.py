@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-corpus.py - Consultas exactas sobre el corpus de descriptivos y procedimientos.
+corpus.py - Consultas exactas sobre el corpus organizacional (descriptivos, procedimientos, protocolos,
+politicas y documentos generales).
 
 Uso: python scripts/corpus.py <comando> [argumentos]
 
   catalogo                         Areas, codigos y numero de documentos.
   area "<area>"                    Indice completo de un area: todos sus codigos con sus datos clave.
   briefing "<area>" [--parte N]    Tablas del briefing ya calculadas, 15 documentos por parte.
-  ficha "<area o codigo>" [--tipo P|D]
+  ficha "<area o codigo>" [--tipo DES|PRD|PRO|POL|GEN]
                                    Campos clave literales de cada documento (para briefings).
   doc <CODIGO> [--seccion "<texto>"]
                                    Texto completo y literal de un documento (o de una seccion).
-  buscar "<termino1|termino2>" [--area "<area>"] [--tipo P|D]
+  buscar "<termino1|termino2>" [--area "<area>"] [--tipo DES|PRD|PRO|POL|GEN]
                                    Busqueda literal (sin distinguir mayusculas ni acentos).
   relaciones "<area A>" ["<area B>"]
                                    Menciones explicitas entre areas, con codigo y cita, y menciones no resueltas.
@@ -24,7 +25,11 @@ Uso: python scripts/corpus.py <comando> [argumentos]
                                    Indicadores y documentos que mencionan sus terminos.
   verificar                        Integridad (huellas), inventario, cobertura y corpus completo.
 
-Solo usa la biblioteca estandar de Python. No modifica ningun archivo.
+Codigos TTT-AAA-NN: tipo (DES, PRD, PRO, POL; ORG, KPI, GLO, MPR... generales), area (GEN = general) y numero.
+
+Datos: CORPUS_DATOS o la carpeta datos/ de este skill (corpus-contexto). Documentos: CORPUS_DOCUMENTOS o el
+skill corpus-documentos, que se busca por su nombre (en Copilot: /home/oai/skills/appCatalog/<id>/).
+Solo usa la biblioteca estandar de Python (sin red ni paquetes). No modifica ningun archivo.
 La logica vive en el paquete ``corpus_org`` (junto a este archivo).
 """
 

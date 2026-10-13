@@ -1,11 +1,11 @@
 import collections
 import re
 
-from ...comun.esquema import tipo_desde_texto
+from ...comun.tipos import FILTROS_TIPO, familia
 from ...comun.markdown import celdas
 from ...comun.texto import empieza_palabra, limitar_lineas, norm, recortar_palabras
 from ..parser import es_seccion_encabezado_pie
-from .base import Comando
+from .base import Comando, argumento_tipo
 
 # Secciones que se muestran en la ficha (raices; se comparan al inicio de palabra).
 SECCIONES_FICHA = {
@@ -62,7 +62,7 @@ class Ficha(Comando):
 
     def configurar(self, parser):
         parser.add_argument("objetivo", metavar="area_o_codigo")
-        parser.add_argument("--tipo", type=tipo_desde_texto, default=None)
+        parser.add_argument("--tipo", type=argumento_tipo, default=None, help="|".join(FILTROS_TIPO))
 
     def ejecutar(self, ctx, args):
         cp, s = ctx.corpus, ctx.salida
@@ -75,7 +75,7 @@ class Ficha(Comando):
             s.linea(f"## {c} · {cp.nombre(c)}")
             if f.get("campos_no_especificados"):
                 s.linea(f"No especificado en el original: {f['campos_no_especificados']}")
-            claves = SECCIONES_FICHA.get(c[0], [])
+            claves = SECCIONES_FICHA.get(familia(c.split("-")[0]), [])
             otras = []
             for titulo, lineas in cp.secciones(c):
                 if es_seccion_encabezado_pie(titulo):
