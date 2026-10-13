@@ -84,7 +84,7 @@ class MatrizTest(unittest.TestCase):
     def test_puestos_y_jefe_del_corpus(self):
         analista = next(f for f in self.hojas["Puestos"] if f[0] == "D-PRU-02")
         self.assertEqual((analista[3], analista[4]), ("Coordinador de Pruebas", "D-PRU-01"))
-        self.assertEqual(analista[12], "OCR (revisar contra el original)")
+        self.assertEqual(analista[12], "OCR (confianza desconocida; revisar contra el original)")
 
     def test_funciones_relaciones_y_perfil(self):
         self.assertEqual([f[4:] for f in self.hojas["Funciones"]],

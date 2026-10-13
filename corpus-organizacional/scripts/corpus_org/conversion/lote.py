@@ -102,6 +102,8 @@ def fila_indice(r, grupo, archivo_md, linea_ini, linea_fin):
         "archivo_md": archivo_md, "linea_inicio": linea_ini, "linea_fin": linea_fin,
         "palabras_agregadas": ", ".join(r.verificacion.agregadas[:20]),
         "avisos_estructura": len(r.avisos), "detalle_avisos": SEPARADOR_LISTA.join(r.avisos),
+        "paginas_ocr": ", ".join(map(str, r.doc.paginas_ocr)),
+        "confianza_ocr": f"{r.doc.confianza_ocr:.1f}" if r.doc.confianza_ocr is not None else "",
     }
 
 

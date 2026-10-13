@@ -68,7 +68,8 @@ def _detalle(r):
     l.append(f"- Tablas: {d.tablas} · diagramas o imágenes grandes: {len(d.diagramas)} · "
              f"imágenes pequeñas omitidas: {d.imagenes_omitidas}")
     if d.paginas_ocr:
-        l.append(f"- OCR aplicado en páginas: {', '.join(map(str, d.paginas_ocr))} (idioma: {d.idioma_ocr}); "
+        conf = f"; confianza media {d.confianza_ocr:.1f} %" if d.confianza_ocr is not None else ""
+        l.append(f"- OCR aplicado en páginas: {', '.join(map(str, d.paginas_ocr))} (idioma: {d.idioma_ocr}{conf}); "
                  "ese texto no se puede verificar automáticamente.")
     if d.paginas_escaneadas_sin_ocr:
         l.append(f"- Páginas escaneadas sin texto y sin OCR: {', '.join(map(str, d.paginas_escaneadas_sin_ocr))}")

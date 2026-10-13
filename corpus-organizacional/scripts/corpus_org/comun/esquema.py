@@ -33,6 +33,8 @@ COLUMNAS_INDICE = [
     "archivo_md", "linea_inicio", "linea_fin",
     # v3.3: control de calidad por documento (al final para no mover las columnas anteriores)
     "palabras_agregadas", "avisos_estructura", "detalle_avisos",
+    # v3.5: lectura OCR (paginas escaneadas y confianza media de Tesseract, 0-100)
+    "paginas_ocr", "confianza_ocr",
 ]
 SEPARADOR_LISTA = " | "
 
@@ -50,6 +52,8 @@ ARCHIVO_AREAS_DOCUMENTOS = "areas.csv"
 AREA_SIN_ASIGNAR = "Sin Área"
 # Aviso de un PDF con paginas escaneadas que no se pudieron leer (no hay OCR): su texto no esta en el corpus.
 AVISO_ESCANEADO = "páginas escaneadas sin texto"
+# Un documento leido con OCR pasa a revision visual solo si la confianza media de Tesseract es menor.
+CONFIANZA_OCR_REVISION = 85.0
 PREFIJO_DIC = "DIC_"
 PREFIJO_REPORTE = "REPORTE_"
 COLUMNAS_INVENTARIO = ["codigo", "tipo", "codigo_departamento", "departamento", "archivo", "ruta_original",

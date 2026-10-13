@@ -9,7 +9,7 @@ import collections
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
-from ..comun.esquema import AVISO_ESCANEADO
+from ..comun.esquema import AVISO_ESCANEADO, CONFIANZA_OCR_REVISION
 
 
 def bloque_h(nivel, texto):
@@ -35,6 +35,18 @@ class DocumentoExtraido:
     numeros: collections.Counter = field(default_factory=collections.Counter)   # numeros completos del original
     texto_cruzado: Optional[Set[str]] = None                # tokens de un segundo motor (pdfplumber)
     idioma_ocr: Optional[str] = None
+    confianzas_ocr: List[float] = field(default_factory=list)   # confianza de cada palabra leida por OCR
+
+    @property
+    def confianza_ocr(self):
+        """Confianza media del OCR (0-100) o None si no hubo OCR."""
+        return sum(self.confianzas_ocr) / len(self.confianzas_ocr) if self.confianzas_ocr else None
+
+    @property
+    def ocr_dudoso(self):
+        """True si el OCR del documento necesita revision visual (confianza baja o desconocida)."""
+        c = self.confianza_ocr
+        return bool(self.paginas_ocr) and (c is None or c < CONFIANZA_OCR_REVISION)
     lineas_diag: List[tuple] = field(default_factory=list)  # (pagina, zona, texto) para ubicar faltantes
 
 
@@ -109,8 +121,9 @@ class DocumentoConvertido:
         avisos = list(d.avisos) + list(self.analisis.avisos)
         if v.numeros_faltan:
             avisos.append("números del original que no aparecen completos: " + ", ".join(list(v.numeros_faltan)[:8]))
-        if d.paginas_ocr:
-            avisos.append("OCR en páginas " + ", ".join(map(str, d.paginas_ocr)) + ": revisar contra el original")
+        if d.ocr_dudoso:
+            conf = f"confianza {d.confianza_ocr:.0f} %" if d.confianza_ocr is not None else "confianza desconocida"
+            avisos.append("OCR en páginas " + ", ".join(map(str, d.paginas_ocr)) + f" ({conf}): revisar contra el original")
         if d.paginas_escaneadas_sin_ocr:
             avisos.append(AVISO_ESCANEADO + ": " + ", ".join(map(str, d.paginas_escaneadas_sin_ocr)))
         return avisos
@@ -126,7 +139,8 @@ class DocumentoConvertido:
         if v.agregadas:
             extra.append(f"{len(v.agregadas)} palabras que no están en el original")
         if d.paginas_ocr:
-            extra.append("OCR en páginas " + ", ".join(map(str, d.paginas_ocr)))
+            conf = f" (confianza {d.confianza_ocr:.0f} %)" if d.confianza_ocr is not None else ""
+            extra.append("OCR en páginas " + ", ".join(map(str, d.paginas_ocr)) + conf)
         if d.paginas_escaneadas_sin_ocr:
             extra.append("páginas escaneadas sin texto")
         if self.palabras == 0:
