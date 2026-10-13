@@ -138,7 +138,7 @@ class DocumentoConvertido:
             extra.append(f"texto presente {v.cobertura:.1f} % (faltan en: {ubic})")
         if v.agregadas:
             extra.append(f"{len(v.agregadas)} palabras que no están en el original")
-        if d.paginas_ocr:
+        if d.ocr_dudoso:   # el OCR con confianza alta no necesita revision: no se lista
             conf = f" (confianza {d.confianza_ocr:.0f} %)" if d.confianza_ocr is not None else ""
             extra.append("OCR en páginas " + ", ".join(map(str, d.paginas_ocr)) + conf)
         if d.paginas_escaneadas_sin_ocr:

@@ -7,7 +7,7 @@ from pathlib import Path
 from tests import ayuda  # noqa: F401
 from corpus_org.comun.archivos import escribir_csv
 from corpus_org.comun.esquema import COLUMNAS_INDICE
-from corpus_org.consulta.matriz import datos_matriz, escribir_matriz
+from corpus_org.consulta.matriz import datos_matriz, escribir_matriz, guardar_libro
 
 DOCS = """## [D-PRU-01] Coordinador de Pruebas
 > - Código: D-PRU-01
@@ -117,6 +117,23 @@ class MatrizTest(unittest.TestCase):
         self.assertEqual(wb.sheetnames[:3], ["Léeme", "Resumen", "Puestos"])
         self.assertEqual(wb["Resumen"]["B2"].value, "=COUNTIF('Puestos'!$B:$B,$A2)")
         self.assertEqual(wb["Funciones"].max_row, 3)
+
+
+class GuardarLibroTest(unittest.TestCase):
+    def test_archivo_abierto_en_excel(self):
+        """Si el Excel anterior esta abierto, la matriz nueva se guarda al lado con fecha y hora."""
+        guardados = []
+
+        class Libro:
+            def save(self, ruta):
+                if ruta.name == "matriz_organizacional.xlsx":
+                    raise PermissionError(13, "Permission denied")
+                guardados.append(ruta)
+
+        destino = Path(tempfile.gettempdir()) / "matriz_organizacional.xlsx"
+        ruta = guardar_libro(Libro(), destino)
+        self.assertEqual(guardados, [ruta])
+        self.assertRegex(ruta.name, r"^matriz_organizacional \d{4}-\d{2}-\d{2} \d{6}\.xlsx$")
 
 
 if __name__ == "__main__":
