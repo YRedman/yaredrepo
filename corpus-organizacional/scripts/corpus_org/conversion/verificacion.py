@@ -42,7 +42,9 @@ def verificar(doc, bloques, analisis, cuerpo_md):
     for b in bloques:
         if b.get("ocr"):
             ocr.update(tokens(texto_bloque(b)))
-    crudo_set = set(doc.crudo) | doc.crudo_encabezado
+    # el texto de una pagina escaneada viene del OCR: sus palabras no son "agregadas" aunque terminen
+    # en una tabla o en un bloque que no lleva la marca de OCR
+    crudo_set = set(doc.crudo) | doc.crudo_encabezado | doc.crudo_ocr
     agregadas = sorted(t for t in set(salida - ocr) - crudo_set
                        if not t.isdigit() and len(t) > 2 and not re.match(r"^[ivxlc]+$", t))
     cobertura = 100.0 if total == 0 else 100.0 * (total - sum(faltan.values())) / total

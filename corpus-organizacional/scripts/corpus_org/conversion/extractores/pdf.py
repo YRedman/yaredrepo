@@ -443,6 +443,19 @@ def _texto_zona(page, fitz, lineas, rect):
     return textos
 
 
+def palabras_ocr(lineas):
+    """Palabras de las lineas OCR, incluidas las que se unen al quitar el guion de fin de linea ("ambien-" + "tal")."""
+    lineas = list(lineas)
+    palabras = set()
+    for k, texto in enumerate(lineas):
+        palabras.update(tokens(texto))
+        if texto.rstrip().endswith("-") and k + 1 < len(lineas):
+            antes, despues = tokens(texto), tokens(lineas[k + 1])
+            if antes and despues:
+                palabras.add(antes[-1] + despues[0])
+    return palabras
+
+
 def _ocr_lineas(page, idioma):
     """OCR de una pagina escaneada; devuelve lineas con posicion (en puntos PDF)."""
     pytesseract = configurar_pytesseract()
@@ -634,6 +647,7 @@ class _ExtraccionPDF:
             ocr = []
             self.d.notas.append(f"OCR falló en la página {i + 1}: {e}")
         self.d.paginas_ocr.append(i + 1)
+        self.d.crudo_ocr |= palabras_ocr(l["texto"] for l in ocr)
         self.d.idioma_ocr = self.ocr_idioma
         self._marca(i, -1, 0, f"[TEXTO OCR: página {i + 1} escaneada; revisar contra el original]")
         self.ocr_pendiente.append((i, ocr, self.alturas[i]))

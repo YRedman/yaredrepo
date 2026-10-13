@@ -28,6 +28,7 @@ class DocumentoExtraido:
     tablas: int = 0
     crudo: collections.Counter = field(default_factory=collections.Counter)      # tokens del original
     crudo_encabezado: Set[str] = field(default_factory=set)
+    crudo_ocr: Set[str] = field(default_factory=set)        # palabras leidas por OCR (su "original" es el OCR)
     retirados: collections.Counter = field(default_factory=collections.Counter)  # duplicados retirados a proposito
     notas: List[str] = field(default_factory=list)          # informacion para el reporte
     avisos: List[str] = field(default_factory=list)         # avisos de ESTRUCTURA: exigen revision visual
