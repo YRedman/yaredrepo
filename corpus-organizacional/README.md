@@ -160,6 +160,25 @@ Resultado en el piloto (10 descriptivos reales, dos variantes de plantilla): cob
 
 Las páginas escaneadas se leen con Tesseract. `python scripts/convertir.py diagnostico` comprueba PyMuPDF, pytesseract, Pillow, Tesseract y el idioma español. El ejecutable se busca en `TESSERACT_CMD`, en el PATH y en las carpetas de instalación de Windows (`Program Files`, `Program Files (x86)` y `%LOCALAPPDATA%\Programs`), así que no hace falta editar el PATH. Código: `conversion/extractores/ocr.py`.
 
+## Matriz organizacional (Excel)
+
+`construir` escribe `salida_corpus/matriz_organizacional.xlsx` (requiere `openpyxl`), una base de datos para revisar el corpus sin ejecutar código. `python scripts/convertir.py matriz --salida salida_corpus` la regenera sin volver a convertir. Hojas:
+
+| Hoja | Contenido |
+|---|---|
+| Léeme | Qué contiene cada hoja, estado de la construcción y cómo leer las columnas |
+| Resumen | Conteos por área con fórmulas (puestos, OCR, sin texto, funciones, relaciones, pendientes) |
+| Puestos | Un puesto por fila: área, reporta a y supervisa a (literal), código del jefe si está en el corpus, propósito, versión, vigencia, calidad de lectura y revisión |
+| Funciones | Una función por fila con su evidencia o entregable |
+| Relaciones | Área o puesto de interacción y tipo de relación, con el código del puesto relacionado si está en el corpus |
+| Perfil y requisitos | Educación, experiencia, competencias, accesos, herramientas y características especiales |
+| Normativa citada | Cada texto literal que menciona una política, protocolo, procedimiento, norma, reglamento, manual, ley o código de documento |
+| Procedimientos, Participación, Puestos x Procedimientos | Procedimientos, el rol de cada puesto en cada uno y la matriz puesto × procedimiento (se llenan cuando hay procedimientos) |
+| Indicadores | KPIs del contexto |
+| Revisión | Documentos para comparar con el original, con una columna para las observaciones del auditor |
+
+Todo es literal del corpus; los cruces por nombre de puesto indican si la coincidencia es exacta o probable. Código: `consulta/matriz.py`.
+
 ## Paquete para Copilot
 
 Copilot no ejecuta `corpus.py` y acepta pocos archivos de conocimiento. Al terminar, `construir` escribe:

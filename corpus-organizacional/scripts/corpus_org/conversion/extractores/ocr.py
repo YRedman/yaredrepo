@@ -77,7 +77,7 @@ def diagnostico():
         lineas.append((True, f"PyMuPDF {getattr(fitz, 'VersionBind', '')}: lee los PDF digitales"))
     except ImportError:
         lineas.append((False, "Falta PyMuPDF: python -m pip install pymupdf"))
-    for modulo, paquete in (("pytesseract", "pytesseract"), ("PIL", "pillow")):
+    for modulo, paquete in (("openpyxl", "openpyxl"), ("pytesseract", "pytesseract"), ("PIL", "pillow")):
         try:
             __import__(modulo)
             lineas.append((True, f"{paquete} instalado"))

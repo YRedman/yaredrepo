@@ -16,6 +16,7 @@ from ..comun.texto import norm
 from .asignacion import asignar_archivos, grupos_a_convertir
 from .configuracion import EXT_RECONOCIDAS, EXT_TEXTO
 from .extractores.ocr import diagnostico
+from ..consulta.matriz import escribir_matriz
 from .copilot import ARCHIVO_INSTRUCCIONES, MAX_ARCHIVOS, exportar_copilot
 from .entradas import buscar_entradas, entrada_por_defecto, localizar, partes_ruta
 from .huella import huella
@@ -363,6 +364,11 @@ def modo_construir(args):
     resumen_path = raiz_salida / ARCHIVO_RESUMEN
     escribir_resumen_construccion(resumen_path, validacion, publicados)
     carpeta_copilot = exportar_copilot(raiz_salida, args.max_archivos_copilot)
+    try:
+        matriz = escribir_matriz(raiz_salida)
+    except CorpusError as e:
+        matriz = None
+        validacion.avisos.append(f"No se generó la matriz Excel: {e.mensaje}")
     print("\nCONSTRUIR CORPUS · convertir.py v" + VERSION)
     print("Resultado: " + validacion.estado)
     print(f"Publicado: {publicado}")
@@ -370,6 +376,8 @@ def modo_construir(args):
     print(f"Resumen: {resumen_path}")
     print(f"Copilot: {carpeta_copilot} ({len(list(carpeta_copilot.iterdir()))} archivos de conocimiento; "
           f"instrucciones en {raiz_salida / ARCHIVO_INSTRUCCIONES})")
+    if matriz:
+        print(f"Matriz Excel: {matriz}")
     for x in validacion.problemas:
         print("ERROR: " + x)
     if validacion.revision_visual:
@@ -394,6 +402,13 @@ def modo_copilot(args):
     print(f"Instrucciones del agente: {raiz / ARCHIVO_INSTRUCCIONES}")
 
 
+def modo_matriz(args):
+    """Regenera la matriz Excel desde una construccion existente."""
+    raiz = Path(args.salida or "salida_corpus").resolve()
+    print(f"MATRIZ · convertir.py v{VERSION}")
+    print(f"Matriz Excel: {escribir_matriz(raiz)}")
+
+
 def modo_diagnostico(args):
     """Comprueba PyMuPDF, pytesseract, Pillow, Tesseract y el idioma español."""
     print(f"DIAGNÓSTICO · convertir.py v{VERSION}")
@@ -413,7 +428,7 @@ def modo_diagnostico(args):
 
 MODOS = {"inventario": modo_inventario, "convertir": modo_convertir, "contexto": modo_contexto,
          "construir": modo_construir, "copilot": modo_copilot,
-         "diagnostico": modo_diagnostico}
+         "diagnostico": modo_diagnostico, "matriz": modo_matriz}
 
 
 def crear_parser():
