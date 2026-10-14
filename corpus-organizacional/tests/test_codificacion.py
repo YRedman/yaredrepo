@@ -132,6 +132,37 @@ class InventarioTest(unittest.TestCase):
                                          "P-SEG-01": "PRD-SEG-01"})
         self.assertEqual(InventarioBase().equivalencias, [])
 
+    def test_documento_que_cambia_de_area_registra_equivalencia(self):
+        """Un procedimiento que estaba en General y ahora tiene area: el codigo viejo queda reservado y mapeado."""
+        with tempfile.TemporaryDirectory() as tmp:
+            filas, ign = parsear_lista(_lista(tmp, r"C:\e\Procedimientos\General\Compras.docx"))
+            primero = construir_inventario(filas, ign)
+            base = Path(tmp) / "base.csv"
+            escribir_csv(base, COLUMNAS_INVENTARIO, primero.documentos)
+            filas2, ign2 = parsear_lista(_lista(tmp, r"C:\e\Procedimientos\Calidad\Compras.docx"))
+            segundo = construir_inventario(filas2, ign2, base=leer_base(base))
+        codigos = {f["codigo"]: f["estado_inventario"] for f in segundo.documentos}
+        self.assertEqual(codigos, {"PRD-GEN-01": "RETIRADO", "PRD-CAL-01": "ACTIVO"})
+        self.assertEqual(segundo.equivalencias, [("PRD-GEN-01", "PRD-CAL-01")])
+
+    def test_contexto_area_por_defecto_y_nombre_general(self):
+        from corpus_org.conversion.inventario import clasificar_material, documentos_de_area_en_contexto
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp)
+            (raiz / "Procedimientos" / "Calidad").mkdir(parents=True)
+            archivos = [raiz / "Procedimientos" / "Calidad" / "Auditoria.pdf",
+                        raiz / "Procedimientos" / "Compras.pdf",
+                        raiz / "Procedimientos" / "Gestión humana.pdf",
+                        raiz / "Procedimientos" / "Mapa de Procesos 2025.pdf",
+                        raiz / "Procedimientos" / "Procedimiento de diseño y estructura organizacional.pdf"]
+            self.assertEqual(clasificar_material(archivos[3], raiz), ("MPR", ""))           # general aunque este en la carpeta
+            self.assertEqual(clasificar_material(archivos[4], raiz)[0], "PRD")              # dice «procedimiento»
+            filas = documentos_de_area_en_contexto(archivos, raiz, {"gestion humana": "Gestión Humana"})
+        por_nombre = {f["archivo"]: (f["departamento"], f["area_por_defecto"]) for f in filas}
+        self.assertEqual(por_nombre, {"Auditoria.pdf": ("Calidad", False), "Compras.pdf": ("General", True),
+                                      "Gestión humana.pdf": ("Gestión Humana", False),
+                                      "Procedimiento de diseño y estructura organizacional.pdf": ("General", True)})
+
     def test_contexto_por_tipo_estable_y_migrado(self):
         with tempfile.TemporaryDirectory() as tmp:
             raiz = Path(tmp)
@@ -271,6 +302,12 @@ class DosSkillsIntegracionTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.tmp.cleanup()
+
+    def test_documentos_de_area_del_contexto_sin_area_van_a_areas_csv(self):
+        areas = (self.base / "entrada" / "areas.csv").read_text(encoding="utf-8-sig")
+        self.assertIn("Reglamento interno.docx;", areas)          # quedo en General: se agrega con el area vacia
+        self.assertNotIn("Ficha de proceso de auditoría", areas)    # ya tiene area (su subcarpeta)
+        self.assertIn("quedan en «General» (GEN)", self.salida)
 
     def test_construccion(self):
         self.assertEqual(self.codigo, 0, self.salida)

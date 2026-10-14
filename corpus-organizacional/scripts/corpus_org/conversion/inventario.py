@@ -14,7 +14,7 @@ from ..comun.errores import CorpusError
 from ..comun.esquema import AREA_SIN_ASIGNAR, COLUMNAS_EQUIVALENCIAS, INVENTARIO_ACTIVO, INVENTARIO_RETIRADO
 from ..comun.texto import nfc, norm, sin_acentos
 from ..comun.tipos import (AREA_GENERAL, NOMBRE_AREA_GENERAL, TIPO_CONTEXTO_POR_DEFECTO, TIPOS_AREA,
-                           TIPOS_DOCUMENTO, codigo_nuevo_desde_anterior, es_area_general,
+                           TIPOS_DOCUMENTO, TIPOS_GENERALES, codigo_nuevo_desde_anterior, es_area_general,
                            tipo_de_carpeta, tipo_de_material, tipo_desde_texto, tipo_general_de,
                            RE_CODIGO_ANTERIOR)
 from ..comun.tipos import tipo as tipo_documento
@@ -31,6 +31,7 @@ class Inventario:
     catalogo: List[dict] = field(default_factory=list)     # filas de catalogo.csv
     avisos: List[str] = field(default_factory=list)
     ignoradas: List[tuple] = field(default_factory=list)   # (ruta, motivo)
+    equivalencias: List[tuple] = field(default_factory=list)   # (codigo anterior, codigo nuevo) de un cambio de area
     departamentos: Dict[str, str] = field(default_factory=dict)
     rutas_validas: int = 0
 
@@ -313,7 +314,7 @@ def construir_inventario(filas, ignoradas, codigos_fijados=None, incluir_duplica
     grupos = collections.defaultdict(list)
     for f in filas:
         grupos[(f["tipo"], norm(f["departamento"]))].append(f)
-    nuevos, vistos = [], set()
+    nuevos, vistos, por_documento = [], set(), {}
     for (tipo, kdep), lista_f in sorted(grupos.items(), key=lambda kv: (_orden_tipo(kv[0][0]), codigos[kv[0][1]])):
         lista_f.sort(key=lambda f: (norm(os.path.splitext(f["archivo"])[0]), f["archivo"]))
         for n, c in collections.Counter(norm(f["archivo"]) for f in lista_f).items():
@@ -336,16 +337,25 @@ def construir_inventario(filas, ignoradas, codigos_fijados=None, incluir_duplica
                     nuevos.append(codigo)
                     obs = (obs + "; " if obs else "") + "NUEVO respecto del inventario base"
             inv.documentos.append(_fila(codigo, tipo, cod_dep, deps[kdep], f, obs))
+            por_documento[(tipo, clave_documento(f["archivo"]))] = codigo
     retirados = []
     for clave, f in base.documentos.items():
         if clave not in vistos:
-            retirados.append(f["codigo"])
-            inv.documentos.append(dict(f, estado_inventario=INVENTARIO_RETIRADO,
-                                       observaciones="RETIRADO: no está en la lista actual; el código queda reservado"))
+            nuevo = por_documento.get((clave[0], clave[2]))
+            if nuevo and nuevo != f["codigo"]:       # el mismo documento cambio de area: tiene otro codigo
+                inv.equivalencias.append((f["codigo"], nuevo))
+                motivo = f"RETIRADO: el documento pasó a {nuevo} (cambió de área); el código queda reservado"
+            else:
+                retirados.append(f["codigo"])
+                motivo = "RETIRADO: no está en la lista actual; el código queda reservado"
+            inv.documentos.append(dict(f, estado_inventario=INVENTARIO_RETIRADO, observaciones=motivo))
     if nuevos:
         inv.avisos.append(f"Documentos nuevos (códigos agregados al final): {', '.join(nuevos)}")
     if retirados:
         inv.avisos.append(f"Documentos del inventario base que ya no están (códigos reservados): {', '.join(retirados)}")
+    if inv.equivalencias:
+        inv.avisos.append(f"Documentos que cambiaron de área ({len(inv.equivalencias)}): su código anterior queda "
+                          "reservado y la equivalencia en equivalencias_codigos.csv")
     inv.documentos.sort(key=lambda f: (_orden_tipo(f["codigo"].split("-")[0]), f["codigo"]))
     for a, b in itertools.combinations(list(deps), 2):
         if difflib.SequenceMatcher(None, a, b).ratio() >= 0.85:
@@ -398,6 +408,9 @@ def clasificar_material(path, carpeta_contexto=None):
         t = tipo_de_material(os.path.splitext(Path(path).name)[0])
     if t in TIPOS_AREA and Path(path).suffix.lower() not in EXT_RECONOCIDAS:
         t = tipo_general_de(os.path.splitext(Path(path).name)[0])
+    general_por_nombre = tipo_de_material(os.path.splitext(Path(path).name)[0])
+    if t in TIPOS_AREA and general_por_nombre in TIPOS_GENERALES:
+        t = general_por_nombre      # «Mapa de procesos» o «Organigrama» en la carpeta Procedimientos: es general
     if t is None or t in TIPOS_AREA:
         return (t or TIPO_CONTEXTO_POR_DEFECTO), (nfc(area).strip() if t in TIPOS_AREA else "")
     return t, ""
@@ -421,9 +434,9 @@ def documentos_de_area_en_contexto(archivos, carpeta_contexto, areas=None):
         t, area = clasificar_material(p, carpeta_contexto)
         if t not in TIPOS_AREA:
             continue
-        area = area or areas.get(clave_documento(p.name), "") or NOMBRE_AREA_GENERAL
-        filas.append({"tipo": t, "departamento": area, "archivo": nfc(p.name).strip(), "ruta": str(p),
-                      "desde_contexto": True})
+        explicita = area or areas.get(clave_documento(p.name), "")
+        filas.append({"tipo": t, "departamento": explicita or NOMBRE_AREA_GENERAL, "archivo": nfc(p.name).strip(),
+                      "ruta": str(p), "desde_contexto": True, "area_por_defecto": not explicita})
     return filas
 
 

@@ -93,9 +93,11 @@ def generar_inventario(entrada, salida, nombre_lista, nombre_catalogo=None, incl
     inv = construir_inventario(filas, ignoradas, fijados, incluir_duplicados, inventario_base)
     escribir_csv(salida / ARCHIVO_INVENTARIO, COLUMNAS_INVENTARIO, inv.documentos)
     escribir_csv(salida / ARCHIVO_CATALOGO, COLUMNAS_CATALOGO, inv.catalogo)
-    if inventario_base and inventario_base.equivalencias:
-        escribir_equivalencias(salida / ARCHIVO_EQUIVALENCIAS, inventario_base.equivalencias)
-        print(f"Códigos migrados a la codificación TTT-AAA-NN: {len(inventario_base.equivalencias)} "
+    migrados = inventario_base.equivalencias if inventario_base else []
+    if migrados or inv.equivalencias:
+        escribir_equivalencias(salida / ARCHIVO_EQUIVALENCIAS, migrados + inv.equivalencias)
+    if migrados:
+        print(f"Códigos migrados a la codificación TTT-AAA-NN: {len(migrados)} "
               f"(tabla en {salida / ARCHIVO_EQUIVALENCIAS})")
     return inv
 
@@ -368,7 +370,15 @@ def documentos_de_area_del_contexto(contexto, entrada, raiz_salida):
                 if not norm(p.name).startswith(ARCHIVOS_NO_CONTEXTO)]
     ruta_areas = localizar(ARCHIVO_AREAS_DOCUMENTOS, entrada) or Path(entrada) / ARCHIVO_AREAS_DOCUMENTOS
     areas = leer_areas(ruta_areas) if Path(ruta_areas).is_file() else None
-    return documentos_de_area_en_contexto(archivos, contexto, areas)
+    filas = documentos_de_area_en_contexto(archivos, contexto, areas)
+    # los que quedaron en General por no tener area se agregan a areas.csv (area vacia) para que se asignen
+    por_defecto = [{"archivo": f["archivo"], "sin_area": True} for f in filas if f.get("area_por_defecto")]
+    if por_defecto:
+        agregados = actualizar_plantilla_areas(Path(ruta_areas), por_defecto)
+        print(f"AVISO: {len(por_defecto)} documentos de área de la carpeta de contexto quedan en «General» (GEN) "
+              "porque no tienen área: escriba la suya en la columna 'area' de " + str(ruta_areas)
+              + (f" (se agregaron {agregados})." if agregados else "."))
+    return filas
 
 
 def equivalencias_de_contexto(control, de_area, anteriores):
