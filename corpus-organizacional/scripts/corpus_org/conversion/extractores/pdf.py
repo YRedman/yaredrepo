@@ -13,7 +13,7 @@ from .base import Extractor
 from ..secciones import clave_titulo, es_seccion_conocida
 from .ocr import configurar_pytesseract, idioma_ocr
 from .ocr_pagina import leer_pagina
-from .maquetacion import RE_NUM_INICIO, agrupar_filas, bloques_desde_items
+from .maquetacion import agrupar_filas, bloques_desde_items
 
 RE_PATRON_ENC = re.compile(r"(p[aá]gina\s*\d+\s*(de|/)\s*\d+|\bversi[oó]n\s*:|\brevisi[oó]n\s*:|c[oó]digo\s*:|"
                            r"fecha de (emisi[oó]n|vigencia|elaboraci[oó]n)\s*:)", re.I)
@@ -376,6 +376,66 @@ def _formas_con_texto(page, lineas, rect_tablas, w, h):
     return dentro if len(con_texto) >= 3 else 0
 
 
+ALTO_BANDA = (18, 45)
+MAX_SEPARACION_FILAS = 10
+MARGEN_SEPARADOR = 8
+
+
+def _bandas_apiladas(fitz, page, lineas, rect_tablas, w):
+    """Cajas de una columna dibujadas como una banda de color con el titulo y, debajo, filas con borde fino.
+
+    Son tablas («Accesos a Sistemas», «Herramientas de Trabajo»...) que ``find_tables`` no reconoce: sin esto
+    su texto quedaba como lineas sueltas o titulos y el documento se marcaba como «posible diagrama
+    vectorial». Una fila solo cuenta si tiene una linea de separacion debajo, asi un parrafo bajo un titulo
+    en una banda no se parte en filas. Devuelve [(rect, filas, xs)] como ``_tablas``.
+    """
+    try:
+        dibujos = page.get_drawings()
+    except Exception:
+        return []
+    bandas, separadores = [], []
+    for dr in dibujos:
+        r = dr.get("rect")
+        if r is None or r.width < 0.4 * w:
+            continue
+        if r.height <= 2:
+            separadores.append(r)
+        elif ALTO_BANDA[0] <= r.height <= ALTO_BANDA[1] and dr.get("fill") not in (None, (0.0, 0.0, 0.0)) \
+                and r.width <= 0.95 * w:
+            if not any(abs(b.y0 - r.y0) < 2 and abs(b.x0 - r.x0) < 2 for b in bandas):
+                bandas.append(r)
+    bandas.sort(key=lambda r: r.y0)
+    res = []
+    for k, b in enumerate(bandas):
+        centro = fitz.Point((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2)
+        if any(t.contains(centro) for t in rect_tablas):
+            continue
+        titulo = [l for l in lineas if l["texto"].strip() and _dentro(l, b, 0)]
+        if not titulo:
+            continue
+        limite = bandas[k + 1].y0 if k + 1 < len(bandas) else page.rect.height
+        candidatas = sorted((l for l in lineas if l["texto"].strip() and l["y0"] >= b.y1 - 2 and l["y1"] <= limite
+                             and l["x0"] >= b.x0 - 2 and l["x1"] <= b.x1 + 2
+                             and not any(t.contains(fitz.Point((l["x0"] + l["x1"]) / 2, (l["y0"] + l["y1"]) / 2))
+                                         for t in rect_tablas)), key=lambda l: l["y0"])
+        filas, fila, previo, fin = [], [], b.y1, b.y1
+        for l in candidatas:
+            if l["y0"] - previo > MAX_SEPARACION_FILAS or l.get("bold"):
+                break
+            fila.append(l["texto"].strip())
+            previo = l["y1"]
+            sep = next((s for s in separadores if l["y1"] - 1 <= s.y0 <= l["y1"] + MARGEN_SEPARADOR
+                        and s.x0 <= b.x0 + 3 and s.x1 >= b.x1 - 3), None)
+            if sep is not None:
+                filas.append([" ".join(fila)])
+                fila, fin = [], sep.y1
+        if not filas:
+            continue
+        cabecera = " ".join(l["texto"].strip() for l in sorted(titulo, key=lambda l: (l["y0"], l["x0"])))
+        res.append((fitz.Rect(b.x0, b.y0, b.x1, fin + 1), [[cabecera]] + filas, [round(b.x0)]))
+    return res
+
+
 def _cajas_con_texto(page, lineas, rect_tablas, w, h):
     """Cajas dibujadas (rectangulos chicos) que contienen texto y no son tablas: [(rect, [lineas])].
 
@@ -467,7 +527,9 @@ def _es_suelta_entre_tablas(it):
     if it["tipo"] != "fila":
         return False
     t = it["texto"].strip()
-    if not t or len(t.split()) > 15 or (RE_NUM_INICIO.match(t) and it.get("bold")):
+    # una linea en negrita es un titulo (p. ej. la banda «Características Especiales del Puesto» al pie de una
+    # pagina): la tabla que sigue en la otra pagina es otra tabla, no su continuacion
+    if not t or len(t.split()) > 15 or it.get("bold"):
         return False
     return not es_seccion_conocida(clave_titulo(t))
 
@@ -667,6 +729,9 @@ class _ExtraccionPDF:
         h, w = self.alturas[i], self.anchos[i]
         corte_sup, corte_inf, enc_lineas = self._encabezado_y_pie(i, page, lineas, h, w)
         tablas = self._tablas(i, page, self.fitz.Rect(0, corte_sup, w, corte_inf))
+        ids_enc_tab = {id(l) for l in enc_lineas}
+        tablas += _bandas_apiladas(self.fitz, page, [l for l in lineas if id(l) not in ids_enc_tab],
+                                   [r for r, _, _ in tablas], w)
         lineas = self._organigrama(i, page, lineas, enc_lineas, tablas, w, h)
         self._contenido(i, lineas, enc_lineas, tablas)
         ids_enc = {id(l) for l in enc_lineas}
