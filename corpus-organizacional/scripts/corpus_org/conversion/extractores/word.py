@@ -313,7 +313,8 @@ def _crudo_docx_xml(datos):
     """Texto del XML con expresiones regulares: lectura independiente para verificar la conversion."""
     txt = datos.decode("utf-8", errors="replace")
     txt = re.sub(r"<mc:Fallback>.*?</mc:Fallback>", " ", txt, flags=re.S)
-    txt = re.sub(r"<w:del\b.*?</w:del>", " ", txt, flags=re.S)
+    # solo <w:del ...>...</w:del> con contenido: la marca de parrafo borrado <w:del .../> es autocontenida
+    txt = re.sub(r"<w:del\b[^>]*(?<!/)>.*?</w:del>", " ", txt, flags=re.S)
     salida = []
     for m in re.finditer(r"<w:t(?:\s[^>]*)?>(.*?)</w:t>|(<w:tab/>|<w:br/>|</w:p>|</w:tc>)", txt, flags=re.S):
         salida.append(html.unescape(m.group(1)) if m.group(1) is not None else " ")

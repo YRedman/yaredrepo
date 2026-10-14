@@ -23,6 +23,7 @@ RE_CID = re.compile(r"\(cid:\d+\)")
 
 ZONA_SUPERIOR = 0.22      # fraccion de la altura donde se buscan encabezados repetidos
 ZONA_INFERIOR = 0.84      # fraccion de la altura a partir de la cual se buscan pies repetidos
+MIN_REPETICION_SIN_REF = 0.75   # fraccion de paginas con texto que basta aunque la pagina de referencia no lo tenga
 MIN_REPETICION = 0.6      # fraccion de paginas en que debe repetirse un encabezado, pie o logo
 TOLERANCIA_ALTURA = 4.0   # puntos: un encabezado o pie repetido esta siempre a la misma altura
 SEPARACION_VALOR_ENCABEZADO = 6.0   # puntos entre una etiqueta del encabezado y su valor en la linea de abajo
@@ -68,6 +69,51 @@ def _lineas_pagina(page, fitz):
                 "chars": sum(len(s["text"].strip()) for s in spans),
             })
     return lineas
+
+
+RAZON_PLIEGO = (1.38, 1.75)     # ancho/alto de dos paginas de libro lado a lado (A4: 1.41, carta: 1.55)
+ANCHO_CANAL = 4.0               # puntos a cada lado del centro donde no debe cruzar texto
+MAX_CRUZAN_CANAL = 0.03         # fraccion de lineas que pueden cruzar el centro
+MIN_PALABRAS_OCR = 8            # palabras de 4+ letras que debe leer el OCR para tratar la pagina como texto
+MIN_PLIEGOS = 0.6               # fraccion de las paginas apaisadas que deben ser pliegos
+MIN_PLIEGOS_CON_AMBOS = 3       # pliegos con texto en las dos mitades para tratar el PDF como folleto
+
+
+def _perfil_pliego(page, fitz):
+    """(canal limpio, texto en ambos lados) de una pagina apaisada con razon de pliego; None si no la tiene."""
+    w, h = page.rect.width, page.rect.height
+    if not h or not RAZON_PLIEGO[0] <= w / h <= RAZON_PLIEGO[1]:
+        return None
+    lineas = _lineas_pagina(page, fitz)
+    centro = w / 2
+    izq = sum(1 for l in lineas if l["x1"] <= centro + ANCHO_CANAL)
+    der = sum(1 for l in lineas if l["x0"] >= centro - ANCHO_CANAL)
+    cruzan = sum(1 for l in lineas if l["x0"] < centro - ANCHO_CANAL and l["x1"] > centro + ANCHO_CANAL)
+    return cruzan <= MAX_CRUZAN_CANAL * len(lineas), bool(izq and der)
+
+
+def _separar_pliegos(fitz, doc):
+    """(documento, origen): si el PDF es un folleto en pliegos, otro documento con cada pliego partido en sus dos
+    paginas (izquierda, derecha) para que el orden de lectura no mezcle ambas; ``origen[k]`` es la pagina
+    original de la pagina ``k``. Las paginas sueltas (portada, contraportada) quedan igual. Es un folleto en
+    pliegos si la mayoria de las paginas apaisadas tienen el centro sin texto cruzado y varias tienen texto
+    en las dos mitades; si no, devuelve el mismo documento."""
+    perfiles = {i: _perfil_pliego(pg, fitz) for i, pg in enumerate(doc)}
+    apaisadas = {i: p for i, p in perfiles.items() if p is not None}
+    pliegos = {i for i, (limpio, _) in apaisadas.items() if limpio}
+    con_ambos = sum(1 for i in pliegos if apaisadas[i][1])
+    if con_ambos < MIN_PLIEGOS_CON_AMBOS or len(pliegos) < MIN_PLIEGOS * len(apaisadas):
+        return doc, list(range(len(doc)))
+    nuevo, origen = fitz.open(), []
+    for i, pg in enumerate(doc):
+        r = pg.rect
+        mitades = [fitz.Rect(r.x0, r.y0, (r.x0 + r.x1) / 2, r.y1),
+                   fitz.Rect((r.x0 + r.x1) / 2, r.y0, r.x1, r.y1)] if i in pliegos else [r]
+        for clip in mitades:
+            hoja = nuevo.new_page(width=clip.width, height=clip.height)
+            hoja.show_pdf_page(hoja.rect, doc, i, clip=clip)
+            origen.append(i)
+    return nuevo, origen
 
 
 def _clave_rep(texto):
@@ -138,7 +184,7 @@ def _posiciones_por_zona(lineas, h):
     return sup, inf
 
 
-def _repetidas(zonas, ref, minimo):
+def _repetidas(zonas, ref, minimo, sin_ref=None):
     """Claves que se repiten como encabezado o pie: en ``minimo`` paginas, una sola vez por pagina,
     siempre a la misma altura y presentes en la pagina de referencia.
 
@@ -151,7 +197,8 @@ def _repetidas(zonas, ref, minimo):
             if len(ys) == 1:
                 posiciones[k].append(ys[0])
     return {k for k, ys in posiciones.items()
-            if len(ys) >= minimo and k in zonas[ref] and max(ys) - min(ys) <= TOLERANCIA_ALTURA}
+            if len(ys) >= minimo and (k in zonas[ref] or len(ys) >= (sin_ref or minimo + 1))
+            and max(ys) - min(ys) <= TOLERANCIA_ALTURA}
 
 
 def _detectar_encabezados(paginas_lineas, alturas):
@@ -159,10 +206,13 @@ def _detectar_encabezados(paginas_lineas, alturas):
     n = len(paginas_lineas)
     if n < 2:
         return set(), set()
-    minimo = max(2, math.ceil(MIN_REPETICION * n))
+    con_texto = sum(1 for ls in paginas_lineas if sum(l["chars"] for l in ls) >= 25) or n   # las de solo imagen no cuentan
+    minimo = max(2, math.ceil(MIN_REPETICION * con_texto))
     ref = next((i for i, ls in enumerate(paginas_lineas) if sum(l["chars"] for l in ls) >= 25), 0)
     zonas = [_posiciones_por_zona(lineas, alturas[i]) for i, lineas in enumerate(paginas_lineas)]
-    return (_repetidas([z[0] for z in zonas], ref, minimo), _repetidas([z[1] for z in zonas], ref, minimo))
+    sin_ref = math.ceil(MIN_REPETICION_SIN_REF * con_texto)     # la pagina de referencia puede no llevar el pie
+    return (_repetidas([z[0] for z in zonas], ref, minimo, sin_ref),
+            _repetidas([z[1] for z in zonas], ref, minimo, sin_ref))
 
 
 def _encabezado_por_patron(lineas, h):
@@ -673,13 +723,20 @@ class _ExtraccionPDF:
         except Exception as e:
             res = None
             self.d.notas.append(f"OCR falló en la página {i + 1}: {e}")
+        textos = []
+        if res is not None:
+            textos = [l["texto"] for l in res.lineas] + [c for t in res.tablas for f in t[4] for c in f]
+            textos += [c[2] for c in res.cajas] + res.encabezado
+            if sum(1 for t in textos for w in re.findall(r"[^\W\d_]{4,}", t)) < MIN_PALABRAS_OCR:
+                # una foto o ilustracion de pagina completa: el OCR solo saca ruido; se deja como imagen
+                self.d.diagramas.append(i + 1)
+                self._marca(i, 0, 0, f"[DIAGRAMA O IMAGEN: ver página {i + 1} del documento original]")
+                return
         self.d.paginas_ocr.append(i + 1)
         self.d.idioma_ocr = self.ocr_idioma
         self._marca(i, -1, 0, f"[TEXTO OCR: página {i + 1} escaneada; revisar contra el original]")
         if res is None:
             return
-        textos = [l["texto"] for l in res.lineas] + [c for t in res.tablas for f in t[4] for c in f]
-        textos += [c[2] for c in res.cajas] + res.encabezado
         self.d.crudo_ocr |= palabras_ocr(textos)
         self.d.confianzas_ocr += res.confianzas
         if res.encabezado and not self.encabezado_guardado:
@@ -960,12 +1017,22 @@ class ExtractorPDF(Extractor):
         try:
             if doc_pdf.needs_pass:
                 raise RuntimeError("El PDF está protegido con contraseña.")
-            d = _ExtraccionPDF(fitz, doc_pdf).ejecutar()
+            doc_leido, origen = _separar_pliegos(fitz, doc_pdf)
+            try:
+                d = _ExtraccionPDF(fitz, doc_leido).ejecutar()
+            finally:
+                if doc_leido is not doc_pdf:
+                    doc_leido.close()
         finally:
             doc_pdf.close()
+        if origen != list(range(len(origen))):
+            d.notas.append(f"PDF en pliegos: cada página apaisada se leyó como dos (izquierda y derecha); "
+                           f"{len(set(origen))} páginas del archivo = {len(origen)} páginas del documento.")
         if self.verificacion_cruzada:
             try:
-                d.texto_cruzado = _tokens_pdfplumber(str(path), set(d.paginas_ocr) | set(d.paginas_escaneadas_sin_ocr))
+                omitir = {origen[k - 1] + 1 for k in set(d.paginas_ocr) | set(d.paginas_escaneadas_sin_ocr)
+                          if 0 < k <= len(origen)}
+                d.texto_cruzado = _tokens_pdfplumber(str(path), omitir)
             except Exception as e:
                 d.notas.append(f"Verificación cruzada con pdfplumber no disponible: {e}")
         return d
