@@ -1,6 +1,8 @@
 """Linea de comandos de ``convertir.py``: interpreta argumentos, orquesta y muestra resultados."""
 
 import argparse
+import collections
+import os
 import re
 import shutil
 import sys
@@ -23,7 +25,7 @@ from .asignacion import asignar_archivos, grupos_a_convertir
 from .configuracion import EXT_RECONOCIDAS, EXT_TEXTO
 from .extractores.ocr import diagnostico
 from ..consulta.matriz import ARCHIVO_MATRIZ, escribir_matriz
-from .entradas import buscar_entradas, entrada_por_defecto, localizar, partes_ruta
+from .entradas import buscar_entradas, entrada_por_defecto, es_archivo_ignorado, localizar, partes_ruta
 from .huella import huella
 from .inventario import (RE_CODIGO_DEP, actualizar_plantilla_areas, candidatos_codigo, clave_documento,
                          construir_inventario, documentos_de_area_en_contexto, escribir_equivalencias,
@@ -370,7 +372,14 @@ def documentos_de_area_del_contexto(contexto, entrada, raiz_salida):
                 if not norm(p.name).startswith(ARCHIVOS_NO_CONTEXTO)]
     ruta_areas = localizar(ARCHIVO_AREAS_DOCUMENTOS, entrada) or Path(entrada) / ARCHIVO_AREAS_DOCUMENTOS
     areas = leer_areas(ruta_areas) if Path(ruta_areas).is_file() else None
-    filas = documentos_de_area_en_contexto(archivos, contexto, areas)
+    # un documento que ya esta en la entrada (mismo nombre) no se repite desde el contexto, sea cual sea su tipo
+    en_entrada = {clave_documento(p.name) for p in buscar_entradas(entrada, raiz_salida)
+                  if Path(contexto) not in Path(p).parents}
+    omitidos = [p for p in archivos if clave_documento(p.name) in en_entrada]
+    if omitidos:
+        print(f"AVISO: {len(omitidos)} archivos de la carpeta de contexto ya están en la entrada (mismo nombre) y "
+              "no se repiten: " + "; ".join(p.name for p in omitidos[:8]) + (" …" if len(omitidos) > 8 else ""))
+    filas = documentos_de_area_en_contexto([p for p in archivos if p not in omitidos], contexto, areas)
     # los que quedaron en General por no tener area se agregan a areas.csv (area vacia) para que se asignen
     por_defecto = [{"archivo": f["archivo"], "sin_area": True} for f in filas if f.get("area_por_defecto")]
     if por_defecto:
@@ -378,7 +387,27 @@ def documentos_de_area_del_contexto(contexto, entrada, raiz_salida):
         print(f"AVISO: {len(por_defecto)} documentos de área de la carpeta de contexto quedan en «General» (GEN) "
               "porque no tienen área: escriba la suya en la columna 'area' de " + str(ruta_areas)
               + (f" (se agregaron {agregados})." if agregados else "."))
-    return filas
+    return filas, [p.name for p in omitidos]
+
+
+def archivos_no_leidos(contexto, control):
+    """Archivos de la carpeta de contexto que el script no puede leer (.pptx, .xlsx, .zip...). Los lista en
+    control/archivos_no_leidos.csv y devuelve un aviso (o None si no hay)."""
+    no_leidos = []
+    for raiz, dirs, nombres in os.walk(contexto):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for n in nombres:
+            ext = os.path.splitext(n)[1].lower()
+            if not es_archivo_ignorado(n) and ext not in EXT_RECONOCIDAS | EXT_TEXTO:
+                no_leidos.append({"archivo": os.path.relpath(os.path.join(raiz, n), contexto), "extension": ext})
+    if not no_leidos:
+        return None
+    escribir_csv(control / "archivos_no_leidos.csv", ["archivo", "extension"], no_leidos)
+    conteo = collections.Counter(f["extension"] or "(sin extensión)" for f in no_leidos)
+    zips = " Un .zip no se abre: descomprímalo dentro de la carpeta de contexto." if ".zip" in conteo else ""
+    return (f"{len(no_leidos)} archivos de la carpeta de contexto no se leen ("
+            + ", ".join(f"{e} ×{n}" for e, n in conteo.most_common()) + "): guárdelos como PDF o Word." + zips
+            + f" Lista en {control / 'archivos_no_leidos.csv'}")
 
 
 def equivalencias_de_contexto(control, de_area, anteriores):
@@ -472,7 +501,8 @@ def modo_construir(args):
 
     # Los procedimientos, politicas/normativas, protocolos y descriptivos que estan en la carpeta de contexto
     # son documentos de area: se inventarian, convierten y validan como los de la entrada.
-    de_area = documentos_de_area_del_contexto(contexto, entrada, raiz_salida) if contexto is not None else []
+    de_area, repetidos = documentos_de_area_del_contexto(contexto, entrada, raiz_salida) \
+        if contexto is not None else ([], [])
 
     # 1) Inventario (codigos estables si ya habia uno; los codigos D-/P- anteriores se migran).
     _inventario_para_construir(args, entrada, control, raiz_salida, de_area)
@@ -494,7 +524,7 @@ def modo_construir(args):
     errores_contexto = []
     if contexto is not None:
         no_contexto = _datos_de_contexto(contexto, control)
-        no_contexto += [f["archivo"] for f in de_area]
+        no_contexto += [f["archivo"] for f in de_area] + repetidos
         res = ejecutar_contexto(argparse.Namespace(entrada=str(contexto), excluir=no_contexto,
                                                    anteriores=anteriores, **comunes))
         errores_contexto = [f"{r.codigo} {r.archivo}: {r.estado} {r.error}".strip() for r in res.documentos if not r.ok]
@@ -509,6 +539,9 @@ def modo_construir(args):
     validacion = validar_publicacion(publicado, duplicados, revisados, args.muestra_revision, errores_contexto,
                                      control)
     validacion.avisos += avisos_publicacion
+    aviso_formatos = archivos_no_leidos(contexto, control) if contexto is not None else None
+    if aviso_formatos:
+        validacion.avisos.append(aviso_formatos)
     if equivalencias:
         validacion.avisos.append(f"Codificación TTT-AAA-NN: {len(equivalencias)} códigos anteriores tienen su "
                                  f"equivalencia en {ARCHIVO_EQUIVALENCIAS}.")

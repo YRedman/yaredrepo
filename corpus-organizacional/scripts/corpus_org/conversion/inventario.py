@@ -16,7 +16,7 @@ from ..comun.texto import nfc, norm, sin_acentos
 from ..comun.tipos import (AREA_GENERAL, NOMBRE_AREA_GENERAL, TIPO_CONTEXTO_POR_DEFECTO, TIPOS_AREA,
                            TIPOS_DOCUMENTO, TIPOS_GENERALES, codigo_nuevo_desde_anterior, es_area_general,
                            tipo_de_carpeta, tipo_de_material, tipo_desde_texto, tipo_general_de,
-                           RE_CODIGO_ANTERIOR)
+                           tipos_candidatos, RE_CODIGO_ANTERIOR)
 from ..comun.tipos import tipo as tipo_documento
 from .configuracion import EXT_RECONOCIDAS, PALABRAS_VACIAS_DEP, PREFERENCIA_EXT
 from .entradas import es_archivo_ignorado, partes_ruta
@@ -398,14 +398,24 @@ def clasificar_material(path, carpeta_contexto=None):
             partes = list(Path(path).relative_to(carpeta_contexto).parts[:-1])
         except ValueError:
             partes = []
+    nombre = os.path.splitext(Path(path).name)[0]
     t, area = None, ""
     for i in range(len(partes) - 1, -1, -1):
-        t = tipo_de_material(partes[i])
-        if t:
-            area = partes[i + 1] if i + 1 < len(partes) else ""
-            break
+        candidatos = tipos_candidatos(partes[i])
+        if not candidatos:
+            continue
+        if len(candidatos) == 1:
+            t = candidatos[0]
+        else:
+            # carpeta con varios tipos («Políticas y procedimientos», «Estructura organizacional y descriptivos»):
+            # decide el nombre del archivo; si no dice nada, el tipo general de la carpeta o, si no hay, el primero
+            por_nombre = tipo_de_material(nombre)
+            generales = [c for c in candidatos if c in TIPOS_GENERALES]
+            t = por_nombre or (generales[0] if generales else candidatos[0])
+        area = partes[i + 1] if i + 1 < len(partes) else ""
+        break
     if not t:
-        t = tipo_de_material(os.path.splitext(Path(path).name)[0])
+        t = tipo_de_material(nombre)
     if t in TIPOS_AREA and Path(path).suffix.lower() not in EXT_RECONOCIDAS:
         t = tipo_general_de(os.path.splitext(Path(path).name)[0])
     general_por_nombre = tipo_de_material(os.path.splitext(Path(path).name)[0])
