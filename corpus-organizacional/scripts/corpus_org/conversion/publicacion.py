@@ -221,7 +221,11 @@ def escribir_huellas(publicado):
     rutas.indice.mkdir(parents=True, exist_ok=True)
     lineas = [f"# convertir.py v{VERSION} · huella del código {huella()} · {datetime.datetime.now():%Y-%m-%d %H:%M}"]
     for p in archivos_de_huellas(publicado):
-        lineas.append(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(publicado).as_posix()}")
+        try:
+            lineas.append(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(publicado).as_posix()}")
+        except OSError:                 # bloqueado por otro programa (p. ej. Excel con la matriz abierta)
+            print(f"AVISO: no pude leer {p.name} para la huella; cierra el programa que lo usa y ejecuta "
+                  f"'convertir.py matriz'.")
     (rutas.indice / ARCHIVO_HUELLAS).write_text("\n".join(lineas) + "\n", encoding="utf-8")
 
 

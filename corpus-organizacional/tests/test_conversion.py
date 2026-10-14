@@ -1,6 +1,8 @@
 """Pruebas unitarias de la conversion (sin archivos reales)."""
 
+import tempfile
 import unittest
+from pathlib import Path
 
 from tests import ayuda  # noqa: F401
 from corpus_org.comun.esquema import estado_no_publicable
@@ -89,6 +91,30 @@ class AnalisisTest(unittest.TestCase):
         d = DocumentoExtraido(bloques=[{"k": "tabla", "filas": [["Responsable", "Compras"]]}])
         _, a = analizar(d, "C")
         self.assertEqual(a.metadatos.responsable, "")
+
+
+class TemporalesYCsvTest(unittest.TestCase):
+    def test_csv_con_saltos_r_sueltos_se_lee(self):
+        from corpus_org.conversion.extractores.texto import ExtractorTexto
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "kpis.csv"
+            ruta.write_bytes("area;indicador;meta\rVentas;Margen;10\rTI;Disponibilidad;99".encode("utf-8"))
+            d = ExtractorTexto().extraer(ruta)
+        self.assertEqual(d.bloques[0]["filas"][2], ["TI", "Disponibilidad", "99"])
+
+    def test_huellas_ignoran_el_bloqueo_de_excel(self):
+        from corpus_org.conversion.publicacion import escribir_huellas
+        from corpus_org.comun.estructura import archivos_de_huellas, rutas_publicadas
+        with tempfile.TemporaryDirectory() as tmp:
+            r = rutas_publicadas(Path(tmp))
+            r.matriz.mkdir(parents=True)
+            (r.matriz / "matriz_organizacional.xlsx").write_bytes(b"x")
+            (r.matriz / "~$matriz_organizacional.xlsx").write_bytes(b"lock")
+            nombres = [q.name for q in archivos_de_huellas(Path(tmp))]
+            escribir_huellas(Path(tmp))
+            huellas = (r.indice / "huellas.sha256").read_text(encoding="utf-8")
+        self.assertEqual(nombres, ["matriz_organizacional.xlsx"])
+        self.assertNotIn("~$", huellas)
 
 
 if __name__ == "__main__":
