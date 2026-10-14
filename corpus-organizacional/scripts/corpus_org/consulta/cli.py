@@ -11,7 +11,15 @@ from .repositorio import cargar_corpus
 from .salida import Salida
 from .ubicacion import incluir_no_vigentes, resolver_ubicacion
 
-RAIZ_SKILL = Path(__file__).resolve().parents[3]   # <skill>/scripts/corpus_org/consulta/cli.py
+def _raiz_skill():
+    """Carpeta que contiene scripts/: el skill fuente-contexto (o el repositorio)."""
+    for p in Path(__file__).resolve().parents:
+        if p.name == "scripts":
+            return p.parent
+    return Path(__file__).resolve().parents[3]
+
+
+RAIZ_SKILL = _raiz_skill()
 
 
 class _Parser(argparse.ArgumentParser):
@@ -58,7 +66,7 @@ def main(argv=None, uso="", flujo=None):
         u = resolver_ubicacion(RAIZ_SKILL)
         for aviso in u.avisos:
             s.linea("AVISO: " + aviso)
-        corpus = cargar_corpus(u.datos, incluir_no_vigentes(), u.documentos)
+        corpus = cargar_corpus(u.contexto, incluir_no_vigentes(), u.documentos)
         COMANDOS[args.comando].ejecutar(Contexto(corpus, s), args)
     except CorpusError as e:
         _mostrar_error(e, s)

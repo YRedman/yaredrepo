@@ -136,12 +136,12 @@ class CopiasYEscaneadosTest(unittest.TestCase):
     def test_escaneado_sin_texto_es_problema(self):
         with tempfile.TemporaryDirectory() as tmp:
             pub = Path(tmp)
-            (pub / ayuda.DATOS).mkdir(parents=True)
+            (pub / ayuda.INDICE).mkdir(parents=True)
             (pub / ayuda.DOCUMENTOS / "DES").mkdir(parents=True)
             filas = [{"codigo": "DES-COM-01", "cobertura": "100.0 %", "avisos_estructura": "1",
                       "detalle_avisos": AVISO_ESCANEADO + ": 1, 2"},
                      {"codigo": "DES-COM-02", "cobertura": "100.0 %", "avisos_estructura": "0"}]
-            escribir_csv(pub / ayuda.DATOS / "indice_corpus.csv", COLUMNAS_INDICE, filas)
+            escribir_csv(pub / ayuda.INDICE / "indice_corpus.csv", COLUMNAS_INDICE, filas)
             (pub / ayuda.DOCUMENTOS / "DES" / "DES_COM.md").write_text("## [DES-COM-01] A\n\n## [DES-COM-02] B\n", encoding="utf-8")
             v = validar_publicacion(pub, muestra=0)
         self.assertEqual(v.estado, "REQUIERE REVISIÓN")

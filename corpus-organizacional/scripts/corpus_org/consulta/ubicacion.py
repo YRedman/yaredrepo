@@ -1,144 +1,139 @@
-"""Ubicacion de las carpetas del corpus publicado: datos/ (skill corpus-contexto) y el skill corpus-documentos.
+"""Ubicacion de los skills fuente-contexto (indice, contexto, matriz) y fuente-documentos.
 
-En Copilot cada skill queda en /home/oai/skills/appCatalog/<id>/<nombre-skill>/ y el <id> cambia, por eso
-la carpeta de documentos se busca por el nombre del skill. Solo usa la biblioteca estandar.
+En Copilot un skill solo esta en disco despues de que el agente lo carga, y los skills cargados quedan
+juntos en /home/oai/skills/appCatalog/<carpeta>/<skill>/. La <carpeta> cambia, asi que no hay rutas fijas.
+Solo usa la biblioteca estandar.
 """
 
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from ..comun.errores import CorpusError
-from ..comun.esquema import ARCHIVO_INDICE, ARCHIVO_INVENTARIO
-from ..comun.estructura import (CARPETA_DATOS, RAIZ_SKILLS_COPILOT, SKILL_CONTEXTO, SKILL_DOCUMENTOS,
-                                markdown_de_documentos)
-from ..comun.tipos import RE_ARCHIVO_DOCUMENTOS, TIPOS_AREA
+from ..comun.estructura import (CARPETA_INDICE, CARPETA_PUBLICADA, RAIZ_SKILLS_COPILOT, SKILL_CONTEXTO,
+                                SKILL_DOCUMENTOS)
+from ..comun.tipos import TIPOS_AREA
 
 VARIABLE_DATOS = "CORPUS_DATOS"
-VARIABLE_DOCUMENTOS = "CORPUS_DOCUMENTOS"
 VARIABLE_NO_VIGENTES = "CORPUS_INCLUIR_NO_VIGENTES"
-NIVELES_ANCESTROS = 4      # carpetas hacia arriba donde se busca un skill hermano
+NIVELES_ANCESTROS = 4      # carpetas hacia arriba donde se busca por nombre
+MENSAJE_SIN_DOCUMENTOS = ("no encuentro el skill fuente-documentos. Carga primero fuente-contexto y "
+                          "fuente-documentos (lee su SKILL.md) y vuelve a ejecutar.")
+MENSAJE_SIN_CONTEXTO = ("no encuentro el skill fuente-contexto. Carga primero fuente-contexto y "
+                        "fuente-documentos (lee su SKILL.md) y vuelve a ejecutar.")
 
 
 @dataclass
 class Ubicacion:
-    datos: Path
-    documentos: Optional[Path]
-    buscados: List[str] = field(default_factory=list)   # lugares revisados para corpus-documentos
+    contexto: Path                          # carpeta fuente-contexto
+    documentos: Path                        # carpeta fuente-documentos
+    buscados: List[str] = field(default_factory=list)
     avisos: List[str] = field(default_factory=list)
 
 
-def _datos_en(carpeta):
-    """La carpeta datos/ dentro de ``carpeta`` si es un publicado/, un skill corpus-contexto o ya es datos/."""
-    for q in (carpeta / SKILL_CONTEXTO / CARPETA_DATOS, carpeta / CARPETA_DATOS, carpeta):
-        if q.is_dir() and _parece_datos(q):
-            return q
-    return None
-
-
-def _parece_datos(q):
-    return ((q / ARCHIVO_INDICE).is_file() or (q / ARCHIVO_INVENTARIO).is_file()
-            or any(RE_ARCHIVO_DOCUMENTOS.match(p.name) or p.name == "contexto.md" for p in q.glob("*.md")))
-
-
-def resolver_carpeta_datos(raiz_skill, entorno=None):
-    """Carpeta datos/ del corpus: ``CORPUS_DATOS``, la del propio skill (corpus-contexto/datos), la de
-    salida_corpus/publicado/ en el repositorio o, por compatibilidad, un publicado/ plano anterior."""
-    entorno = os.environ if entorno is None else entorno
-    env = entorno.get(VARIABLE_DATOS)
-    opciones = [Path(env).expanduser() if env else None, raiz_skill,
-                raiz_skill / "salida_corpus" / "publicado", raiz_skill / "publicado"]
-    for q in opciones:
-        if q is not None and q.is_dir():
-            datos = _datos_en(q)
-            if datos is not None:
-                return datos.resolve()
-    if env:
-        return Path(env).expanduser().resolve()
-    return (raiz_skill / CARPETA_DATOS).resolve()
+def _es_contexto(q):
+    return q.is_dir() and (q / CARPETA_INDICE).is_dir()
 
 
 def _es_documentos(q):
-    return q.is_dir() and any(p.is_dir() and p.name in TIPOS_AREA for p in q.iterdir())
+    return q.is_dir() and any((q / t).is_dir() for t in TIPOS_AREA)
 
 
-def _candidatos_documentos(raiz_skill, datos):
-    """Lugares donde puede estar el skill corpus-documentos, en orden de preferencia."""
-    vistos = []
-
-    def agregar(q):
-        if q not in vistos:
-            vistos.append(q)
-
-    # mismo publicado/ (repositorio) o skills hermanos con el mismo <id>
-    agregar(datos.parent.parent / SKILL_DOCUMENTOS)
-    agregar(raiz_skill.parent / SKILL_DOCUMENTOS)
-    # Copilot: /home/oai/skills/appCatalog/<id>/corpus-documentos (el <id> cambia)
-    agregar(RAIZ_SKILLS_COPILOT / SKILL_DOCUMENTOS)
-    agregar(RAIZ_SKILLS_COPILOT / "*" / SKILL_DOCUMENTOS)
-    # carpetas superiores a la del skill (otra instalacion de skills con otra raiz)
-    for anc in list(raiz_skill.parents)[:NIVELES_ANCESTROS]:
-        agregar(anc / SKILL_DOCUMENTOS)
-        agregar(anc / "*" / SKILL_DOCUMENTOS)
-    return vistos
+def _con_nombre(q, nombre):
+    """``q`` si se llama ``nombre``, o su subcarpeta de ese nombre."""
+    return q if q.name == nombre else q / nombre
 
 
-def _expandir(q):
-    if "*" not in q.parts:
-        return [q] if q.is_dir() else []
-    i = q.parts.index("*")
-    base = Path(*q.parts[:i])
+def _expandir(patron):
+    """Carpetas que cumplen un patron con un '*' (una carpeta <carpeta> desconocida)."""
+    partes = patron.parts
+    if "*" not in partes:
+        return [patron] if patron.is_dir() else []
+    i = partes.index("*")
+    base = Path(*partes[:i])
     if not base.is_dir():
         return []
     try:
-        return sorted(p for p in base.glob(str(Path(*q.parts[i:]))) if p.is_dir())
+        return sorted(p for p in base.glob(str(Path("*", *partes[i + 1:]))) if p.is_dir())
     except OSError:
         return []
 
 
-def _md_planos(datos):
-    """Markdown de documentos de area en un publicado/ plano anterior (DES_SEG.md, D_SEG.md...)."""
-    def de_area(nombre):
-        m = RE_ARCHIVO_DOCUMENTOS.match(nombre)
-        return (m and m.group(1) in TIPOS_AREA) or nombre[:2] in ("D_", "P_")
-    return [p for p in datos.glob("*.md") if de_area(p.name)]
+def _buscar_por_nombre(nombre, comprobar, raiz_skill, u):
+    """Carpetas ``nombre`` en la carpeta de skills de Copilot y en las superiores al skill actual."""
+    patrones = [RAIZ_SKILLS_COPILOT / "*" / nombre, RAIZ_SKILLS_COPILOT / nombre]
+    for anc in list(Path(raiz_skill).parents)[:NIVELES_ANCESTROS]:
+        patrones += [anc / nombre, anc / "*" / nombre]
+    for patron in patrones:
+        u.buscados.append(str(patron))
+        halladas = [q for q in _expandir(patron) if comprobar(q)]
+        if halladas:
+            return halladas
+    return []
+
+
+def _desde_variable(entorno):
+    """Carpetas que CORPUS_DATOS puede indicar: fuente-contexto, fuente-documentos o la que contiene ambas."""
+    env = entorno.get(VARIABLE_DATOS)
+    if not env:
+        return None, None, None
+    q = Path(env).expanduser()
+    if q.name == SKILL_DOCUMENTOS and _es_documentos(q):      # se indico la carpeta de documentos: su hermana
+        return q, (q.parent / SKILL_CONTEXTO if _es_contexto(q.parent / SKILL_CONTEXTO) else None), q
+    contexto = _con_nombre(q, SKILL_CONTEXTO)
+    documentos = _con_nombre(q, SKILL_DOCUMENTOS)
+    if not _es_contexto(contexto):
+        contexto = next((c for c in (q / CARPETA_PUBLICADA / SKILL_CONTEXTO,) if _es_contexto(c)), None)
+        if contexto is None and _es_contexto(q):
+            contexto = q
+    if not _es_documentos(documentos):
+        documentos = q / CARPETA_PUBLICADA / SKILL_DOCUMENTOS
+        if not _es_documentos(documentos):
+            documentos = q if _es_documentos(q) else None
+    return q, contexto, documentos
 
 
 def resolver_ubicacion(raiz_skill, entorno=None):
-    """Ubicacion de datos/ y del skill corpus-documentos. Error claro si no se encuentra corpus-documentos."""
+    """Ubicacion de fuente-contexto y fuente-documentos.
+
+    fuente-contexto: la de ``CORPUS_DATOS`` si la indica; si no, el propio skill (``raiz_skill`` es la carpeta
+    que contiene scripts/), y en el repositorio salida_corpus/copilot/fuente-contexto.
+    fuente-documentos: la hermana de fuente-contexto; si no esta, ``CORPUS_DATOS`` y luego una busqueda por
+    nombre. Si no se encuentra alguna, CorpusError con el mensaje que el agente sabe interpretar.
+    """
     entorno = os.environ if entorno is None else entorno
-    datos = resolver_carpeta_datos(raiz_skill, entorno)
-    u = Ubicacion(datos, None)
-    env = entorno.get(VARIABLE_DOCUMENTOS)
-    if env:
-        q = Path(env).expanduser()
-        u.buscados.append(f"{VARIABLE_DOCUMENTOS}={q}")
-        if q.is_dir():
-            u.documentos = q.resolve()
-            return u
-    encontrados = []
-    for patron in _candidatos_documentos(raiz_skill, datos):
-        u.buscados.append(str(patron))
-        for q in _expandir(patron):
-            if _es_documentos(q) and q.resolve() not in encontrados:
-                encontrados.append(q.resolve())
-        if encontrados:
-            break
-    if encontrados:
-        encontrados.sort(key=lambda q: max((p.stat().st_mtime for p in markdown_de_documentos(q)), default=0),
-                         reverse=True)
-        u.documentos = encontrados[0]
-        if len(encontrados) > 1:
-            u.avisos.append(f"Hay {len(encontrados)} carpetas {SKILL_DOCUMENTOS}; se usa la más reciente: "
-                            f"{u.documentos} (otras: {', '.join(map(str, encontrados[1:]))}).")
+    raiz_skill = Path(raiz_skill)
+    q, contexto, documentos_env = _desde_variable(entorno)
+    u = Ubicacion(None, None)
+    if contexto is None:
+        for c in (raiz_skill, raiz_skill / "salida_corpus" / CARPETA_PUBLICADA / SKILL_CONTEXTO,
+                  raiz_skill / CARPETA_PUBLICADA / SKILL_CONTEXTO):
+            if _es_contexto(c):
+                contexto = c
+                break
+    if contexto is None:
+        halladas = _buscar_por_nombre(SKILL_CONTEXTO, _es_contexto, raiz_skill, u)
+        contexto = halladas[0] if halladas else None
+    if contexto is None:
+        raise CorpusError(MENSAJE_SIN_CONTEXTO)
+    u.contexto = contexto.resolve()
+    hermana = u.contexto.parent / SKILL_DOCUMENTOS
+    u.buscados.append(str(hermana))
+    if _es_documentos(hermana):
+        u.documentos = hermana
         return u
-    if datos.is_dir() and _md_planos(datos):
-        return u      # publicado/ plano de una version anterior: documentos y datos en la misma carpeta
-    raise CorpusError(
-        f"No encontré la carpeta del skill «{SKILL_DOCUMENTOS}» (documentos DES/, PRD/, PRO/, POL/). "
-        f"Datos del corpus: {datos}. Busqué en: " + "; ".join(u.buscados)
-        + f". Instale el skill {SKILL_DOCUMENTOS} o indique su carpeta en la variable {VARIABLE_DOCUMENTOS}.")
+    if documentos_env is not None:
+        u.documentos = documentos_env.resolve()
+        return u
+    halladas = _buscar_por_nombre(SKILL_DOCUMENTOS, _es_documentos, raiz_skill, u)
+    if not halladas:
+        raise CorpusError(MENSAJE_SIN_DOCUMENTOS)
+    halladas.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+    u.documentos = halladas[0].resolve()
+    if len(halladas) > 1:
+        u.avisos.append(f"Hay {len(halladas)} carpetas {SKILL_DOCUMENTOS}; se usa la más reciente: {u.documentos}.")
+    return u
 
 
 def incluir_no_vigentes(entorno=None):

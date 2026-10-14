@@ -7,12 +7,11 @@ from ..comun.texto import norm, oracion_con
 # (etiqueta, raices). Se buscan al inicio de palabra para no confundir 'confirma' con 'firma'.
 # 'firm' y 'liber' no indican aprobacion ("registrar la firma", "preparar la liberacion").
 VERBOS = [
-    ("Aprueba", r"aprob|aprueb|autoriz"),
-    ("Revisa o verifica", r"revis|valid|verific|inspeccion|supervis"),
+    ("Aprueba o revisa", r"aprob|aprueb|autoriz|revis|valid|verific|inspeccion|supervis"),
     ("Solicita", r"solicit|requier|requer|pide|pedir"),
-    ("Entrega o envía", r"entreg|envi|remit|traslad|deriv|suministr|proporcion|despach|transfier"),
+    ("Entrega", r"entreg|envi|remit|traslad|deriv|suministr|proporcion|despach|transfier"),
     ("Recibe", r"recib|recepcion"),
-    ("Notifica o informa", r"notific|inform|comunic|avis"),
+    ("Notifica", r"notific|inform|comunic|avis"),
     ("Reporta", r"report"),
     ("Coordina", r"coordin|acuerd"),
 ]

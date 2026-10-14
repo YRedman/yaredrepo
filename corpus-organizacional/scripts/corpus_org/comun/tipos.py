@@ -4,11 +4,11 @@ TTT es el tipo (3 letras), AAA el area (3 letras o GEN) y NN el numero (dos digi
 pasa de 99). Para agregar un tipo nuevo basta con agregar una fila a ``TIPOS_DOCUMENTO``: los patrones,
 los nombres de archivo, los filtros de los comandos y la estructura de skills se derivan de esta tabla.
 
-- Tipos de area (``general=False``): van en el skill corpus-documentos, en una carpeta por tipo
+- Tipos de area (``general=False``): van en el skill fuente-documentos, en una carpeta por tipo
   (DES/, PRD/...). Se reconocen por la carpeta de entrada (Descriptivos\\, Procedimientos\\...).
   Politicas y protocolos que aplican a mas de un area o a toda la empresa llevan el area GEN.
 - Tipos generales (``general=True``): documentos de contexto, siempre con area GEN; van en el skill
-  corpus-contexto. Se clasifican por la subcarpeta de contexto o por palabras del nombre del archivo.
+  fuente-contexto. Se clasifican por la subcarpeta de contexto o por palabras del nombre del archivo.
 """
 
 import re
@@ -33,7 +33,7 @@ class TipoDocumento:
 
 
 TIPOS_DOCUMENTO = (
-    # --- documentos de area: skill corpus-documentos -------------------------------------------
+    # --- documentos de area: skill fuente-documentos -------------------------------------------
     TipoDocumento("DES", "Descriptivo de puesto", "Descriptivos de puesto", carpetas=("descrip", "perfil"),
                   palabras=("descriptivo", "perfil de puesto", "perfiles de puesto"), anterior="D"),
     TipoDocumento("PRD", "Procedimiento", "Procedimientos", carpetas=("procedim", "proceso"),
@@ -42,10 +42,9 @@ TIPOS_DOCUMENTO = (
     TipoDocumento("PRO", "Protocolo", "Protocolos", carpetas=("protocol",), palabras=("protocolo",)),
     TipoDocumento("POL", "Política", "Políticas", carpetas=("politic", "normativ", "reglament"),
                   palabras=("politica", "normativa", "reglamento", "lineamiento")),
-    # --- documentos generales de contexto (area GEN): skill corpus-contexto ---------------------
+    # --- documentos generales de contexto (area GEN); los indicadores van en kpis.csv --
     TipoDocumento("ORG", "Organigrama", "Organigramas", general=True,
                   palabras=("organigrama", "estructura organizacional")),
-    TipoDocumento("KPI", "Indicadores", "Indicadores", general=True, palabras=("kpi", "indicador", "dashboard")),
     TipoDocumento("GLO", "Glosario", "Glosarios", general=True, palabras=("glosario",)),
     TipoDocumento("MPR", "Mapa de procesos", "Mapas de procesos", general=True,
                   palabras=("mapa de procesos", "mapa de proceso")),
@@ -57,6 +56,7 @@ TIPO_CONTEXTO_POR_DEFECTO = "CTX"
 POR_CODIGO = {t.codigo: t for t in TIPOS_DOCUMENTO}
 TIPOS_AREA = tuple(t.codigo for t in TIPOS_DOCUMENTO if not t.general)
 TIPOS_GENERALES = tuple(t.codigo for t in TIPOS_DOCUMENTO if t.general)
+TIPOS_PROCESO = ("PRD", "PRO")   # documentos con actividades y responsables: participacion de puestos
 
 # --- patrones (solo tipos conocidos: un codigo interno del cliente como ABC-FOR-040 no es del corpus) ---
 _TIPOS_RE = "|".join(t.codigo for t in TIPOS_DOCUMENTO)
@@ -150,7 +150,7 @@ def tipo_de_material(nombre_archivo_o_carpeta):
     """Tipo de un material de la carpeta de contexto (subcarpeta o nombre de archivo).
 
     Primero los tipos de area (un 'Procedimiento de indicadores' es un procedimiento, una 'Normativa' una
-    politica) y luego los generales (organigrama, KPI...). None si no se reconoce."""
+    politica) y luego los generales (organigrama, glosario...). None si no se reconoce."""
     for td in TIPOS_DOCUMENTO:
         if not td.general and (_con_palabra(nombre_archivo_o_carpeta, td.palabras)
                                or tipo_de_carpeta(nombre_archivo_o_carpeta) == td.codigo):

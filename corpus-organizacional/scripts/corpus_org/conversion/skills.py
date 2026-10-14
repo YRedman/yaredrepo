@@ -1,77 +1,100 @@
-"""Contenido de las dos skills publicadas: scripts de consulta y SKILL.md."""
+"""Scripts de consulta que se publican en fuente-contexto/scripts/.
 
-import shutil
+Copilot admite como maximo 3 niveles de carpetas por skill, asi que ``corpus_org`` se publica sin
+subcarpetas: cada modulo de ``comun/`` y ``consulta/`` pasa a un archivo con su ruta como nombre
+(``consulta/comandos/base.py`` -> ``consulta_comandos_base.py``) y sus imports relativos se reescriben.
+El codigo de conversion (``convertir.py`` y ``corpus_org/conversion``) no se publica: el agente no
+construye el corpus.
+"""
+
+import re
 from pathlib import Path
 
-from .. import VERSION
-from ..comun.archivos import leer_texto
-from ..comun.estructura import (CARPETA_DATOS, NOMBRE_SKILL_MD, SKILL_CONTEXTO, SKILL_DOCUMENTOS,
-                                markdown_de_documentos)
-from ..comun.tipos import POR_CODIGO, TIPOS_AREA, TIPOS_GENERALES
-
-CARPETA_SCRIPTS = Path(__file__).resolve().parents[2]          # scripts/ (corpus.py y corpus_org/)
-SKILL_MD_CONTEXTO = CARPETA_SCRIPTS.parent / NOMBRE_SKILL_MD     # SKILL.md del repositorio
+CARPETA_SCRIPTS = Path(__file__).resolve().parents[2]      # scripts/ del repositorio
+PAQUETES_PUBLICADOS = ("comun", "consulta")
+RE_IMPORT_RELATIVO = re.compile(r"^(?P<sangria>[ \t]*)from (?P<puntos>\.+)(?P<modulo>[\w.]*) import (?P<resto>.*)$",
+                                re.M)
 
 
-def copiar_scripts(carpeta_skill):
-    """Copia corpus.py y el paquete corpus_org a <skill>/scripts/. Devuelve los archivos copiados."""
-    destino = carpeta_skill / "scripts"
+def nombre_plano(partes):
+    """Nombre del archivo plano de un modulo: ('consulta', 'comandos', 'base') -> consulta_comandos_base."""
+    return "_".join(partes)
+
+
+def _modulos(origen):
+    """{tupla de partes del modulo: (archivo, paquete en el que esta)} de los modulos a publicar.
+
+    Un ``__init__.py`` es el modulo de su carpeta (``consulta/comandos/__init__.py`` -> ('consulta', 'comandos'));
+    el ``__init__.py`` raiz (VERSION) es ().
+    """
+    mods = {}
+    for archivo in sorted(Path(origen).rglob("*.py")):
+        rel = archivo.relative_to(origen)
+        carpetas = list(rel.parts[:-1])
+        if carpetas and carpetas[0] not in PAQUETES_PUBLICADOS:
+            continue
+        if "__pycache__" in rel.parts:
+            continue
+        partes = carpetas if rel.name == "__init__.py" else carpetas + [rel.stem]
+        mods[tuple(partes)] = (archivo, carpetas)
+    return mods
+
+
+def _reescribir(texto, paquete, modulos):
+    """Reescribe los imports relativos de un modulo para el paquete plano."""
+    def cambiar(m):
+        puntos, modulo, resto = len(m["puntos"]), m["modulo"], m["resto"]
+        sangria = m["sangria"]
+        if puntos - 1 > len(paquete):
+            raise ValueError(f"import relativo fuera del paquete: {m.group(0)}")
+        base = paquete[:len(paquete) - (puntos - 1)]
+        if modulo:
+            destino = tuple(base) + tuple(modulo.split("."))
+            if destino not in modulos:
+                raise ValueError(f"el modulo {'.'.join(destino)} no se publica: {m.group(0)}")
+            return f"{sangria}from .{nombre_plano(destino)} import {resto}"
+        if resto.lstrip().startswith("("):
+            raise ValueError(f"import multilinea de submodulos no soportado: {m.group(0)}")
+        lineas = []
+        for item in (x.strip() for x in resto.split(",") if x.strip()):
+            nombre = item.split(" as ")[0].strip()
+            alias = item.split(" as ")[1].strip() if " as " in item else nombre
+            if tuple(base) + (nombre,) in modulos:      # from . import parser -> el modulo plano
+                lineas.append(f"{sangria}from . import {nombre_plano(tuple(base) + (nombre,))} as {alias}")
+            elif base:                                  # un nombre definido en el __init__ de un paquete
+                lineas.append(f"{sangria}from .{nombre_plano(base)} import {item}")
+            else:                                       # un nombre del __init__ raiz (VERSION)
+                lineas.append(f"{sangria}from . import {item}")
+        return "\n".join(lineas)
+    return RE_IMPORT_RELATIVO.sub(cambiar, texto)
+
+
+def aplanar_paquete(origen, destino):
+    """Escribe en ``destino`` el paquete ``corpus_org`` de ``origen`` sin subcarpetas. Devuelve los archivos."""
+    origen, destino = Path(origen), Path(destino)
     destino.mkdir(parents=True, exist_ok=True)
-    copiados = [shutil.copy2(CARPETA_SCRIPTS / "corpus.py", destino / "corpus.py")]
-    shutil.copytree(CARPETA_SCRIPTS / "corpus_org", destino / "corpus_org", dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    copiados += [p for p in (destino / "corpus_org").rglob("*") if p.is_file()]
-    return copiados
+    modulos = _modulos(origen)
+    escritos = []
+    for partes, (archivo, carpetas) in modulos.items():
+        paquete = list(partes) if archivo.name == "__init__.py" else carpetas
+        nombre = "__init__.py" if not partes else nombre_plano(partes) + ".py"
+        texto = _reescribir(archivo.read_text(encoding="utf-8"), paquete, modulos)
+        (destino / nombre).write_text(texto, encoding="utf-8")
+        escritos.append(destino / nombre)
+    return escritos
 
 
-def _lista_tipos(codigos):
-    return ", ".join(f"{c} ({POR_CODIGO[c].nombre.lower()})" for c in codigos)
-
-
-def _skill_documentos(documentos):
-    archivos = [p.relative_to(documentos).as_posix() for p in markdown_de_documentos(documentos)]
-    lineas = [
-        "---",
-        f"name: {SKILL_DOCUMENTOS}",
-        "description: >-",
-        "  Texto completo de los documentos de área del corpus organizacional: descriptivos de puesto, "
-        "procedimientos, protocolos y políticas, un archivo por tipo y área. Úsalo junto con el skill "
-        f"{SKILL_CONTEXTO}, que tiene corpus.py, el índice y la matriz para localizar cada documento.",
-        "---", "",
-        "# Corpus organizacional · documentos", "",
-        f"> Generado por `convertir.py` v{VERSION}. No edite estos archivos: se regeneran en cada construcción "
-        f"y `corpus.py verificar` detecta los cambios.", "",
-        "Este skill solo contiene datos. Para consultar, usa los comandos de `scripts/corpus.py` del skill "
-        f"`{SKILL_CONTEXTO}`: localiza esta carpeta por su nombre.", "",
-        "## Estructura", "",
-        f"- Una carpeta por tipo: {_lista_tipos(TIPOS_AREA)}.",
-        "- Un archivo por tipo y área: `DES/DES_SEG.md`, `PRD/PRD_SEG.md`, `POL/POL_GEN.md`…",
-        "- Cada documento empieza con `## [TTT-AAA-NN] Título`: TTT es el tipo, AAA el área (GEN = aplica a "
-        "varias áreas o a toda la empresa) y NN el número.",
-        "- Las líneas que empiezan con `>` son metadatos de la conversión, no texto del original.", "",
-        f"## Archivos ({len(archivos)})", "",
-    ] + [f"- `{a}`" for a in archivos]
-    return "\n".join(lineas) + "\n"
-
-
-def _skill_contexto_minimo():
-    return "\n".join([
-        "---", f"name: {SKILL_CONTEXTO}", "description: >-",
-        "  Consulta del corpus organizacional con scripts/corpus.py: índice, inventario, matriz y documentos "
-        "generales.", "---", "",
-        "# Corpus organizacional · contexto", "",
-        f"- `scripts/corpus.py`: consulta (solo biblioteca estándar). Busca los documentos en el skill "
-        f"`{SKILL_DOCUMENTOS}`.",
-        f"- `{CARPETA_DATOS}/`: índice, inventarios, matriz y documentos generales ({_lista_tipos(TIPOS_GENERALES)}).",
-        ""])
-
-
-def escribir_skill_md(carpeta, nombre, datos, documentos):
-    """Escribe <carpeta>/SKILL.md del skill ``nombre``. Devuelve la ruta."""
-    destino = carpeta / NOMBRE_SKILL_MD
-    if nombre == SKILL_DOCUMENTOS:
-        texto = _skill_documentos(documentos)
-    else:
-        texto = leer_texto(SKILL_MD_CONTEXTO) if SKILL_MD_CONTEXTO.is_file() else _skill_contexto_minimo()
-    destino.write_text(texto, encoding="utf-8")
-    return destino
+def copiar_scripts(carpeta_scripts, origen=None):
+    """Publica corpus.py y el paquete corpus_org plano en ``carpeta_scripts`` (fuente-contexto/scripts)."""
+    origen = Path(origen) if origen else CARPETA_SCRIPTS
+    carpeta_scripts = Path(carpeta_scripts)
+    if carpeta_scripts.is_dir():
+        for p in sorted(carpeta_scripts.rglob("*"), reverse=True):
+            p.unlink() if p.is_file() else p.rmdir()
+    carpeta_scripts.mkdir(parents=True, exist_ok=True)
+    entrada = (origen / "corpus.py").read_text(encoding="utf-8")
+    if "from corpus_org.consulta.cli import main" not in entrada:
+        raise ValueError("corpus.py no importa corpus_org.consulta.cli: no se puede publicar")
+    entrada = entrada.replace("from corpus_org.consulta.cli import main", "from corpus_org.consulta_cli import main")
+    (carpeta_scripts / "corpus.py").write_text(entrada, encoding="utf-8")
+    return [carpeta_scripts / "corpus.py"] + aplanar_paquete(origen / "corpus_org", carpeta_scripts / "corpus_org")

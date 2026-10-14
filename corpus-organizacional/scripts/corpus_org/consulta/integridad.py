@@ -2,10 +2,11 @@
 
 import hashlib
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List
 
 from ..comun.esquema import ARCHIVO_HUELLAS
-from ..comun.estructura import SKILL_CONTEXTO, SKILL_DOCUMENTOS
+from ..comun.estructura import CARPETA_INDICE, SKILL_CONTEXTO, SKILL_DOCUMENTOS
 
 
 @dataclass
@@ -19,20 +20,21 @@ class ResultadoHuellas:
         return self.existe and not self.modificados and not self.faltantes
 
 
-def _ruta(nombre, carpeta, documentos):
-    """Archivo de una linea de huellas: '<skill>/<ruta>' se resuelve en la carpeta de ese skill (en Copilot
-    cada skill esta en otra carpeta); un nombre sin skill (version anterior) esta junto a las huellas."""
+def _ruta(nombre, contexto_skill, documentos):
+    """Archivo de una linea de huellas: '<skill>/<ruta>'. En Copilot cada skill puede estar en otra carpeta,
+    asi que cada skill se resuelve con su propia ubicacion."""
     skill, _, resto = nombre.partition("/")
     if skill == SKILL_CONTEXTO and resto:
-        return carpeta.parent / resto           # carpeta = <corpus-contexto>/datos
+        return contexto_skill / resto
     if skill == SKILL_DOCUMENTOS and resto:
-        return (documentos or carpeta.parent.parent / SKILL_DOCUMENTOS) / resto
-    return carpeta / nombre
+        return (documentos or contexto_skill.parent / SKILL_DOCUMENTOS) / resto
+    return contexto_skill / nombre
 
 
-def verificar_huellas(carpeta, documentos=None):
-    """Compara los archivos con huellas.sha256 de ``carpeta`` (datos/). ``documentos``: skill corpus-documentos."""
-    p = carpeta / ARCHIVO_HUELLAS
+def verificar_huellas(contexto_skill, documentos=None):
+    """Compara los archivos con indice/huellas.sha256 de fuente-contexto."""
+    contexto_skill = Path(contexto_skill)
+    p = contexto_skill / CARPETA_INDICE / ARCHIVO_HUELLAS
     if not p.is_file():
         return ResultadoHuellas(existe=False)
     r = ResultadoHuellas(existe=True)
@@ -41,7 +43,7 @@ def verificar_huellas(carpeta, documentos=None):
             continue
         esperado, nombre = linea.split(None, 1)
         nombre = nombre.strip()
-        archivo = _ruta(nombre, carpeta, documentos)
+        archivo = _ruta(nombre, contexto_skill, documentos)
         if not archivo.is_file():
             r.faltantes.append(nombre)
         elif hashlib.sha256(archivo.read_bytes()).hexdigest() != esperado:

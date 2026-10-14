@@ -1,4 +1,5 @@
 from ... import VERSION
+from ...comun.estructura import informe_limites
 from ...comun.tipos import es_general
 from ..integridad import verificar_huellas
 from ..salida import resumir_lista
@@ -18,8 +19,8 @@ class Verificar(Comando):
 
     def ejecutar(self, ctx, args):
         cp, s = ctx.corpus, ctx.salida
-        s.linea(f"VERIFICACIÓN · corpus.py v{VERSION} · datos: {cp.carpeta}")
-        s.linea(f"Documentos: {cp.carpeta_documentos or cp.carpeta}")
+        s.linea(f"VERIFICACIÓN · corpus.py v{VERSION} · fuente-contexto: {cp.carpeta}")
+        s.linea(f"fuente-documentos: {cp.carpeta_documentos}")
         s.linea(f"Índice utilizado: {cp.fuente_indice}")
         problemas = []
         if cp.duplicados:
@@ -68,6 +69,12 @@ class Verificar(Comando):
         if cp.excluidos:
             s.linea("- Información: excluidos por estado documental (no es un problema): "
                     + resumir_lista(f"{c} ({e})" for c, e in sorted(cp.excluidos.items())))
+        carpetas = [c for c in (cp.carpeta, cp.carpeta_documentos) if c]
+        medidas, avisos_limites = informe_limites(carpetas)
+        for m in medidas:
+            s.linea(f"- Peso y archivos · {m}")
+        for a in avisos_limites:
+            s.linea(f"- Aviso: {a}")
         s.linea(f"Archivos .md: {len(cp.archivos_md)} · documentos: {len(cp.docs)} · filas de índice: {len(cp.meta)} · "
                 f"corpus completo: {'sí' if cp.completo else 'no'}")
         s.linea("Resultado: " + ("sin problemas" if not problemas else f"{len(problemas)} tipos de problema"))

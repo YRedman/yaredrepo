@@ -8,7 +8,7 @@ from ..comun.errores import CorpusError
 from ..comun.esquema import (ARCHIVO_AREAS_EXTRA, ARCHIVO_INDICE, ARCHIVO_INVENTARIO, ARCHIVO_KPIS, ARCHIVO_RESUMEN,
                              COLUMNAS_INDICE, PREFIJO_DIC, PREFIJO_REPORTE, RE_TITULO_DOC, area_de,
                              INVENTARIO_RETIRADO, estado_no_publicable, inventario_activo, tipo_desde_texto)
-from ..comun.estructura import CARPETA_DATOS, SKILL_CONTEXTO, SKILL_DOCUMENTOS, markdown_de_documentos
+from ..comun.estructura import SKILL_CONTEXTO, markdown_de_documentos, rutas_de_skill_contexto
 from ..comun.tipos import TIPOS_AREA, es_general, tipo as tipo_documento
 from . import parser
 from .areas import construir_alias
@@ -21,8 +21,8 @@ class Corpus:
 
     def __init__(self, carpeta, meta, docs, archivos_md, inventario, fuente_indice, duplicados, excluidos,
                  extra=(), exclusiones=(), kpis=(), carpeta_documentos=None):
-        self.carpeta = carpeta              # datos/ del skill corpus-contexto
-        self.carpeta_documentos = carpeta_documentos   # skill corpus-documentos (None: todo en ``carpeta``)
+        self.carpeta = carpeta              # skill fuente-contexto
+        self.carpeta_documentos = carpeta_documentos   # skill fuente-documentos
         self.meta = meta                    # codigo -> fila del indice
         self.docs = docs                    # codigo -> DocumentoCorpus
         self.archivos_md = archivos_md
@@ -95,6 +95,19 @@ class Corpus:
                           + (f" ({len(excluidos)} excluido{'s' if len(excluidos) > 1 else ''} por estado documental)"
                              if excluidos else ""))
         return " · ".join(partes)
+
+    def cobertura_por_tipo(self, cod):
+        """{tipo: (presentes, esperados)} de un area; esperados es None si no hay inventario."""
+        res = {}
+        for tipo in TIPOS_AREA:
+            presentes = len([c for c in self.areas[cod].codigos(tipo) if c in self.docs])
+            if not self.inventario:
+                res[tipo] = (presentes, None)
+                continue
+            esperados = [f for f in self.inventario_de_area(cod) if _tipo_inventario(f) == tipo
+                         and (f.get("codigo") or "").upper() not in self.excluidos]
+            res[tipo] = (presentes, len(esperados))
+        return res
 
     def faltantes_de_inventario(self, filas=None):
         """Codigos del inventario sin texto publicado (los excluidos por estado no cuentan como faltantes)."""
@@ -173,25 +186,25 @@ def _construir_areas(meta, docs, inventario):
     return areas
 
 
-def cargar_corpus(carpeta, incluir_no_vigentes=False, documentos=None):
-    """Lee el corpus publicado: ``carpeta`` es datos/ del skill corpus-contexto (indice, inventario y
-    documentos generales) y ``documentos`` la carpeta del skill corpus-documentos. Si ``carpeta`` es
-    salida_corpus/publicado/ se usan sus dos skills. Los documentos con estado no publicable se separan
-    en ``excluidos``: la exclusion se aplica al indice y al texto a la vez; asi un documento obsoleto no
-    aparece en busquedas ni se reporta como "documento sin fila en el indice".
+def cargar_corpus(contexto_skill, incluir_no_vigentes=False, documentos=None):
+    """Lee el corpus publicado.
+
+    ``contexto_skill`` es la carpeta fuente-contexto (indice/ con el indice, el inventario y areas_extra;
+    contexto/ con los documentos generales y kpis.csv) y ``documentos`` la carpeta fuente-documentos. Si se
+    omite, se toma la hermana de fuente-contexto. Los documentos con estado no publicable se separan en
+    ``excluidos``: la exclusion se aplica al indice y al texto a la vez; asi un documento obsoleto no aparece
+    en busquedas ni se reporta como "documento sin fila en el indice".
     """
-    carpeta = Path(carpeta)
-    if (carpeta / SKILL_CONTEXTO / CARPETA_DATOS).is_dir():
-        documentos = documentos or carpeta / SKILL_DOCUMENTOS
-        carpeta = carpeta / SKILL_CONTEXTO / CARPETA_DATOS
-    if not carpeta.is_dir():
-        raise CorpusError(f"No existe la carpeta de datos: {carpeta}")
-    documentos = Path(documentos) if documentos else None
-    archivos_md = (markdown_de_documentos(documentos) if documentos else []) \
-        + sorted(p for p in carpeta.glob("*.md") if _es_markdown_de_datos(p))
-    meta, dup_indice, fuente, hay_indice = _leer_indice(carpeta)
+    contexto_skill = Path(contexto_skill)
+    if not contexto_skill.is_dir():
+        raise CorpusError(f"No existe la carpeta del skill {SKILL_CONTEXTO}: {contexto_skill}")
+    rutas = rutas_de_skill_contexto(contexto_skill)
+    documentos = Path(documentos) if documentos else rutas.documentos
+    archivos_md = markdown_de_documentos(documentos) \
+        + sorted(p for p in rutas.contexto.glob("*.md") if _es_markdown_de_datos(p))
+    meta, dup_indice, fuente, hay_indice = _leer_indice(rutas.indice)
     if not archivos_md and not hay_indice:
-        raise CorpusError(f"El corpus está vacío: {carpeta} no contiene Markdown ni índice.")
+        raise CorpusError(f"El corpus está vacío: {contexto_skill} no contiene Markdown ni índice.")
     docs, dup_md = _leer_markdown(archivos_md, documentos)
     excluidos = {}
     if not incluir_no_vigentes:
@@ -199,10 +212,10 @@ def cargar_corpus(carpeta, incluir_no_vigentes=False, documentos=None):
                      if estado_no_publicable(f.get("estado_documental", ""))}
         meta = {c: f for c, f in meta.items() if c not in excluidos}
         docs = {c: d for c, d in docs.items() if c not in excluidos}
-    inv = carpeta / ARCHIVO_INVENTARIO
+    inv = rutas.indice / ARCHIVO_INVENTARIO
     inventario = leer_csv(inv) if inv.is_file() else []
-    extra, exclusiones = leer_areas_extra(carpeta / ARCHIVO_AREAS_EXTRA)
-    kp = carpeta / ARCHIVO_KPIS
+    extra, exclusiones = leer_areas_extra(rutas.indice / ARCHIVO_AREAS_EXTRA)
+    kp = rutas.contexto / ARCHIVO_KPIS
     kpis = leer_csv(kp) if kp.is_file() else []
-    return Corpus(carpeta, meta, docs, archivos_md, inventario, fuente, dup_indice + dup_md, excluidos,
+    return Corpus(contexto_skill, meta, docs, archivos_md, inventario, fuente, dup_indice + dup_md, excluidos,
                   extra, exclusiones, kpis, documentos)

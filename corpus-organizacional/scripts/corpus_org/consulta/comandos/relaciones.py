@@ -45,21 +45,37 @@ def relaciones_de_area(analizador, a):
 
 def tabla_resumen(s, cp, a, resumen):
     s.tabla(["Código", "Otra área", f"Menciones en docs de {a}", "Documentos", f"Menciones de {a} en sus docs",
-             "Documentos", "Verbos más frecuentes"],
+             "Documentos", "Verbo"],
             [[otra, cp.areas[otra].nombre, r["sal"], ", ".join(sorted(r["docs_sal"])), r["ent"],
               ", ".join(sorted(r["docs_ent"])), ", ".join(f"{k} ({n})" for k, n in r["verbos"].most_common(3))]
              for otra, r in resumen.items()])
 
 
+EXTERNA = "sin documentos (externa)"
+
+
 def imprimir_no_resueltas(s, no_resueltas, maximo=MAX_NO_RESUELTAS):
+    """Menciones que no son un area del corpus. Las entidades externas (proveedores, autoridades, clientes)
+    van en su propia tabla, separadas de las unidades no identificadas, los puestos ambiguos y las areas internas
+    sin documentos."""
     if not no_resueltas:
         return
+    todas = [[frase, tipo, len(cods), resumir_lista(sorted(cods), 8)]
+             for (frase, tipo), cods in no_resueltas.ordenadas()]
+    externas = [f for f in todas if f[1] == EXTERNA]
+    otras = [f for f in todas if f[1] != EXTERNA]
     s.linea()
     s.linea("Menciones no resueltas (no se cuentan como relación con un área del corpus; validar en la reunión)")
-    filas = [[frase, tipo, len(cods), resumir_lista(sorted(cods), 8)] for (frase, tipo), cods in no_resueltas.ordenadas()]
-    s.tabla(["Mención", "Tipo", "Documentos", "Códigos"], filas[:maximo])
-    if len(filas) > maximo:
-        s.linea(f"… y {len(filas) - maximo} menciones no resueltas más")
+    if otras:
+        s.tabla(["Mención", "Tipo", "Documentos", "Códigos"], otras[:maximo])
+        if len(otras) > maximo:
+            s.linea(f"… y {len(otras) - maximo} menciones no resueltas más")
+    if externas:
+        s.linea()
+        s.linea("Entidades externas (proveedores, autoridades, clientes)")
+        s.tabla(["Entidad externa", "Tipo", "Documentos", "Códigos"], externas[:maximo])
+        if len(externas) > maximo:
+            s.linea(f"… y {len(externas) - maximo} entidades externas más")
 
 
 class Relaciones(Comando):
