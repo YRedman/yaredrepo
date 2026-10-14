@@ -62,12 +62,18 @@ def markdown_de_documentos(carpeta_documentos):
     return sorted(p for p in carpeta.rglob("*.md") if p.name != NOMBRE_SKILL_MD)
 
 
+def _es_temporal(p):
+    """Archivos que no son del corpus: bloqueos de Office (~$x.xlsx), temporales (~x.tmp), .tmp y Thumbs.db."""
+    n = p.name.lower()
+    return n.startswith(("~$", ".~lock", ".~")) or n.endswith((".tmp", ".part")) or n in ("thumbs.db", ".ds_store")
+
+
 def _es_cache(p):
-    return p.suffix == ".pyc" or "__pycache__" in p.parts
+    return p.suffix == ".pyc" or "__pycache__" in p.parts or _es_temporal(p)
 
 
 def archivos_de_skill(carpeta):
-    """Archivos de un skill (sin la cache de Python)."""
+    """Archivos de un skill (sin la cache de Python ni los temporales de Office, como ~$matriz.xlsx)."""
     carpeta = Path(carpeta)
     return sorted(p for p in carpeta.rglob("*") if p.is_file() and not _es_cache(p)) if carpeta.is_dir() else []
 

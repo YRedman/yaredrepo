@@ -23,6 +23,7 @@ RE_SEPARADOR_TABLA = re.compile(r"^\|\s*:?-{3,}")
 
 
 def _filas_csv(txt):
+    txt = txt.replace("\r\n", "\n").replace("\r", "\n")      # CSV de Excel para Mac o con saltos \r sueltos
     lineas = txt.splitlines()
     if not lineas:
         return []
