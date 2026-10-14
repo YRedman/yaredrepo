@@ -29,7 +29,7 @@ from .entradas import buscar_entradas, entrada_por_defecto, es_archivo_ignorado,
 from .huella import huella
 from .inventario import (RE_CODIGO_DEP, actualizar_plantilla_areas, candidatos_codigo, clave_documento,
                          construir_inventario, documentos_de_area_en_contexto, escribir_equivalencias,
-                         inventario_contexto, inventario_provisional,
+                         inventario_contexto, inventario_provisional, quitar_copias_contexto,
                          leer_areas, leer_base, leer_catalogo_codigos, leer_equivalencias, migrar_fila,
                          parsear_lista, tipo_de_carpeta)
 from .lote import Grupo, OpcionesConversion, procesar_grupo
@@ -269,6 +269,10 @@ def ejecutar_contexto(args):
         raise CorpusError("No encontré PDF, Word, .md, .csv ni .txt para el contexto.")
     inv_path = salida / ARCHIVO_INVENTARIO_CONTEXTO
     base = leer_csv(inv_path) if inv_path.is_file() else []
+    if not getattr(args, "incluir_duplicados", False):
+        entradas, avisos_copias = quitar_copias_contexto(entradas)
+        for a in avisos_copias:
+            print(f"AVISO: {a}")
     filas, equivalencias = inventario_contexto(entradas, carpeta, base, getattr(args, "anteriores", None))
     escribir_csv(inv_path, COLUMNAS_INVENTARIO, filas)
     if equivalencias:

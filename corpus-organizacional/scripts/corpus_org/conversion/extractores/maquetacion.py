@@ -258,7 +258,8 @@ def bloques_desde_items(items):
             # titulo partido en dos lineas
             if (actual is not None and actual["k"] == "h" and previo is not None and previo.get("es_titulo")
                     and it["y0"] - previo["y1"] < 0.6 * (it["y1"] - it["y0"]) and abs(it["tam"] - previo["tam"]) < 0.3
-                    and not RE_NUM_INICIO.match(texto) and not actual["texto"].endswith((".", ":"))):
+                    and not RE_NUM_INICIO.match(texto) and not it.get("marcador")
+                    and not actual["texto"].endswith((".", ":"))):
                 actual["texto"] = unir(actual["texto"], texto)
                 previo = dict(it, es_titulo=True)
                 continue

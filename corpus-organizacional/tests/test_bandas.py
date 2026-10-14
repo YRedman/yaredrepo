@@ -114,5 +114,29 @@ class BandasTest(unittest.TestCase):
         self.assertFalse(any("tabla partida" in a for a in d.avisos), d.avisos)
 
 
+@unittest.skipUnless(DEPENDENCIAS, "faltan reportlab o PyMuPDF")
+class IndiceTest(unittest.TestCase):
+    def test_filas_de_indice_con_titulos_conocidos_conservan_su_numero(self):
+        """'2. Objetivo 7' y '3. Alcance 7' no se funden en un titulo y no pierden el '3.'."""
+        def pagina(c):
+            c.setFont("Helvetica", 10)
+            filas = [("1.", "Carta del Presidente", "4"), ("2.", "Objetivo", "7"), ("3.", "Alcance", "7"),
+                     ("4.", "Declaracion de Principios", "7"), ("5.", "Definiciones", "8")]
+            for k, (n, t, pg) in enumerate(filas):
+                y = 700 - 15 * k
+                c.drawString(45, y, n)
+                c.drawString(81, y, t)
+                c.drawString(426, y, pg)
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "indice.pdf"
+            _pdf(ruta, [pagina])
+            d, _ = _extraer(ruta)
+        texto = "\n".join((b.get("marcador", "") + " " + b.get("texto", "")) for b in d.bloques)
+        for n in ("2.", "3.", "4.", "5."):
+            self.assertIn(n, texto)
+        self.assertEqual(sum(1 for b in d.bloques if b["k"] == "h" and "Alcance" in b["texto"]
+                             and "Objetivo" in b["texto"]), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

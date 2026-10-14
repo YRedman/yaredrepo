@@ -2,6 +2,7 @@
 
 import collections
 import difflib
+import hashlib
 import itertools
 import os
 import re
@@ -448,6 +449,39 @@ def documentos_de_area_en_contexto(archivos, carpeta_contexto, areas=None):
         filas.append({"tipo": t, "departamento": explicita or NOMBRE_AREA_GENERAL, "archivo": nfc(p.name).strip(),
                       "ruta": str(p), "desde_contexto": True, "area_por_defecto": not explicita})
     return filas
+
+
+def quitar_copias_contexto(archivos):
+    """Un mismo material repetido en el contexto ('X (1).csv' junto a 'X.csv', o 'X.docx' y 'X.pdf') se numera una sola
+    vez: se conserva el original (sin sufijo de copia) en el formato preferido. Un .csv y un .md del mismo nombre no son
+    el mismo material. Devuelve (archivos, avisos)."""
+    grupos = collections.OrderedDict()
+    for p in archivos:
+        ext = p.suffix.lower()
+        familia = "documento" if ext in PREFERENCIA_EXT else ext
+        grupos.setdefault((clave_documento(p.name), familia), []).append(p)
+    salida, avisos = [], []
+    for lista_p in grupos.values():
+        if len(lista_p) == 1:
+            salida += lista_p
+            continue
+        lista_p.sort(key=lambda p: (_es_copia(p.name), PREFERENCIA_EXT.get(p.suffix.lower(), 9), norm(p.name)))
+        usado, descartados = lista_p[0], lista_p[1:]
+        salida.append(usado)
+        distintos = [q.name for q in descartados if _huella_archivo(q) != _huella_archivo(usado)]
+        aviso = f"Duplicado en el contexto: se usa «{usado.name}» y se descarta " + ", ".join(
+            f"«{q.name}»" for q in descartados)
+        if distintos:
+            aviso += " (el contenido de " + ", ".join(f"«{n}»" for n in distintos) + " es distinto: confirme cuál es el vigente)"
+        avisos.append(aviso)
+    return salida, avisos
+
+
+def _huella_archivo(p):
+    try:
+        return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+    except OSError:
+        return None
 
 
 def inventario_contexto(archivos, carpeta_contexto=None, base=(), anteriores=None):
