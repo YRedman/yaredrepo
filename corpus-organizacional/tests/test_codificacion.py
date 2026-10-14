@@ -3,6 +3,7 @@
 import csv
 import io
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -48,7 +49,7 @@ class TiposTest(unittest.TestCase):
         for c in ("D-SEG-01", "ABC-FOR-040", "XYZ-SEG-01"):
             self.assertFalse(RE_CODIGO.match(c), c)
         self.assertEqual(nombre_archivo("POL", "GEN"), "POL_GEN.md")
-        self.assertEqual((familia("DES"), familia("PRO"), familia("POL"), familia("KPI")), ("D", "P", "P", "C"))
+        self.assertEqual((familia("DES"), familia("PRO"), familia("POL"), familia("GLO")), ("D", "P", "P", "C"))
 
     def test_migracion_de_codigos(self):
         self.assertEqual(codigo_nuevo_desde_anterior("D-SEG-01"), "DES-SEG-01")
@@ -66,7 +67,7 @@ class TiposTest(unittest.TestCase):
         self.assertEqual([tipo_de_carpeta(x) for x in ("Descriptivos", "Procedimientos", "Políticas", "Protocolos")],
                          ["DES", "PRD", "POL", "PRO"])
         self.assertEqual(tipo_general_de("Organigrama general.pdf"), "ORG")
-        self.assertEqual(tipo_general_de("kpis_dashboard"), "KPI")
+        self.assertIsNone(tipo_general_de("kpis_dashboard"))   # los indicadores van en kpis.csv, no en un .md
         self.assertEqual(tipo_general_de("Mapa de procesos"), "MPR")
         self.assertIsNone(tipo_general_de("notas varias"))
 
@@ -135,13 +136,13 @@ class InventarioTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             raiz = Path(tmp)
             (raiz / "Organigramas").mkdir()
-            archivos = [raiz / "Organigramas" / "Operaciones.pdf", raiz / "Glosario.docx", raiz / "kpis.csv",
+            archivos = [raiz / "Organigramas" / "Operaciones.pdf", raiz / "Glosario.docx", raiz / "Mapa de procesos.pdf",
                         raiz / "notas.md", raiz / "Organigrama general.pdf"]
             anteriores = {"glosario": "C-CTX-01", "notas": "C-CTX-02"}
             filas, eq = inventario_contexto(archivos, raiz, anteriores=anteriores)
             codigos = {f["archivo"]: f["codigo"] for f in filas}
             self.assertEqual(codigos, {"Operaciones.pdf": "ORG-GEN-01", "Organigrama general.pdf": "ORG-GEN-02",
-                                       "kpis.csv": "KPI-GEN-01", "Glosario.docx": "GLO-GEN-01",
+                                       "Mapa de procesos.pdf": "MPR-GEN-01", "Glosario.docx": "GLO-GEN-01",
                                        "notas.md": "CTX-GEN-01"})
             self.assertEqual(sorted(eq), [("C-CTX-01", "GLO-GEN-01"), ("C-CTX-02", "CTX-GEN-01")])
             # reconstruir sin un organigrama y con uno nuevo: los codigos no cambian
@@ -154,42 +155,69 @@ class InventarioTest(unittest.TestCase):
 
 
 class UbicacionTest(unittest.TestCase):
-    def _skills(self, raiz):
-        ctx = raiz / "appCatalog" / "a1" / "corpus-contexto"
-        (ctx / "datos").mkdir(parents=True)
-        (ctx / "datos" / "indice_corpus.csv").write_text("codigo\n", encoding="utf-8")
-        docs = raiz / "appCatalog" / "b2" / "corpus-documentos"
+    def _skills(self, raiz, carpeta_docs="b2"):
+        ctx = raiz / "appCatalog" / "a1" / "fuente-contexto"
+        (ctx / "indice").mkdir(parents=True)
+        (ctx / "indice" / "indice_corpus.csv").write_text("codigo\n", encoding="utf-8")
+        docs = raiz / "appCatalog" / carpeta_docs / "fuente-documentos"
         (docs / "DES").mkdir(parents=True)
         (docs / "DES" / "DES_SEG.md").write_text("## [DES-SEG-01] Jefe\n", encoding="utf-8")
         return ctx, docs
 
-    def test_busca_corpus_documentos_por_nombre(self):
+    def test_hermana_primero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx, docs = self._skills(Path(tmp), "a1")           # misma carpeta <carpeta> que fuente-contexto
+            u = ubicacion.resolver_ubicacion(ctx, entorno={})
+            self.assertEqual((u.contexto, u.documentos), (ctx.resolve(), docs.resolve()))
+
+    def test_busqueda_por_nombre(self):
         with tempfile.TemporaryDirectory() as tmp:
             raiz = Path(tmp)
-            ctx, docs = self._skills(raiz)
+            ctx, docs = self._skills(raiz)                       # en otra <carpeta>
             with mock.patch.object(ubicacion, "RAIZ_SKILLS_COPILOT", raiz / "appCatalog"):
                 u = ubicacion.resolver_ubicacion(ctx, entorno={})
-            self.assertEqual((u.datos, u.documentos), ((ctx / "datos").resolve(), docs.resolve()))
+            self.assertEqual((u.contexto, u.documentos), (ctx.resolve(), docs.resolve()))
 
-    def test_variables_de_entorno(self):
+    def test_variable_corpus_datos(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp)
+            ctx, docs = self._skills(raiz, "a1")
+            for valor in (raiz / "appCatalog" / "a1", ctx, docs):   # la carpeta que contiene ambas, o una de ellas
+                u = ubicacion.resolver_ubicacion(raiz / "otro", entorno={"CORPUS_DATOS": str(valor)})
+                self.assertEqual((u.contexto, u.documentos), (ctx.resolve(), docs.resolve()), valor)
+
+    def test_mensaje_exacto_si_no_esta(self):
         with tempfile.TemporaryDirectory() as tmp:
             raiz = Path(tmp)
             ctx, docs = self._skills(raiz)
-            u = ubicacion.resolver_ubicacion(raiz / "otro", entorno={"CORPUS_DATOS": str(ctx / "datos"),
-                                                                     "CORPUS_DOCUMENTOS": str(docs)})
-            self.assertEqual((u.datos, u.documentos), ((ctx / "datos").resolve(), docs.resolve()))
-
-    def test_error_claro_si_no_esta(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            raiz = Path(tmp)
-            ctx, docs = self._skills(raiz)
-            (docs / "DES" / "DES_SEG.md").unlink()
-            (docs / "DES").rmdir()
+            for p in sorted(docs.rglob("*"), reverse=True):
+                p.unlink() if p.is_file() else p.rmdir()
+            docs.rmdir()
             with mock.patch.object(ubicacion, "RAIZ_SKILLS_COPILOT", raiz / "no-existe"):
                 with self.assertRaises(CorpusError) as e:
                     ubicacion.resolver_ubicacion(ctx, entorno={})
-        self.assertIn("No encontré la carpeta del skill «corpus-documentos»", e.exception.mensaje)
-        self.assertIn("CORPUS_DOCUMENTOS", e.exception.mensaje)
+        self.assertEqual("ERROR: " + e.exception.mensaje,
+                         "ERROR: no encuentro el skill fuente-documentos. Carga primero fuente-contexto y "
+                         "fuente-documentos (lee su SKILL.md) y vuelve a ejecutar.")
+
+
+class DividirMarkdownTest(unittest.TestCase):
+    def test_divide_entre_documentos_y_conserva_ubicacion(self):
+        from corpus_org.conversion.publicacion import dividir_markdown
+        docs = [f"## [PRD-SEG-{n:02d}] Doc {n}\n" + "texto de relleno largo " * 20 + "\n\n---\n" for n in range(1, 7)]
+        texto = "# Procedimientos · Seguridad (SEG)\n\nDocumentos de este archivo: 6. Cada...\n\n" + "\n".join(docs)
+        partes = dividir_markdown(texto, "PRD_SEG.md", max_bytes=1500)
+        self.assertGreater(len(partes), 1)
+        nombres = [n for n, _, _ in partes]
+        self.assertTrue(nombres[0].startswith("PRD_SEG_01-") and nombres[-1].endswith("-06.md"), nombres)
+        codigos = [c for _, _, u in partes for c in u]
+        self.assertEqual(codigos, [f"PRD-SEG-{n:02d}" for n in range(1, 7)])        # ninguno repetido ni perdido
+        for nombre, t, ubic in partes:
+            self.assertLessEqual(len(t.encode()), 1700)
+            lineas = t.split("\n")
+            for c, (ini, fin) in ubic.items():
+                self.assertTrue(lineas[ini - 1].startswith(f"## [{c}]"), (nombre, c))
+        self.assertEqual(dividir_markdown(texto, "PRD_SEG.md", max_bytes=10 ** 6)[0][0], "PRD_SEG.md")
 
 
 def _construir(base):
@@ -236,8 +264,8 @@ class DosSkillsIntegracionTest(unittest.TestCase):
         (ctx / "kpis_seguridad.csv").write_text("id;gestion;indicador;meta;medicion\nK-01;Seguridad;Rondas;30;28\n",
                                                 encoding="utf-8")
         cls.codigo, cls.salida = _construir(cls.base)
-        cls.publicado = ent / "salida_corpus" / "publicado"
-        with open(cls.publicado / ayuda.DATOS / "indice_corpus.csv", encoding="utf-8-sig") as f:
+        cls.publicado = ent / "salida_corpus" / "copilot"
+        with open(cls.publicado / ayuda.INDICE / "indice_corpus.csv", encoding="utf-8-sig") as f:
             cls.indice = {r["codigo"]: r for r in csv.DictReader(f, delimiter=";")}
 
     @classmethod
@@ -246,7 +274,7 @@ class DosSkillsIntegracionTest(unittest.TestCase):
 
     def test_construccion(self):
         self.assertEqual(self.codigo, 0, self.salida)
-        self.assertEqual(sorted(self.indice), ["DES-SEG-01", "KPI-GEN-01", "ORG-GEN-01", "POL-GEN-01", "POL-GEN-02",
+        self.assertEqual(sorted(self.indice), ["DES-SEG-01", "ORG-GEN-01", "POL-GEN-01", "POL-GEN-02",
                                                "POL-SEG-01", "PRD-CAL-01", "PRD-SEG-01", "PRO-SEG-01"])
         self.assertEqual(self.indice["PRD-CAL-01"]["archivo_origen"], "Ficha de proceso de auditoría.docx")
         self.assertEqual(self.indice["POL-GEN-02"]["archivo_origen"], "Reglamento interno.docx")
@@ -254,39 +282,79 @@ class DosSkillsIntegracionTest(unittest.TestCase):
         self.assertEqual(self.indice["POL-GEN-01"]["area_propietaria"], "Calidad")
         self.assertEqual(self.indice["POL-GEN-01"]["departamento"], "General")
 
-    def test_estructura_de_skills(self):
+    def test_estructura_de_carpetas(self):
         docs = self.publicado / ayuda.DOCUMENTOS
-        self.assertEqual(sorted(p.relative_to(docs).as_posix() for p in docs.rglob("*.md")),
+        self.assertEqual(sorted(p.relative_to(docs).as_posix() for p in docs.rglob("*") if p.is_file()),
                          ["DES/DES_SEG.md", "POL/POL_GEN.md", "POL/POL_SEG.md", "PRD/PRD_CAL.md", "PRD/PRD_SEG.md",
-                          "PRO/PRO_SEG.md", "SKILL.md"])
-        datos = self.publicado / ayuda.DATOS
-        self.assertTrue({"ORG_GEN.md", "KPI_GEN.md", "huellas.sha256", "matriz_organizacional.xlsx",
-                         "inventario_contexto.csv"} <= {p.name for p in datos.iterdir()})
+                          "PRO/PRO_SEG.md"])
+        skill = self.publicado / "fuente-contexto"
+        self.assertEqual(sorted(p.name for p in skill.iterdir()), ["contexto", "indice", "matriz", "scripts"])
+        self.assertEqual(sorted(p.name for p in (skill / "contexto").iterdir()), ["ORG_GEN.md", "kpis.csv"])
+        indice = {p.name for p in (skill / "indice").iterdir()}
+        self.assertTrue({"indice_corpus.csv", "inventario_maestro.csv", "huellas.sha256", "RESUMEN_CONSTRUCCION.md"}
+                        <= indice, indice)
+        self.assertFalse(any(self.publicado.rglob("KPI_GEN.md")))
         politica = (docs / "POL" / "POL_GEN.md").read_text(encoding="utf-8")
         self.assertIn("\n## [POL-GEN-01] Política de calidad\n", politica)
         self.assertIn("> - Área propietaria: Calidad", politica)
-        skill = self.publicado / "corpus-contexto"
-        self.assertTrue((skill / "SKILL.md").is_file() and (skill / "scripts" / "corpus.py").is_file())
-        self.assertTrue((skill / "scripts" / "corpus_org" / "consulta" / "cli.py").is_file())
+
+    def test_scripts_planos_sin_convertir(self):
+        scripts = self.publicado / "fuente-contexto" / "scripts"
+        self.assertEqual(sorted(p.name for p in scripts.iterdir() if p.name != "__pycache__"),
+                         ["corpus.py", "corpus_org"])
+        carpeta = scripts / "corpus_org"
+        self.assertEqual([p for p in carpeta.iterdir() if p.is_dir() and p.name != "__pycache__"], [])
+        self.assertTrue((carpeta / "consulta_comandos_base.py").is_file())
+        self.assertFalse(any("conversion" in p.name for p in carpeta.iterdir()))
+        self.assertFalse(any(self.publicado.rglob("convertir.py")))
+        self.assertFalse(any(p.parts[-2:] == ("control", p.name) for p in self.publicado.rglob("*")))
+        from corpus_org.comun.estructura import informe_limites
+        _, avisos = informe_limites([self.publicado / "fuente-contexto", self.publicado / "fuente-documentos"])
+        self.assertEqual(avisos, [])
+        resumen = (self.publicado / ayuda.INDICE / "RESUMEN_CONSTRUCCION.md").read_text(encoding="utf-8")
+        self.assertIn("## Peso y número de archivos por carpeta", resumen)
+        self.assertIn("fuente-documentos: ", resumen)
+
+    def test_skill_md_del_equipo_no_se_sobrescribe(self):
+        for nombre in ("fuente-contexto", "fuente-documentos"):
+            (self.publicado / nombre / "SKILL.md").write_text("del equipo " + nombre, encoding="utf-8")
+        codigo, salida = _construir(self.base)
+        self.assertEqual(codigo, 0, salida)
+        for nombre in ("fuente-contexto", "fuente-documentos"):
+            self.assertEqual((self.publicado / nombre / "SKILL.md").read_text(encoding="utf-8"), "del equipo " + nombre)
+        self.assertNotIn("Falta fuente-", salida)
 
     def test_matriz_en_csv(self):
-        matriz = self.publicado / ayuda.DATOS / "matriz"
+        matriz = self.publicado / ayuda.MATRIZ
         nombres = sorted(p.name for p in matriz.glob("*.csv"))
-        self.assertIn("09_politicas_y_protocolos.csv", nombres)
-        with open(matriz / "09_politicas_y_protocolos.csv", encoding="utf-8-sig") as f:
+        for esperado in ("puestos.csv", "funciones.csv", "relaciones.csv", "perfil_requisitos.csv",
+                         "normativa_citada.csv", "procedimientos.csv", "participacion.csv", "indicadores.csv",
+                         "revision.csv", "politicas_protocolos.csv"):
+            self.assertIn(esperado, nombres)
+        self.assertTrue((matriz / "matriz_organizacional.xlsx").is_file())
+        with open(matriz / "politicas_protocolos.csv", encoding="utf-8-sig") as f:
             filas = list(csv.reader(f, delimiter=";"))
-        self.assertEqual(filas[0][:4], ["Código", "Tipo", "Área de aplicación", "Área propietaria"])
+        self.assertEqual(filas[0][:4], ["Código", "Tipo", "Área", "Área propietaria"])
         self.assertIn(["POL-GEN-01", "Política", "General", "Calidad"], [r[:4] for r in filas[1:]])
         self.assertIn("POL-GEN-02", [r[0] for r in filas[1:]])
-        with open(matriz / "08_procedimientos.csv", encoding="utf-8-sig") as f:
-            self.assertIn("PRD-CAL-01", [r[0] for r in csv.reader(f, delimiter=";")])
-        with open(matriz / "02_resumen.csv", encoding="utf-8-sig") as f:
+        with open(matriz / "procedimientos.csv", encoding="utf-8-sig") as f:
+            filas = list(csv.reader(f, delimiter=";"))
+        self.assertIn("PRD-CAL-01", [r[0] for r in filas])
+        self.assertIn("PRO-SEG-01", [r[0] for r in filas])            # los protocolos tambien, con su tipo
+        with open(matriz / "resumen.csv", encoding="utf-8-sig") as f:
             resumen = list(csv.reader(f, delimiter=";"))
         self.assertEqual(resumen[-1][:2], ["Total", "1"])
 
+    def test_sin_codigos_del_formato_anterior(self):
+        import re
+        viejo = re.compile(r"(?<![A-Za-z0-9])[DPC]-[A-Z0-9]{3}-\d{2,3}\b")
+        for p in self.publicado.rglob("*"):
+            if p.is_file() and p.suffix in (".md", ".csv", ".sha256") and p.name != "equivalencias_codigos.csv":
+                self.assertIsNone(viejo.search(p.read_text(encoding="utf-8-sig")), p)
+
     def test_consulta_desde_el_skill_solo_biblioteca_estandar(self):
         """corpus.py publicado corre sin paquetes instalados (-S) y encuentra el skill de documentos."""
-        script = self.publicado / "corpus-contexto" / "scripts" / "corpus.py"
+        script = self.publicado / "fuente-contexto" / "scripts" / "corpus.py"
         entorno = {k: v for k, v in os.environ.items() if not k.startswith("CORPUS_")}
         r = subprocess.run([sys.executable, "-I", "-S", str(script), "buscar", "calidad", "--tipo", "GEN"],
                            capture_output=True, text=True, encoding="utf-8", env=entorno)
@@ -296,6 +364,30 @@ class DosSkillsIntegracionTest(unittest.TestCase):
                            capture_output=True, text=True, encoding="utf-8", env=entorno)
         self.assertIn("Huellas SHA-256: todos los archivos coinciden", r.stdout)
         self.assertIn("Resultado: sin problemas", r.stdout)
+
+
+    def test_todos_los_comandos_desde_los_scripts_publicados(self):
+        script = self.publicado / "fuente-contexto" / "scripts" / "corpus.py"
+        entorno = {k: v for k, v in os.environ.items() if not k.startswith("CORPUS_")}
+        for comando in (["catalogo"], ["area", "Seguridad"], ["briefing", "Seguridad"], ["ficha", "Seguridad"],
+                        ["doc", "DES-SEG-01"], ["buscar", "ronda"], ["relaciones", "Seguridad"],
+                        ["participacion", "Seguridad"], ["gobierno"], ["procesos"], ["kpis"], ["verificar"]):
+            r = subprocess.run([sys.executable, "-I", "-S", str(script), *comando], capture_output=True,
+                               text=True, encoding="utf-8", env=entorno)
+            self.assertEqual(r.returncode, 0, (comando, r.stdout[-400:], r.stderr[-400:]))
+            self.assertNotIn("Traceback", r.stderr, comando)
+
+    def test_sin_fuente_documentos_mensaje_exacto(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destino = Path(tmp) / "solo" / "fuente-contexto"
+            shutil.copytree(self.publicado / "fuente-contexto", destino)
+            entorno = {k: v for k, v in os.environ.items() if not k.startswith("CORPUS_")}
+            r = subprocess.run([sys.executable, "-I", "-S", str(destino / "scripts" / "corpus.py"), "catalogo"],
+                               capture_output=True, text=True, encoding="utf-8", env=entorno)
+        self.assertEqual(r.stdout.strip(),
+                         "ERROR: no encuentro el skill fuente-documentos. Carga primero fuente-contexto y "
+                         "fuente-documentos (lee su SKILL.md) y vuelve a ejecutar.")
+        self.assertNotEqual(r.returncode, 0)
 
 
 if __name__ == "__main__":

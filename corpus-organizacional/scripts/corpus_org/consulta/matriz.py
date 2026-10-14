@@ -9,144 +9,21 @@ Todo sale del corpus publicado: lo que no esta en un documento no se completa.
 import collections
 import datetime
 import re
-from dataclasses import dataclass, field
-from typing import List
 
 from .. import VERSION
 from ..comun.archivos import escribir_csv_filas, leer_csv, leer_texto
 from ..comun.errores import CorpusError
+from ..comun.estructura import CARPETA_PUBLICADA, rutas_publicadas
 from ..comun.esquema import ARCHIVO_RESUMEN, ARCHIVO_REVISION, AVISO_ESCANEADO, area_de
-from ..comun.markdown import celdas
-from ..comun.texto import norm, sin_acentos
-from ..comun.tipos import es_general, familia, tipo as tipo_documento, tipo_de_codigo
-from .parser import lineas_contenido
+from ..comun.texto import sin_acentos
+from ..comun.tipos import TIPOS_PROCESO, es_general, tipo as tipo_documento, tipo_de_codigo
+from .extraccion import alcance, funciones, normativa, perfil, relaciones
 from .participacion import calcular_participacion
 from .puestos import DetectorPuestos
 from .repositorio import cargar_corpus
 
 ARCHIVO_MATRIZ = "matriz_organizacional.xlsx"
 MAX_TEXTO_CELDA = 3000
-
-RE_FUNCIONES = re.compile(r"funci[oó]n|funciones|responsabilidad")
-RE_EVIDENCIA = re.compile(r"evidencia|entregable")
-RE_RELACION = re.compile(r"tipo de relaci")
-RE_PERFIL = re.compile(r"requisit|competenc|cara[cs]ter[ií]stica|formaci|experienc|conocimient|perfil|habilidad|"
-                       r"idioma|acceso|herramienta")
-# Referencias a normativa interna o externa, en el orden en que se clasifican.
-TIPOS_NORMATIVA = (
-    ("Política", re.compile(r"\bpol[ií]ticas?\b", re.I)),
-    ("Protocolo", re.compile(r"\bprotocolos?\b", re.I)),
-    ("Procedimiento", re.compile(r"\bprocedimientos?\b", re.I)),
-    ("Reglamento", re.compile(r"\breglamentos?\b", re.I)),
-    ("Manual", re.compile(r"\bmanual(es)?\b", re.I)),
-    ("Instructivo", re.compile(r"\binstructivos?\b", re.I)),
-    ("Norma", re.compile(r"\bnormas?\b|\bnormativas?\b|\bISO\s?\d", re.I)),
-    ("Ley", re.compile(r"\bley(es)?\b", re.I)),
-    ("Código de documento", re.compile(r"\b[A-Z]{2,5}(?:-[A-Z]{2,5}){1,3}-\d{2,4}\b")),
-)
-
-
-@dataclass
-class Tabla:
-    seccion: str
-    cabecera: List[str]
-    filas: List[List[str]] = field(default_factory=list)
-
-
-def tablas(doc):
-    """Tablas completas (cabecera y filas) de un documento publicado, con la seccion donde estan."""
-    res, actual = [], None
-    for lc in lineas_contenido(doc):
-        if not lc.es_tabla:
-            actual = None
-            continue
-        if lc.es_cabecera:
-            actual = Tabla(lc.seccion, celdas(lc.texto))
-            res.append(actual)
-        elif actual is not None:
-            actual.filas.append(celdas(lc.texto))
-    return res
-
-
-def _limpia(s):
-    return re.sub(r"\s+", " ", (s or "").replace("[CELDA COMBINADA]", "")).strip()
-
-
-def _sin_vineta(s):
-    return re.sub(r"^\s*(?:[-•●▪*»]|\d{1,2}[.)])\s+", "", s or "").strip()
-
-
-# ---------------------------------------------------------------------------
-# Extraccion por documento
-# ---------------------------------------------------------------------------
-
-def funciones(doc):
-    """[(funcion, evidencia)]: filas de la tabla de funciones; si no hay tabla, las viñetas de la seccion."""
-    res = []
-    for t in tablas(doc):
-        cab = [norm(c) for c in t.cabecera]
-        if not cab or any(RE_RELACION.search(c) for c in cab):
-            continue
-        if RE_FUNCIONES.search(cab[0]) or (RE_FUNCIONES.search(norm(t.seccion)) and len(cab) <= 3):
-            j_ev = next((j for j, c in enumerate(cab) if RE_EVIDENCIA.search(c)), None)
-            for f in t.filas:
-                funcion = _limpia(f[0]) if f else ""
-                evidencia = _limpia(f[j_ev]) if j_ev is not None and j_ev < len(f) else ""
-                if funcion and not RE_FUNCIONES.fullmatch(norm(funcion)):
-                    res.append((funcion, evidencia))
-    if res:
-        return res
-    for lc in lineas_contenido(doc):
-        if not lc.es_tabla and RE_FUNCIONES.search(norm(lc.seccion)) and re.match(r"^\s*(?:-|\d{1,2}[.)])\s", lc.texto):
-            res.append((_sin_vineta(lc.texto), ""))
-    return res
-
-
-def relaciones(doc):
-    """[(area o puesto de interaccion, tipo de relacion)] de la tabla 'Áreas de Relacionamiento'."""
-    res = []
-    for t in tablas(doc):
-        if any(RE_RELACION.search(norm(c)) for c in t.cabecera):
-            for f in t.filas:
-                no_vacias = [_limpia(x) for x in f if _limpia(x)]
-                if len(no_vacias) >= 2:
-                    res.append((no_vacias[0], no_vacias[-1]))
-    return res
-
-
-def perfil(doc):
-    """[(seccion, requisito, detalle)] de las tablas de requisitos, competencias y caracteristicas."""
-    res = []
-    for t in tablas(doc):
-        cab = [norm(c) for c in t.cabecera]
-        if any(RE_RELACION.search(c) for c in cab) or (cab and RE_FUNCIONES.search(cab[0])):
-            continue
-        titulo = _limpia(t.cabecera[0]) if t.cabecera else ""
-        if not (RE_PERFIL.search(norm(titulo)) or RE_PERFIL.search(norm(t.seccion))):
-            continue
-        seccion = titulo if RE_PERFIL.search(norm(titulo)) else t.seccion
-        for f in t.filas:
-            f = [_limpia(x) for x in f]
-            if any(f):
-                res.append((seccion, f[0], " | ".join(x for x in f[1:] if x)))
-    return res
-
-
-def normativa(doc):
-    """[(tipo, mencion, seccion)]: lineas o celdas que citan politicas, procedimientos, normas o codigos."""
-    res, vistos = [], set()
-    for lc in lineas_contenido(doc):
-        if lc.es_cabecera:
-            continue
-        textos = celdas(lc.texto) if lc.es_tabla else [lc.texto]
-        for texto in textos:
-            texto = _limpia(texto)
-            for tipo, patron in TIPOS_NORMATIVA:
-                if patron.search(texto) and (tipo, texto) not in vistos:
-                    vistos.add((tipo, texto))
-                    res.append((tipo, texto, lc.seccion))
-    return res
-
 
 # ---------------------------------------------------------------------------
 # Libro
@@ -192,7 +69,7 @@ def _nombre_tipo(codigo):
 
 def datos_matriz(raiz):
     """Filas de cada hoja (listas de listas) calculadas del corpus publicado en ``raiz``/publicado."""
-    corpus = cargar_corpus(raiz / "publicado", incluir_no_vigentes=True)
+    corpus = cargar_corpus(rutas_publicadas(raiz / CARPETA_PUBLICADA).skill_contexto, incluir_no_vigentes=True)
     detector = DetectorPuestos.desde_corpus(corpus)
     revision = _revision(raiz)
     hojas = collections.OrderedDict((k, []) for k in (
@@ -200,25 +77,26 @@ def datos_matriz(raiz):
         "Políticas y protocolos", "Documentos generales", "Participación", "Puestos x Procedimientos",
         "Indicadores", "Revisión"))
     descriptivos = sorted(c for c in corpus.meta if tipo_de_codigo(c) == "DES")
-    procedimientos = sorted(c for c in corpus.meta if tipo_de_codigo(c) == "PRD")
-    normativos = sorted(c for c in corpus.meta if familia(tipo_de_codigo(c)) == "P" and c not in procedimientos)
+    procedimientos = sorted(c for c in corpus.meta if tipo_de_codigo(c) in TIPOS_PROCESO)      # PRD y PRO
+    normativos = sorted(c for c in corpus.meta if tipo_de_codigo(c) in ("PRO", "POL"))        # hoja de politicas
+    politicas = sorted(c for c in corpus.meta if tipo_de_codigo(c) == "POL")
     for c in sorted(c for c in corpus.meta if es_general(c)):
         f = corpus.meta[c]
         hojas["Documentos generales"].append([c, _nombre_tipo(c), corpus.nombre(c), f.get("archivo_origen", ""),
                                               _lectura(f), corpus.doc(c).ubicacion if corpus.doc(c) else ""])
-    for c in descriptivos + procedimientos + normativos:
+    for c in descriptivos + procedimientos + politicas:
         f, doc = corpus.meta[c], corpus.doc(c)
         area, nombre = f.get("departamento", ""), corpus.nombre(c)
         lectura = _lectura(f)
         pendiente = c in revision and not revision[c]
         estado_rev = "Pendiente" if pendiente else ("Revisado" if c in revision else "No requerida")
-        if c in normativos:
+        if c in normativos:            # politicas y protocolos: area de aplicacion, area propietaria y alcance
             hojas["Políticas y protocolos"].append([
-                c, _nombre_tipo(c), area, f.get("area_propietaria", ""), nombre, f.get("proposito_literal", ""),
-                f.get("propietario", ""), f.get("responsable", ""), f.get("codigo_interno", ""),
-                f.get("version", ""), f.get("fecha_vigencia", ""), f.get("estado_documental", ""), lectura,
+                c, _nombre_tipo(c), area, f.get("area_propietaria", ""), alcance(doc), f.get("version", ""),
+                f.get("fecha_vigencia", ""), f.get("estado_documental", ""), nombre, f.get("proposito_literal", ""),
+                f.get("propietario", ""), f.get("responsable", ""), f.get("codigo_interno", ""), lectura,
                 estado_rev])
-        elif tipo_de_codigo(c) == "DES":
+        if tipo_de_codigo(c) == "DES":
             jefe, coincidencia = _jefe(detector, f.get("reporta_a"), c)
             hojas["Puestos"].append([
                 c, area, nombre, f.get("reporta_a", ""), jefe, coincidencia, f.get("supervisa_a", ""),
@@ -233,9 +111,9 @@ def datos_matriz(raiz):
                                             rel.puesto.codigo if rel else "", rel.puesto.nombre if rel else ""])
             for seccion, requisito, detalle in perfil(doc):
                 hojas["Perfil y requisitos"].append([c, area, nombre, seccion, requisito, detalle])
-        else:
+        if c in procedimientos:
             hojas["Procedimientos"].append([
-                c, area, nombre, f.get("proposito_literal", ""), f.get("propietario", ""), f.get("responsable", ""),
+                c, _nombre_tipo(c), area, nombre, f.get("proposito_literal", ""), f.get("propietario", ""), f.get("responsable", ""),
                 f.get("codigo_interno", ""), f.get("version", ""), f.get("fecha_vigencia", ""),
                 f.get("estado_documental", ""), f.get("actividades", ""), lectura, estado_rev])
         for tipo, mencion, seccion in normativa(doc):
@@ -244,15 +122,17 @@ def datos_matriz(raiz):
             hojas["Revisión"].append([c, area, nombre, lectura, f.get("detalle_avisos", "") or
                                       ("muestra aleatoria" if c in revision else ""),
                                       "Pendiente" if pendiente or c not in revision else "Revisado", ""])
-    part = calcular_participacion(corpus, procedimientos + normativos, detector)
+    part = calcular_participacion(corpus, procedimientos, detector)
     cruces = collections.defaultdict(set)
     for fp in part.filas:
         hojas["Participación"].append([fp.puesto.codigo, fp.puesto.nombre, fp.procedimiento,
-                                       corpus.nombre(fp.procedimiento), fp.rol, fp.coincidencia, fp.evidencia])
+                                       corpus.nombre(fp.procedimiento), _nombre_tipo(fp.procedimiento), fp.rol,
+                                       fp.coincidencia, fp.evidencia])
         cruces[(fp.puesto.codigo, fp.procedimiento)].add(fp.rol)
     for rol, procs in part.sin_descriptivo.items():
         for p in sorted(procs):
-            hojas["Participación"].append(["", rol, p, corpus.nombre(p), "", "sin descriptivo en el corpus", ""])
+            hojas["Participación"].append(["", rol, p, corpus.nombre(p), _nombre_tipo(p), "",
+                                           "sin descriptivo en el corpus", ""])
     if cruces:
         procs = sorted({p for _, p in cruces})
         hojas["Puestos x Procedimientos"].append(["Código", "Puesto"] + procs)
@@ -280,25 +160,27 @@ COLUMNAS = {
                             ("Detalle", 70)],
     "Normativa citada": [("Código", 12), ("Área", 22), ("Documento", 34), ("Tipo de referencia", 18),
                          ("Texto donde se cita (literal)", 80), ("Sección", 26)],
-    "Procedimientos": [("Código", 12), ("Área", 22), ("Procedimiento", 34), ("Propósito", 50), ("Propietario", 24),
+    "Procedimientos": [("Código", 12), ("Tipo", 14), ("Área", 22), ("Procedimiento", 34), ("Propósito", 50),
+                       ("Propietario", 24),
                        ("Responsable", 24), ("Código interno", 18), ("Versión", 9), ("Vigencia", 12),
                        ("Estado documental", 14), ("Actividades", 70), ("Calidad de lectura", 22),
                        ("Revisión visual", 14)],
     "Participación": [("Código del puesto", 14), ("Puesto", 34), ("Procedimiento", 14),
-                      ("Nombre del procedimiento", 34), ("Rol", 18), ("Coincidencia", 22),
+                      ("Nombre del procedimiento", 34), ("Tipo", 14), ("Rol", 18), ("Coincidencia", 22),
                       ("Evidencia (texto literal)", 80)],
-    "Políticas y protocolos": [("Código", 12), ("Tipo", 12), ("Área de aplicación", 22),
-                               ("Área propietaria", 22), ("Documento", 34), ("Propósito", 50), ("Propietario", 24),
-                               ("Responsable", 24), ("Código interno", 18), ("Versión", 9), ("Vigencia", 12),
-                               ("Estado documental", 14), ("Calidad de lectura", 22), ("Revisión visual", 14)],
+    "Políticas y protocolos": [("Código", 12), ("Tipo", 12), ("Área", 22), ("Área propietaria", 22),
+                               ("Alcance (literal)", 70), ("Versión", 9), ("Vigencia", 12),
+                               ("Estado documental", 14), ("Documento", 34), ("Propósito", 50),
+                               ("Propietario", 24), ("Responsable", 24), ("Código interno", 18),
+                               ("Calidad de lectura", 22), ("Revisión visual", 14)],
     "Documentos generales": [("Código", 12), ("Tipo", 18), ("Documento", 40), ("Archivo original", 40),
                              ("Calidad de lectura", 22), ("Ubicación en el corpus", 22)],
     "Revisión": [("Código", 12), ("Área", 22), ("Documento", 34), ("Calidad de lectura", 22),
                  ("Motivo de la revisión", 70), ("Estado", 12), ("Observaciones del auditor", 50)],
 }
 VACIAS = {
-    "Procedimientos": "El corpus todavía no tiene procedimientos. Al agregarlos (carpeta Procedimientos) esta hoja "
-                      "y las de participación se llenan solas.",
+    "Procedimientos": "El corpus todavía no tiene procedimientos ni protocolos. Al agregarlos (carpetas "
+                      "Procedimientos y Protocolos) esta hoja y las de participación se llenan solas.",
     "Participación": "Sin procedimientos en el corpus: no hay participación de puestos que mostrar.",
     "Puestos x Procedimientos": "Sin procedimientos en el corpus: la matriz se llena cuando se agreguen.",
     "Indicadores": "El contexto no trae un archivo kpi*.csv.",
@@ -316,16 +198,16 @@ DESCRIPCIONES = [
     ("Perfil y requisitos", "Educación, experiencia, competencias y características especiales de cada puesto."),
     ("Normativa citada", "Cada texto donde un documento menciona una política, protocolo, procedimiento, norma, "
                          "reglamento, manual, ley o código de documento. Es la cita literal: no interpreta."),
-    ("Procedimientos", "Un procedimiento por fila con propietario, responsable, versión y actividades."),
-    ("Políticas y protocolos", "Una política o protocolo por fila. «Área de aplicación» es General si aplica a "
-                               "varias áreas o a toda la empresa; «Área propietaria» es el área que la emite, si "
-                               "el documento la indica."),
+    ("Procedimientos", "Un procedimiento (PRD) o protocolo (PRO) por fila, con su tipo, propietario, responsable, "
+                       "versión y actividades."),
+    ("Políticas y protocolos", "Una política (POL) o protocolo (PRO) por fila. «Área» es General si aplica a "
+                               "varias áreas o a toda la empresa; «Área propietaria» es el área que lo emite, si "
+                               "el documento la indica; «Alcance (literal)» es el texto de su sección de alcance."),
     ("Documentos generales", "Organigramas, indicadores, glosarios, mapas de procesos y otros documentos de "
                              "contexto (área GEN)."),
-    ("Participación", "Qué puesto aparece en qué procedimiento, protocolo o política y con qué rol (ejecuta, "
+    ("Participación", "Qué puesto aparece en qué procedimiento o protocolo (con su tipo) y con qué rol (ejecuta, "
                       "aprueba, revisa…)."),
-    ("Puestos x Procedimientos", "Matriz: filas = puestos, columnas = procedimientos, protocolos y políticas, "
-                                 "celda = rol."),
+    ("Puestos x Procedimientos", "Matriz: filas = puestos, columnas = procedimientos y protocolos, celda = rol."),
     ("Indicadores", "KPIs del contexto (meta y medición)."),
     ("Revisión", "Documentos que deben compararse con el original (OCR, tablas partidas, muestra). La columna "
                  "amarilla es para las observaciones del auditor."),
@@ -354,7 +236,7 @@ COLUMNAS_RESUMEN = ["Área", "Puestos", "Leídos con OCR", "Sin texto", "Funcion
 
 
 def _areas_resumen(hojas):
-    return sorted({f[1] for f in hojas["Puestos"]} | {f[1] for f in hojas["Procedimientos"]}
+    return sorted({f[1] for f in hojas["Puestos"]} | {f[2] for f in hojas["Procedimientos"]}
                   | {f[2] for f in hojas["Políticas y protocolos"]})
 
 
@@ -372,9 +254,18 @@ def valores_resumen(hojas):
     return filas
 
 
-def _nombre_csv(i, hoja):
-    slug = re.sub(r"[^a-z0-9]+", "_", sin_acentos(hoja).lower()).strip("_")
-    return f"{i:02d}_{slug}.csv"
+NOMBRES_CSV = {"Léeme": "leeme", "Resumen": "resumen", "Puestos": "puestos", "Funciones": "funciones",
+               "Relaciones": "relaciones", "Perfil y requisitos": "perfil_requisitos",
+               "Normativa citada": "normativa_citada", "Procedimientos": "procedimientos",
+               "Políticas y protocolos": "politicas_protocolos", "Documentos generales": "documentos_generales",
+               "Participación": "participacion", "Puestos x Procedimientos": "puestos_x_procedimientos",
+               "Indicadores": "indicadores", "Revisión": "revision"}
+
+
+def _nombre_csv(hoja):
+    """Archivo CSV de una hoja: Puestos -> puestos.csv, Perfil y requisitos -> perfil_requisitos.csv."""
+    return NOMBRES_CSV.get(hoja) and NOMBRES_CSV[hoja] + ".csv" \
+        or re.sub(r"[^a-z0-9]+", "_", sin_acentos(hoja).lower()).strip("_") + ".csv"
 
 
 def exportar_csv(hojas, raiz, carpeta):
@@ -391,26 +282,26 @@ def exportar_csv(hojas, raiz, carpeta):
         cabecera, filas, _ = _cabecera_y_filas(nombre, filas)
         todas.append((nombre, cabecera, filas))
     rutas = []
-    for i, (nombre, cabecera, filas) in enumerate(todas, 1):
-        ruta = carpeta / _nombre_csv(i, nombre)
+    for nombre, cabecera, filas in todas:
+        ruta = carpeta / _nombre_csv(nombre)
         escribir_csv_filas(ruta, cabecera, filas)
         rutas.append(ruta)
     return rutas
 
 
-def escribir_matriz(raiz, destino=None, carpeta_csv=None):
-    """Escribe <raiz>/matriz_organizacional.xlsx (requiere openpyxl) y, con ``carpeta_csv``, un CSV por
-    hoja (solo biblioteca estandar). Devuelve la ruta del Excel."""
+def escribir_matriz(raiz, destino=None):
+    """Escribe en <raiz>/copilot/fuente-contexto/matriz/ matriz_organizacional.xlsx (requiere openpyxl) y un CSV
+    por hoja (solo biblioteca estandar). ``raiz`` es salida_corpus. Devuelve la ruta del Excel."""
     corpus, hojas = datos_matriz(raiz)
-    if carpeta_csv is not None:
-        exportar_csv(hojas, raiz, carpeta_csv)
+    carpeta = rutas_publicadas(raiz / CARPETA_PUBLICADA).matriz
+    exportar_csv(hojas, raiz, carpeta)
     try:
         from openpyxl import Workbook
         from openpyxl.styles import Alignment, Font, PatternFill
         from openpyxl.utils import get_column_letter
     except ImportError:
         raise CorpusError("Falta openpyxl para escribir el Excel: python -m pip install openpyxl")
-    destino = destino or raiz / ARCHIVO_MATRIZ
+    destino = destino or carpeta / ARCHIVO_MATRIZ
     fuente, negrita = Font(name="Arial", size=10), Font(name="Arial", size=10, bold=True, color="FFFFFF")
     relleno_cab = PatternFill("solid", fgColor="1F4E78")
     relleno_auditor = PatternFill("solid", fgColor="FFFF00")

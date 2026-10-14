@@ -21,14 +21,16 @@ Uso: python scripts/corpus.py <comando> [argumentos]
                                    Resumen por puesto (completo) y detalle de su rol en los procedimientos.
   gobierno [--area "<area>"]       Versiones, vigencia, propietario y responsable.
   procesos [--area "<area>"]       Macroproceso, proceso, procedimiento y actividades.
+  normativa [--area "<area>"]      Citas de leyes, reglamentos, normas, politicas, protocolos... (literales), por tipo.
   kpis [--gestion "<texto>"] [--sin-medicion] [--relacionar] [--area "<area>"]
                                    Indicadores y documentos que mencionan sus terminos.
   verificar                        Integridad (huellas), inventario, cobertura y corpus completo.
 
 Codigos TTT-AAA-NN: tipo (DES, PRD, PRO, POL; ORG, KPI, GLO, MPR... generales), area (GEN = general) y numero.
 
-Datos: CORPUS_DATOS o la carpeta datos/ de este skill (corpus-contexto). Documentos: CORPUS_DOCUMENTOS o el
-skill corpus-documentos, que se busca por su nombre (en Copilot: /home/oai/skills/appCatalog/<id>/).
+Datos: este skill (fuente-contexto: indice/, contexto/, matriz/). Documentos: el skill hermano fuente-documentos;
+si no esta, CORPUS_DATOS (la carpeta que contiene ambos skills) y luego una busqueda por nombre en
+/home/oai/skills/appCatalog/<carpeta>/ (en Copilot la <carpeta> cambia).
 Solo usa la biblioteca estandar de Python (sin red ni paquetes). No modifica ningun archivo.
 La logica vive en el paquete ``corpus_org`` (junto a este archivo).
 """

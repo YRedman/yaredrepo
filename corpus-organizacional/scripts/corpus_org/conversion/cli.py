@@ -1,6 +1,7 @@
 """Linea de comandos de ``convertir.py``: interpreta argumentos, orquesta y muestra resultados."""
 
 import argparse
+import re
 import shutil
 import sys
 import time
@@ -14,7 +15,7 @@ from ..comun.esquema import (AREA_SIN_ASIGNAR, ARCHIVO_AREAS_DOCUMENTOS, ARCHIVO
                              ARCHIVO_EQUIVALENCIAS, ARCHIVO_INDICE, ARCHIVO_INVENTARIO, ARCHIVO_INVENTARIO_CONTEXTO,
                              ARCHIVO_KPIS, ARCHIVO_RESUMEN, COLUMNAS_CATALOGO, COLUMNAS_INVENTARIO, PREFIJO_DIC,
                              inventario_activo, tipo_desde_texto)
-from ..comun.estructura import CARPETA_MATRIZ, SKILL_CONTEXTO, SKILL_DOCUMENTOS, rutas_publicadas
+from ..comun.estructura import CARPETA_PUBLICADA, NOMBRE_SKILL_MD, informe_limites, rutas_publicadas
 from ..comun.texto import norm
 from ..comun.tipos import (AREA_GENERAL, NOMBRE_AREA_GENERAL, RE_CODIGO_ANTERIOR, TIPOS_AREA, nombre_archivo,
                            tipo as tipo_documento)
@@ -22,7 +23,6 @@ from .asignacion import asignar_archivos, grupos_a_convertir
 from .configuracion import EXT_RECONOCIDAS, EXT_TEXTO
 from .extractores.ocr import diagnostico
 from ..consulta.matriz import ARCHIVO_MATRIZ, escribir_matriz
-from .copilot import ARCHIVO_INSTRUCCIONES, MAX_ARCHIVOS, exportar_copilot
 from .entradas import buscar_entradas, entrada_por_defecto, localizar, partes_ruta
 from .huella import huella
 from .inventario import (RE_CODIGO_DEP, actualizar_plantilla_areas, candidatos_codigo, clave_documento,
@@ -31,7 +31,7 @@ from .inventario import (RE_CODIGO_DEP, actualizar_plantilla_areas, candidatos_c
                          leer_areas, leer_base, leer_catalogo_codigos, leer_equivalencias, migrar_fila,
                          parsear_lista, tipo_de_carpeta)
 from .lote import Grupo, OpcionesConversion, procesar_grupo
-from .publicacion import (MUESTRA_REVISION, copiar_matriz, escribir_huellas, escribir_resumen_construccion,
+from .publicacion import (MUESTRA_REVISION, escribir_huellas, escribir_resumen_construccion,
                           leer_revisados, limpiar_generados, publicar_corpus, validar_publicacion)
 
 
@@ -388,10 +388,10 @@ def equivalencias_de_contexto(control, de_area, anteriores):
     return pares
 
 
-def contexto_anterior(control, publicado):
+def contexto_anterior(control, raiz_salida):
     """{clave_documento(archivo): C-CTX-NN} de una construccion con la codificacion anterior, para numerar
     primero esos materiales y registrar su equivalencia. Vacio si no la hay."""
-    fuentes = [control / f"{PREFIJO_DIC}contexto.csv", publicado / ARCHIVO_INDICE]
+    fuentes = [control / f"{PREFIJO_DIC}contexto.csv", raiz_salida / "publicado" / ARCHIVO_INDICE]
     anteriores = {}
     for p in fuentes:
         for f in (leer_csv(p) if p.is_file() else []):
@@ -416,7 +416,8 @@ def unir_csv(rutas, destino):
 def _datos_de_contexto(contexto, control):
     """Copia a control/ los datos estructurados del contexto: kpi*.csv (unidos en kpis.csv) y areas_extra.csv.
 
-    Devuelve los nombres de archivo que no son material de contexto (no se convierten a contexto.md).
+    Devuelve los nombres de archivo que no son documentos de contexto: los indicadores se quedan en kpis.csv
+    (no se crea un Markdown de indicadores).
     """
     kpis = sorted(p for p in contexto.iterdir() if p.suffix.lower() == ".csv" and norm(p.name).startswith("kpi"))
     if kpis:
@@ -424,23 +425,39 @@ def _datos_de_contexto(contexto, control):
     extra = [p for p in contexto.iterdir() if norm(p.name) == ARCHIVO_AREAS_EXTRA]
     if extra:
         shutil.copy2(extra[0], control / ARCHIVO_AREAS_EXTRA)
-    return [p.name for p in extra]
+    return [p.name for p in kpis + extra]
+
+
+def _limpiar_publicacion_anterior(raiz_salida, publicado, avisos):
+    """Quita el paquete de 20 archivos de versiones anteriores (copilot/NN_*.md e instrucciones) y avisa
+    de la carpeta publicado/ de la v4.0 inicial, que ya no se usa."""
+    if publicado.is_dir():
+        for p in publicado.glob("*.md"):
+            if re.match(r"^\d\d_", p.name):
+                p.unlink()
+    instrucciones = raiz_salida / "instrucciones_copilot.md"
+    if instrucciones.is_file():
+        instrucciones.unlink()
+    if (raiz_salida / "publicado").is_dir():
+        avisos.append("La carpeta salida_corpus/publicado/ es de una versión anterior y ya no se usa: la "
+                      f"publicación está en salida_corpus/{CARPETA_PUBLICADA}/. Puede borrarla.")
 
 
 def modo_construir(args):
     """Inventario, conversion, contexto opcional, publicacion, validacion y huellas en una sola orden.
 
+    Publica en salida_corpus/copilot/fuente-documentos y fuente-contexto (dos carpetas listas para comprimir).
     Termina con 0 (LISTO PARA PUBLICAR), 2 (REQUIERE REVISIÓN) o 3 (PENDIENTE DE REVISIÓN VISUAL).
     """
     entrada = Path(args.entrada).resolve()
     raiz_salida = Path(args.salida).resolve() if args.salida else entrada / "salida_corpus"
-    control, publicado = raiz_salida / "control", raiz_salida / "publicado"
+    control, publicado = raiz_salida / "control", raiz_salida / CARPETA_PUBLICADA
     control.mkdir(parents=True, exist_ok=True)
     publicado.mkdir(parents=True, exist_ok=True)
     contexto = Path(args.contexto).resolve() if args.contexto else None
     if contexto is not None and not contexto.is_dir():
         raise CorpusError(f"La carpeta de contexto no existe: {contexto}")
-    anteriores = contexto_anterior(control, publicado)
+    anteriores = contexto_anterior(control, raiz_salida)
     limpiar_generados(control)
 
     # Los procedimientos, politicas/normativas, protocolos y descriptivos que estan en la carpeta de contexto
@@ -462,8 +479,8 @@ def modo_construir(args):
                                            tipo=None, dep=None, departamento=None,
                                            extra_entradas=[Path(f["ruta"]) for f in de_area], **comunes))
 
-    # 3) Contexto opcional (documentos generales ORG-GEN, KPI-GEN...), en carpeta separada para no
-    #    convertir documentos operativos como contexto.
+    # 3) Contexto opcional (documentos generales ORG-GEN, GLO-GEN...), en carpeta separada para no
+    #    convertir documentos operativos como contexto. Los indicadores van a kpis.csv.
     errores_contexto = []
     if contexto is not None:
         no_contexto = _datos_de_contexto(contexto, control)
@@ -472,9 +489,11 @@ def modo_construir(args):
                                                    anteriores=anteriores, **comunes))
         errores_contexto = [f"{r.codigo} {r.archivo}: {r.estado} {r.error}".strip() for r in res.documentos if not r.ok]
 
-    # 4) Publicacion en las dos skills, indice maestro y validacion.
+    # 4) Publicacion en las dos carpetas, indice maestro y validacion.
     avisos_publicacion = []
+    _limpiar_publicacion_anterior(raiz_salida, publicado, avisos_publicacion)
     publicados, duplicados = publicar_corpus(control, publicado, avisos_publicacion)
+    rutas = rutas_publicadas(publicado)
     equivalencias = leer_equivalencias(control / ARCHIVO_EQUIVALENCIAS)
     revisados = {equivalencias.get(c, c) for c in leer_revisados(raiz_salida, control, entrada)}
     validacion = validar_publicacion(publicado, duplicados, revisados, args.muestra_revision, errores_contexto,
@@ -484,38 +503,35 @@ def modo_construir(args):
         validacion.avisos.append(f"Codificación TTT-AAA-NN: {len(equivalencias)} códigos anteriores tienen su "
                                  f"equivalencia en {ARCHIVO_EQUIVALENCIAS}.")
     resumen_path = raiz_salida / ARCHIVO_RESUMEN
-    escribir_resumen_construccion(resumen_path, validacion, publicados)
+    escribir_resumen_construccion(resumen_path, validacion, publicados)      # la matriz lee de aqui el estado
     # salidas derivadas: un problema aqui (archivo abierto, permisos) no debe perder la construccion
     try:
-        carpeta_copilot = exportar_copilot(raiz_salida, args.max_archivos_copilot)
-    except (CorpusError, OSError) as e:
-        carpeta_copilot = None
-        validacion.avisos.append(f"No se generó el paquete para Copilot: {getattr(e, 'mensaje', e)}")
-    try:
-        matriz = escribir_matriz(raiz_salida, carpeta_csv=rutas_publicadas(publicado)[1] / CARPETA_MATRIZ)
+        matriz = escribir_matriz(raiz_salida)
         if matriz.name != ARCHIVO_MATRIZ:
             validacion.avisos.append(f"{ARCHIVO_MATRIZ} estaba abierto (¿en Excel?); la matriz nueva se guardó "
                                      f"como «{matriz.name}». Cierre el archivo anterior y reemplácelo.")
     except (CorpusError, OSError) as e:
         matriz = None
         validacion.avisos.append(f"No se generó la matriz Excel: {getattr(e, 'mensaje', e)}")
-    if matriz:
-        try:
-            copiar_matriz(matriz, publicado, ARCHIVO_MATRIZ)
-        except OSError as e:
-            validacion.avisos.append(f"No se copió la matriz al skill {SKILL_CONTEXTO}: {e}")
-    # 5) Huellas al final: cubren todo lo publicado en las dos skills.
+    for skill in (rutas.skill_contexto, rutas.documentos):
+        if not (skill / NOMBRE_SKILL_MD).is_file():
+            validacion.avisos.append(f"Falta {skill.name}/{NOMBRE_SKILL_MD}: lo provee el equipo; cópielo en esa "
+                                     "carpeta antes de comprimirla (el script no lo escribe).")
+    medidas, avisos_limites = informe_limites([rutas.skill_contexto, rutas.documentos])
+    validacion.avisos += avisos_limites
+    escribir_resumen_construccion(resumen_path, validacion, publicados, medidas)
+    shutil.copy2(resumen_path, rutas.indice / ARCHIVO_RESUMEN)
+    # 5) Huellas al final: cubren todo lo publicado en las dos carpetas.
     escribir_huellas(publicado)
     print("\nCONSTRUIR CORPUS · convertir.py v" + VERSION)
     print("Resultado: " + validacion.estado)
-    _ctx, _datos, _docs = rutas_publicadas(publicado)
-    print(f"Skill {SKILL_DOCUMENTOS}: {_docs}")
-    print(f"Skill {SKILL_CONTEXTO}: {_ctx}")
+    print(f"Carpetas para comprimir y subir como skills (en {publicado}):")
+    print(f"- {rutas.documentos.name}")
+    print(f"- {rutas.skill_contexto.name}")
+    for m in medidas:
+        print(f"  {m}")
     print(f"Control: {control}")
     print(f"Resumen: {resumen_path}")
-    if carpeta_copilot:
-        print(f"Copilot: {carpeta_copilot} ({len(list(carpeta_copilot.iterdir()))} archivos de conocimiento; "
-              f"instrucciones en {raiz_salida / ARCHIVO_INSTRUCCIONES})")
     if matriz:
         print(f"Matriz Excel: {matriz}")
     for x in validacion.problemas:
@@ -530,28 +546,15 @@ def modo_construir(args):
         sys.exit(validacion.codigo_salida)
 
 
-def modo_copilot(args):
-    """Regenera el paquete para Copilot desde una construccion existente (por ejemplo con otro limite)."""
-    raiz = Path(args.salida or "salida_corpus").resolve()
-    carpeta = exportar_copilot(raiz, args.max_archivos_copilot)
-    archivos = sorted(carpeta.iterdir())
-    print(f"COPILOT · convertir.py v{VERSION}")
-    print(f"Conocimiento ({len(archivos)} archivos) en {carpeta}:")
-    for p in archivos:
-        print(f"- {p.name} ({p.stat().st_size // 1024} KB)")
-    print(f"Instrucciones del agente: {raiz / ARCHIVO_INSTRUCCIONES}")
-
-
 def modo_matriz(args):
-    """Regenera la matriz Excel desde una construccion existente."""
+    """Regenera la matriz Excel y sus CSV desde una construccion existente."""
     raiz = Path(args.salida or "salida_corpus").resolve()
-    publicado = raiz / "publicado"
+    publicado = raiz / CARPETA_PUBLICADA
     print(f"MATRIZ · convertir.py v{VERSION}")
-    matriz = escribir_matriz(raiz, carpeta_csv=rutas_publicadas(publicado)[1] / CARPETA_MATRIZ)
-    copiar_matriz(matriz, publicado, ARCHIVO_MATRIZ)
+    matriz = escribir_matriz(raiz)
     escribir_huellas(publicado)
+    print(f"Matriz Excel y un CSV por hoja en: {matriz.parent}")
     print(f"Matriz Excel: {matriz}")
-    print(f"Copia y un CSV por hoja en: {rutas_publicadas(publicado)[1]}")
 
 
 def modo_diagnostico(args):
@@ -572,7 +575,7 @@ def modo_diagnostico(args):
 # ---------------------------------------------------------------------------
 
 MODOS = {"inventario": modo_inventario, "convertir": modo_convertir, "contexto": modo_contexto,
-         "construir": modo_construir, "copilot": modo_copilot,
+         "construir": modo_construir,
          "diagnostico": modo_diagnostico, "matriz": modo_matriz}
 
 
@@ -601,9 +604,6 @@ def crear_parser():
                             help="Nombre del departamento, para convertir sin inventario (piloto).")
         if nombre == "contexto":
             sp.add_argument("--excluir", nargs="*", default=[])
-        if nombre in ("construir", "copilot"):
-            sp.add_argument("--max-archivos-copilot", type=int, default=MAX_ARCHIVOS,
-                            help="Máximo de archivos del paquete para el conocimiento de Copilot.")
         if nombre == "construir":
             sp.add_argument("--contexto", default=None,
                             help="Carpeta separada con organigrama, glosario y otros materiales de contexto.")

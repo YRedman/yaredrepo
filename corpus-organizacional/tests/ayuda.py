@@ -7,6 +7,9 @@ SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-# Estructura publicada en dos skills (salida_corpus/publicado/...)
-DATOS = Path("corpus-contexto") / "datos"
-DOCUMENTOS = Path("corpus-documentos")
+# Estructura publicada (salida_corpus/copilot/...)
+PUBLICADA = "copilot"
+DOCUMENTOS = Path("fuente-documentos")
+INDICE = Path("fuente-contexto") / "indice"
+CONTEXTO = Path("fuente-contexto") / "contexto"
+MATRIZ = Path("fuente-contexto") / "matriz"

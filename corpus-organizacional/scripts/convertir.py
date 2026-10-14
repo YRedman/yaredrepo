@@ -19,12 +19,14 @@ Modos (se ejecuta con: python convertir.py <modo> [opciones]):
               sus filas de diccionario (.csv) y un reporte de verificacion.
 
   contexto    Convierte los materiales de contexto adjuntos como documentos
-              generales: un archivo por tipo (ORG_GEN.md, KPI_GEN.md, GLO_GEN.md...).
+              generales: un archivo por tipo (ORG_GEN.md, GLO_GEN.md, MPR_GEN.md...). Los
+              indicadores (kpi*.csv) se unen en kpis.csv.
 
   construir   Ejecuta el flujo completo: inventario, conversion, contexto opcional,
-              indice consolidado, publicacion en dos skills de Copilot
-              (publicado/corpus-documentos y publicado/corpus-contexto), matriz
-              maestra (xlsx y un CSV por hoja) y validacion automatica.
+              indice consolidado, publicacion en dos carpetas listas para
+              comprimir (salida_corpus/copilot/fuente-documentos y fuente-contexto),
+              matriz maestra (xlsx y un CSV por hoja) y validacion automatica.
+              Los SKILL.md los provee el equipo: el script no los escribe.
 
 El script no modifica los archivos originales. Todo lo que genera queda en la
 carpeta de salida (por defecto: <carpeta de entrada>/salida).

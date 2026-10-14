@@ -59,8 +59,8 @@ class IntegracionTest(unittest.TestCase):
         cls.base = Path(cls.tmp.name)
         generar(cls.base)
         cls.codigo, cls.salida = construir(cls.base)
-        cls.publicado = cls.base / "entrada" / "salida_corpus" / "publicado"
-        with open(cls.publicado / ayuda.DATOS / "indice_corpus.csv", encoding="utf-8-sig") as f:
+        cls.publicado = cls.base / "entrada" / "salida_corpus" / "copilot"
+        with open(cls.publicado / ayuda.INDICE / "indice_corpus.csv", encoding="utf-8-sig") as f:
             cls.indice = {r["codigo"]: r for r in csv.DictReader(f, delimiter=";")}
 
     @classmethod

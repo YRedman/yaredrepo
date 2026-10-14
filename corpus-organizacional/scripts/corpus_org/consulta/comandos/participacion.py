@@ -1,5 +1,6 @@
 from ...comun.errores import CorpusError
 from ...comun.esquema import area_de
+from ...comun.tipos import TIPOS_PROCESO, tipo_de_codigo
 from ...comun.texto import recortar_palabras as recortar
 from ..participacion import calcular_participacion
 from ..salida import resumir_lista
@@ -62,12 +63,13 @@ class Participacion(Comando):
     def ejecutar(self, ctx, args):
         cp, s = ctx.corpus, ctx.salida
         maximo = _detalle(args.detalle)
-        cods = ctx.codigos_objetivo(args.objetivo, "P")
+        # procedimientos (PRD) y protocolos (PRO); las politicas no tienen responsables por paso
+        cods = [c for c in ctx.codigos_objetivo(args.objetivo, "P") if tipo_de_codigo(c) in TIPOS_PROCESO]
         if not cods:
-            raise CorpusError("No hay procedimientos para ese criterio.", 2)
+            raise CorpusError("No hay procedimientos ni protocolos para ese criterio.", 2)
         p = calcular_participacion(cp, cods)
         con_filas = len({f.procedimiento for f in p.filas})
-        s.linea(f"PARTICIPACIÓN · {len(cods)} procedimientos ({con_filas} con puestos identificados) · "
+        s.linea(f"PARTICIPACIÓN · {len(cods)} procedimientos y protocolos ({con_filas} con puestos identificados) · "
                 f"{len(p.filas)} relaciones puesto–procedimiento · calculado sobre TODAS las filas")
         s.linea("Rol según la columna de la tabla o las palabras clave de la oración donde aparece el puesto; "
                 "'probable' = nombre parecido, no idéntico (tratar como [Inferido]).")

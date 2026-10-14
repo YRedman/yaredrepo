@@ -54,10 +54,12 @@ PROC = """## [PRD-PRU-01] Ejecución de pruebas
 
 
 def _corpus(raiz):
-    pub = raiz / "publicado"
-    pub.mkdir(parents=True)
-    (pub / "DES_PRU.md").write_text(DOCS, encoding="utf-8")
-    (pub / "PRD_PRU.md").write_text(PROC, encoding="utf-8")
+    pub = raiz / ayuda.PUBLICADA
+    (pub / ayuda.DOCUMENTOS / "DES").mkdir(parents=True)
+    (pub / ayuda.DOCUMENTOS / "PRD").mkdir(parents=True)
+    (pub / ayuda.INDICE).mkdir(parents=True)
+    (pub / ayuda.DOCUMENTOS / "DES" / "DES_PRU.md").write_text(DOCS, encoding="utf-8")
+    (pub / ayuda.DOCUMENTOS / "PRD" / "PRD_PRU.md").write_text(PROC, encoding="utf-8")
     filas = [{"codigo": "DES-PRU-01", "tipo": "Descriptivo", "departamento": "Pruebas",
               "nombre_puesto": "Coordinador de Pruebas", "archivo_md": "DES_PRU.md"},
              {"codigo": "DES-PRU-02", "tipo": "Descriptivo", "departamento": "Pruebas",
@@ -65,7 +67,7 @@ def _corpus(raiz):
               "detalle_avisos": "OCR en páginas 1: revisar contra el original", "archivo_md": "DES_PRU.md"},
              {"codigo": "PRD-PRU-01", "tipo": "Procedimiento", "departamento": "Pruebas",
               "nombre": "Ejecución de pruebas", "archivo_md": "PRD_PRU.md"}]
-    escribir_csv(pub / "indice_corpus.csv", COLUMNAS_INDICE, filas)
+    escribir_csv(pub / ayuda.INDICE / "indice_corpus.csv", COLUMNAS_INDICE, filas)
     (raiz / "RESUMEN_CONSTRUCCION.md").write_text("- Resultado: **LISTO PARA PUBLICAR**\n", encoding="utf-8")
 
 
@@ -117,6 +119,8 @@ class MatrizTest(unittest.TestCase):
         self.assertEqual(wb.sheetnames[:3], ["Léeme", "Resumen", "Puestos"])
         self.assertEqual(wb["Resumen"]["B2"].value, "=COUNTIF('Puestos'!$B:$B,$A2)")
         self.assertEqual(wb["Funciones"].max_row, 3)
+        self.assertEqual(ruta.parent, self.raiz / ayuda.PUBLICADA / ayuda.MATRIZ)
+        self.assertTrue((ruta.parent / "puestos.csv").is_file() and (ruta.parent / "perfil_requisitos.csv").is_file())
 
 
 class GuardarLibroTest(unittest.TestCase):

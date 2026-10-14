@@ -194,10 +194,10 @@ class PuestosRolesTest(unittest.TestCase):
     def test_aprobacion_y_firma(self):
         self.assertEqual(rol("", "la aprobación del gerente", ""), "Aprueba")
         self.assertEqual(rol("", "registrar la firma y preparar la liberación", ""), "Mencionado")
-        self.assertEqual(verbo("Revisa el documento"), "Revisa o verifica")
+        self.assertEqual(verbo("Revisa el documento"), "Aprueba o revisa")
 
     def test_verbo_mas_cercano(self):
-        self.assertEqual(verbo("Compras solicita el material y lo entrega a Almacén", "Almacén"), "Entrega o envía")
+        self.assertEqual(verbo("Compras solicita el material y lo entrega a Almacén", "Almacén"), "Entrega")
 
     def test_rol_libre_de_la_columna_responsable(self):
         self.assertEqual(rol_sin_descriptivo("comité de compras"), "comité de compras")
@@ -230,11 +230,11 @@ class CasosIntegracionTest(unittest.TestCase):
         cls.base = Path(cls.tmp.name)
         generar(cls.base)
         cls.codigo, cls.salida = _construir(cls.base)
-        cls.publicado = cls.base / "entrada" / "salida_corpus" / "publicado"
-        with open(cls.publicado / ayuda.DATOS / "indice_corpus.csv", encoding="utf-8-sig") as f:
+        cls.publicado = cls.base / "entrada" / "salida_corpus" / "copilot"
+        with open(cls.publicado / ayuda.INDICE / "indice_corpus.csv", encoding="utf-8-sig") as f:
             filas = list(csv.DictReader(f, delimiter=";"))
         cls.por_archivo = {(r["codigo_departamento"], r["archivo_origen"]): r for r in filas}
-        cls.inventario = (cls.publicado / ayuda.DATOS / "inventario_maestro.csv").read_text(encoding="utf-8-sig")
+        cls.inventario = (cls.publicado / ayuda.INDICE / "inventario_maestro.csv").read_text(encoding="utf-8-sig")
 
     @classmethod
     def tearDownClass(cls):
@@ -264,7 +264,7 @@ class CasosIntegracionTest(unittest.TestCase):
         self.assertNotIn("¿Aprobada?", md)
 
     def test_contexto_md_y_csv(self):
-        md = "\n".join(p.read_text(encoding="utf-8") for p in (self.publicado / ayuda.DATOS).glob("*_GEN.md"))
+        md = "\n".join(p.read_text(encoding="utf-8") for p in (self.publicado / ayuda.CONTEXTO).glob("*_GEN.md"))
         self.assertIn("| RRHH | Recursos Humanos |", md)
         self.assertIn("| I-01 | Tiempo de entrega | 5 días |", md)
 

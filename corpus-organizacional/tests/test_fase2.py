@@ -143,26 +143,27 @@ class EntidadesTest(unittest.TestCase):
 class VerboEnTablaTest(unittest.TestCase):
     def test_verbo_de_la_celda_de_la_mencion(self):
         fila = "| 4 | Entregar la mercancía a Almacén | coordinadores de logística |"
-        self.assertEqual(verbo(fila, "Almacén"), "Entrega o envía")
-        self.assertEqual(verbo("| 2 | Almacén | Revisar el pedido |", "Almacén"), "Revisa o verifica")
+        self.assertEqual(verbo(fila, "Almacén"), "Entrega")
+        self.assertEqual(verbo("| 2 | Almacén | Revisar el pedido |", "Almacén"), "Aprueba o revisa")
 
 
 class HuellasTest(unittest.TestCase):
     def test_detecta_modificaciones(self):
         with tempfile.TemporaryDirectory() as tmp:
             publicado = Path(tmp)
-            datos, docs = publicado / ayuda.DATOS, publicado / ayuda.DOCUMENTOS / "DES"
+            contexto = publicado / "fuente-contexto"
+            datos, docs = publicado / ayuda.INDICE, publicado / ayuda.DOCUMENTOS / "DES"
             datos.mkdir(parents=True)
             docs.mkdir(parents=True)
             (docs / "DES_COM.md").write_text("original", encoding="utf-8")
             (datos / "indice_corpus.csv").write_text("codigo\n", encoding="utf-8")
             escribir_huellas(publicado)
-            self.assertTrue(verificar_huellas(datos).correcto)
+            self.assertTrue(verificar_huellas(contexto).correcto)
             (docs / "DES_COM.md").write_text("editado a mano", encoding="utf-8")
             (datos / "indice_corpus.csv").unlink()
-            r = verificar_huellas(datos)
+            r = verificar_huellas(contexto)
         self.assertEqual((r.modificados, r.faltantes),
-                         (["corpus-documentos/DES/DES_COM.md"], ["corpus-contexto/datos/indice_corpus.csv"]))
+                         (["fuente-documentos/DES/DES_COM.md"], ["fuente-contexto/indice/indice_corpus.csv"]))
 
 
 def _construir(base, *extra):
@@ -191,7 +192,7 @@ class Fase2IntegracionTest(unittest.TestCase):
         cls.base = Path(cls.tmp.name)
         generar(cls.base)
         cls.raiz = cls.base / "entrada" / "salida_corpus"
-        cls.publicado = cls.raiz / "publicado"
+        cls.publicado = cls.raiz / "copilot"
         cls.codigo, cls.salida = _construir(cls.base)
 
     @classmethod
@@ -214,11 +215,11 @@ class Fase2IntegracionTest(unittest.TestCase):
         self.assertIn("corpus completo: sí", out)
 
     def test_2_datos_de_contexto_publicados(self):
-        datos = self.publicado / ayuda.DATOS
-        self.assertTrue((datos / "kpis.csv").is_file())
-        self.assertTrue((datos / "areas_extra.csv").is_file())
-        contexto = "\n".join(p.read_text(encoding="utf-8") for p in datos.glob("*_GEN.md"))
+        self.assertTrue((self.publicado / ayuda.CONTEXTO / "kpis.csv").is_file())
+        self.assertTrue((self.publicado / ayuda.INDICE / "areas_extra.csv").is_file())
+        contexto = "\n".join(p.read_text(encoding="utf-8") for p in (self.publicado / ayuda.CONTEXTO).glob("*_GEN.md"))
         self.assertTrue(contexto)
+        self.assertFalse((self.publicado / ayuda.CONTEXTO / "KPI_GEN.md").exists())
         self.assertNotIn("areas_extra", contexto)
 
     def test_3_kpis(self):
@@ -248,9 +249,9 @@ class Fase2IntegracionTest(unittest.TestCase):
     def test_6_briefing(self):
         _, out = _consultar(self.publicado, "briefing", "Compras")
         self.assertIn("# Briefing: Compras (COM) · parte 1 de 1", out)
-        self.assertIn("Cobertura: 3/3 descriptivos de puesto · 1/1 procedimientos", out)
-        for seccion in ("## 2. Puestos", "## 3. Procedimientos", "## 5. Relaciones", "## 7. Información no documentada",
-                        "## Indicadores cuyos términos aparecen"):
+        self.assertTrue(out.startswith("Partes: 1\nCobertura: DES 3/3 · PRD 1/1 · PRO 0/0 · POL 0/0 · GEN pertinentes: 0\n"))
+        for seccion in ("## Puestos (DES)", "## Procedimientos (PRD)", "## Relaciones", "## No documentado",
+                        "## Indicadores relacionados"):
             self.assertIn(seccion, out)
         codigo, _ = _consultar(self.publicado, "briefing", "Compras", "--parte", "2")
         self.assertEqual(codigo, 2)
@@ -258,7 +259,7 @@ class Fase2IntegracionTest(unittest.TestCase):
     def test_7_huellas_detectan_cambios_y_codigos_estables(self):
         (self.publicado / ayuda.DOCUMENTOS / "DES" / "DES_COM.md").write_text("editado", encoding="utf-8")
         _, out = _consultar(self.publicado, "verificar")
-        self.assertIn("Archivos modificados después de la conversión: corpus-documentos/DES/DES_COM.md", out)
+        self.assertIn("Archivos modificados después de la conversión: fuente-documentos/DES/DES_COM.md", out)
         # retirar un documento y volver a construir: los demás conservan su código
         antes = self._inventario()
         lista = self.base / "entrada" / "lista.txt"
@@ -275,7 +276,7 @@ class Fase2IntegracionTest(unittest.TestCase):
         self.assertIn(f"códigos retirados del inventario (reservados): {retirado[0]}", out)
 
     def _inventario(self):
-        with open(self.publicado / ayuda.DATOS / "inventario_maestro.csv", encoding="utf-8-sig") as f:
+        with open(self.publicado / ayuda.INDICE / "inventario_maestro.csv", encoding="utf-8-sig") as f:
             return {(r["codigo_departamento"], r["archivo"]): (r["codigo"], r["estado_inventario"])
                     for r in csv.DictReader(f, delimiter=";")}
 
