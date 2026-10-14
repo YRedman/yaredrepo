@@ -146,6 +146,19 @@ def _con_palabra(texto, palabras):
     return any(re.search(rf"(?<!\w){re.escape(p)}", n) for p in palabras)
 
 
+def tipos_candidatos(nombre):
+    """Todos los tipos que un nombre de carpeta o archivo indica, en el orden de la tabla (puede haber varios:
+    «Políticas y procedimientos» es POL y PRD; «Estructura organizacional y descriptivos» es ORG y DES)."""
+    res = []
+    for td in TIPOS_DOCUMENTO:
+        if td.general:
+            if td.codigo in TIPOS_GENERALES and tipo_general_de(nombre) == td.codigo:
+                res.append(td.codigo)
+        elif _con_palabra(nombre, td.palabras) or tipo_de_carpeta(nombre) == td.codigo:
+            res.append(td.codigo)
+    return res
+
+
 def tipo_de_material(nombre_archivo_o_carpeta):
     """Tipo de un material de la carpeta de contexto (subcarpeta o nombre de archivo).
 

@@ -63,6 +63,21 @@ class TiposTest(unittest.TestCase):
             "Protocolo de emergencias", "Mapa de procesos", "Organigrama", "Fichas de proceso", "notas")],
             ["PRD", "PRD", "POL", "PRO", "MPR", "ORG", "PRD", None])
 
+    def test_carpeta_con_varios_tipos_decide_el_nombre_del_archivo(self):
+        from corpus_org.conversion.inventario import clasificar_material
+        raiz = Path("/c")
+        casos = {
+            "12 Políticas y procedimientos relevantes/Política de compras.pdf": ("POL", ""),
+            "12 Políticas y procedimientos relevantes/Compras/Procedimiento de pedidos.pdf": ("PRD", "Compras"),
+            "Estructura Organizacional y Descriptivos de Puestos/Organigrama 2026.pdf": ("ORG", ""),
+            "Estructura Organizacional y Descriptivos de Puestos/Perfil de analista.pdf": ("DES", ""),
+            "Estructura Organizacional y Descriptivos de Puestos/1. ANALISTA.pdf": ("ORG", ""),   # sin pista: general
+            "9 Mapa de procesos o macroprocesos/Mapa.pdf": ("MPR", ""),
+            "PMO/Plan.pdf": ("CTX", ""),
+        }
+        for ruta, esperado in casos.items():
+            self.assertEqual(clasificar_material(raiz / ruta, raiz), esperado, ruta)
+
     def test_carpetas_y_contexto(self):
         self.assertEqual([tipo_de_carpeta(x) for x in ("Descriptivos", "Procedimientos", "Políticas", "Protocolos")],
                          ["DES", "PRD", "POL", "PRO"])
@@ -289,6 +304,11 @@ class DosSkillsIntegracionTest(unittest.TestCase):
         proc(carpetas["fichas"] / "Ficha de proceso de auditoría.docx", "Código: FP-CAL-001",
              "Auditar los procesos.", pasos, [])
         proc(ctx / "Reglamento interno.docx", "Código: RG-001", "Normar la convivencia.", pasos, [])
+        # formatos que no se leen, un .zip y un descriptivo que ya esta en la entrada (mismo nombre)
+        (ctx / "Plan.pptx").write_bytes(b"x")
+        (ctx / "Carga laboral.xlsx").write_bytes(b"x")
+        (ctx / "todo.zip").write_bytes(b"x")
+        desc(ctx / "Jefe de Seguridad.docx", "Jefe de Seguridad", "Gerente General", "Proteger.", ["Rondas."], "Código: DP-SEG-01")
         g = docx.Document()
         g.add_paragraph("Gerente General -> Jefe de Seguridad")
         g.save(carpetas["org"] / "Seguridad.docx")
@@ -308,6 +328,15 @@ class DosSkillsIntegracionTest(unittest.TestCase):
         self.assertIn("Reglamento interno.docx;", areas)          # quedo en General: se agrega con el area vacia
         self.assertNotIn("Ficha de proceso de auditoría", areas)    # ya tiene area (su subcarpeta)
         self.assertIn("quedan en «General» (GEN)", self.salida)
+
+    def test_formatos_no_soportados_y_repetidos_de_la_entrada(self):
+        self.assertIn("3 archivos de la carpeta de contexto no se leen", self.salida)
+        self.assertIn(".zip ×1", self.salida)
+        self.assertIn("descomprímalo", self.salida)
+        lista = (self.base / "entrada" / "salida_corpus" / "control" / "archivos_no_leidos.csv").read_text("utf-8-sig")
+        self.assertIn("Plan.pptx", lista)
+        self.assertIn("ya están en la entrada (mismo nombre)", self.salida)
+        self.assertEqual(sum(1 for r in self.indice.values() if r["archivo_origen"] == "Jefe de Seguridad.docx"), 1)
 
     def test_construccion(self):
         self.assertEqual(self.codigo, 0, self.salida)
