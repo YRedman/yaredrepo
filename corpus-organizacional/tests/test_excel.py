@@ -143,8 +143,8 @@ class FormatoRealTest(unittest.TestCase):
             self.assertEqual(formato_real(t / "c.csv"), ".ole")
             self.assertEqual(formato_real(t / "d.csv"), ".pptx")
             with self.assertRaises(RuntimeError) as e:
-                extractor_para(t / "d.csv")
-            self.assertIn("PowerPoint", str(e.exception))
+                extractor_para(t / "c.csv")
+            self.assertIn("Office antiguo", str(e.exception))
 
 
 @unittest.skipUnless(OCR, "faltan Tesseract (spa), pytesseract o Pillow")

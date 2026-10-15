@@ -3,7 +3,7 @@
 import zipfile
 from pathlib import Path
 
-DESCRIPCION_FORMATOS = {".pptx": "una presentación de PowerPoint", ".zip": "un archivo comprimido",
+DESCRIPCION_FORMATOS = {".zip": "un archivo comprimido",
                         ".ole": "un archivo de Office antiguo (.doc, .xls, .ppt)"}
 
 
@@ -50,6 +50,9 @@ def extractor_para(path, verificacion_cruzada=True):
     if ext == ".docx":
         from .word import ExtractorDocx
         return ExtractorDocx()
+    if ext == ".pptx":
+        from .pptx import ExtractorPptx
+        return ExtractorPptx()
     if ext in (".xlsx", ".xlsm"):
         from .excel import ExtractorExcel
         return ExtractorExcel()

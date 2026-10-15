@@ -28,6 +28,17 @@ def _ubicar_faltantes(faltan, lineas_diag):
     return origen, ejemplos
 
 
+def _fragmentos(palabras, minimo=3):
+    """Principios y finales (de ``minimo`` letras o mas) de las palabras: lo que queda de una palabra partida."""
+    res = set()
+    for w in palabras:
+        for i in range(1, len(w) - minimo + 1):
+            res.add(w[i:])
+        for j in range(minimo, len(w)):
+            res.add(w[:j])
+    return res
+
+
 def verificar(doc, bloques, analisis, cuerpo_md):
     """Compara el texto del original con el Markdown generado."""
     texto = re.sub(r"(?m)^#+\s", " ", RE_MARCAS.sub(" ", cuerpo_md))
@@ -52,7 +63,8 @@ def verificar(doc, bloques, analisis, cuerpo_md):
     cruz = []
     if doc.texto_cruzado is not None:
         base = set(doc.crudo) | doc.crudo_encabezado | set(analisis.excluidos)
-        cruz = sorted(t for t in doc.texto_cruzado - base if len(t) > 2 and not t.isdigit())
+        partes = _fragmentos(base)       # "atriz" de "M atriz": el segundo motor parte la palabra, no es otra palabra
+        cruz = sorted(t for t in doc.texto_cruzado - base if len(t) > 2 and not t.isdigit() and t not in partes)
     numeros_faltan = +((doc.numeros - analisis.excluidos_numeros) - numeros(texto))
     return Verificacion(total=total, faltan=faltan, cobertura=cobertura, agregadas=agregadas, cruz=cruz,
                         origen=origen, ejemplos=ejemplos, numeros_faltan=numeros_faltan)

@@ -134,5 +134,26 @@ class CopiasDelContextoTest(unittest.TestCase):
         self.assertFalse(any("distinto" in a for a in avisos if "Mapa" in a))
 
 
+class RepetidosTest(unittest.TestCase):
+    def test_un_parrafo_que_vuelve_en_otra_pagina_no_es_un_duplicado_de_conversion(self):
+        from corpus_org.conversion.analisis import avisos_de_estructura
+        frase = "Este documento es confidencial y no puede reproducirse sin autorizacion."
+        otras = [{"k": "p", "texto": f"Contenido distinto de la diapositiva numero {k} del documento.", "pagina": k}
+                 for k in range(1, 6)]
+        en_paginas = [{"k": "p", "texto": frase, "pagina": 0}] + otras + [{"k": "p", "texto": frase, "pagina": 7}]
+        self.assertFalse(any("repetidos" in a for a in avisos_de_estructura(en_paginas, 0)))
+        misma_pagina = [{"k": "p", "texto": frase, "pagina": 2}, {"k": "p", "texto": frase, "pagina": 2}]
+        self.assertTrue(any("repetidos" in a for a in avisos_de_estructura(misma_pagina, 0)))
+        seguidos = [{"k": "p", "texto": frase, "pagina": 2}, {"k": "p", "texto": frase, "pagina": 3}]
+        self.assertTrue(any("repetidos" in a for a in avisos_de_estructura(seguidos, 0)))
+
+    def test_el_segundo_motor_no_marca_fragmentos_de_palabras_enteras(self):
+        from corpus_org.conversion.verificacion import _fragmentos
+        partes = _fragmentos({"matriz", "comerciales"})
+        self.assertIn("atriz", partes)
+        self.assertIn("ciales", partes)
+        self.assertNotIn("zzz", partes)
+
+
 if __name__ == "__main__":
     unittest.main()

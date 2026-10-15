@@ -8,7 +8,6 @@ documento, un organigrama) se leen con OCR y quedan bajo una marca, igual que en
 import collections
 import datetime
 import io
-import re
 import zipfile
 from pathlib import Path
 
@@ -16,11 +15,9 @@ from ...comun.esquema import RE_MARCAS
 from ...comun.texto import numeros, tokens
 from ..modelo import DocumentoExtraido, bloque_h
 from .base import Extractor
-from .maquetacion import agrupar_filas, bloques_desde_items
-from .ocr_pagina import CONFIANZA_OBJETIVO
+from .imagenes import es_imagen_de_contenido, texto_de_imagen
 
 MAX_IMAGENES_LIBRO = 20      # imagenes del libro cuyo texto se lee con OCR
-MIN_PALABRAS_IMAGEN = 6      # palabras de 4+ letras para considerar que una imagen trae texto
 FILAS_HOJA_GRANDE = 3000     # a partir de aqui se avisa en las notas que la hoja es grande
 
 
@@ -116,12 +113,14 @@ class ExtractorExcel(Extractor):
                 textos += [c for f in tabla for c in f]
                 if len(tabla) > FILAS_HOJA_GRANDE:
                     d.notas.append(f"La hoja «{ws.title}» tiene {len(tabla)} filas: considere resumirla.")
-            for k, datos in enumerate(imagenes, 1):
+            for datos in imagenes:
+                if not es_imagen_de_contenido(datos):
+                    continue
                 if imagenes_leidas >= MAX_IMAGENES_LIBRO:
                     d.imagenes_omitidas += 1
                     continue
                 imagenes_leidas += 1
-                self._imagen(d, bloques, ws.title, n, k, datos)
+                texto_de_imagen(d, bloques, f"LA HOJA «{ws.title}»", n, datos)
             charts = len(getattr(ws, "_charts", []))
             if charts:
                 d.notas.append(f"La hoja «{ws.title}» tiene {charts} gráfico(s): no se leen.")
@@ -157,42 +156,3 @@ class ExtractorExcel(Extractor):
                     if isinstance(cf.value, str) and cf.value.startswith("=") and cv.value is None:
                         total += 1
         return total
-
-    @staticmethod
-    def _imagen(d, bloques, hoja, n_hoja, k, datos):
-        """Lee con OCR el texto de una imagen de la hoja y lo agrega bajo su marca."""
-        from .ocr import configurar_pytesseract, idioma_ocr
-        marca = f"[IMAGEN EN LA HOJA «{hoja}»"
-        idioma = idioma_ocr()
-        if not idioma:
-            d.imagenes_omitidas += 1
-            bloques.append({"k": "marca", "texto": marca + ": no se pudo leer (falta OCR); ver el Excel original]"})
-            return
-        try:
-            from PIL import Image
-            from .ocr_pagina import leer_imagen
-            from .pdf import palabras_ocr
-            res = leer_imagen(Image.open(io.BytesIO(datos)), idioma, configurar_pytesseract())
-        except Exception as e:
-            d.notas.append(f"OCR de una imagen falló en la hoja «{hoja}»: {e}")
-            bloques.append({"k": "marca", "texto": marca + "; ver el Excel original]"})
-            return
-        utiles = sum(1 for L in res.lineas for _ in re.findall(r"[^\W\d_]{4,}", L["texto"]))
-        if utiles < MIN_PALABRAS_IMAGEN:
-            d.diagramas.append(n_hoja)
-            bloques.append({"k": "marca", "texto": marca + "; sin texto legible, ver el Excel original]"})
-            return
-        d.paginas_ocr.append(n_hoja)
-        d.idioma_ocr = idioma
-        d.confianzas_ocr += res.confianzas
-        d.crudo_ocr |= palabras_ocr([L["texto"] for L in res.lineas])
-        bloques.append({"k": "marca", "texto": marca + f": texto leído con OCR (confianza {res.confianza:.0f} %), "
-                                                       "revisar contra el original]"})
-        filas = agrupar_filas(res.lineas)
-        for f in filas:
-            f["pagina"] = 0
-            f["ocr"] = True
-        bloques += [b for b in bloques_desde_items(filas)]
-        if res.confianza < CONFIANZA_OBJETIVO:
-            d.avisos.append(f"la imagen de la hoja «{hoja}» se leyó con {res.confianza:.0f} % de confianza "
-                            f"(menos de {CONFIANZA_OBJETIVO:.0f} %): revise el original")
