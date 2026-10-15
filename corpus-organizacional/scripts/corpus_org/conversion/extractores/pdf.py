@@ -246,6 +246,23 @@ def _valor_celda_combinada(i, j, filas, filas_bbox):
     return arriba.replace(MARCA_COMBINADA, "") + MARCA_COMBINADA
 
 
+MIN_CARACTERES_REPETIDA = 20     # una celda mas corta ("N/A", "Equipo interdisciplinario") puede repetirse de verdad
+
+
+def _quitar_celdas_repetidas(filas):
+    """Vacia la celda que repite el texto de la de su izquierda en la misma fila.
+
+    Una celda con un rectangulo interior (relleno de color con margen) la reconoce PyMuPDF dos veces, la grande
+    y la interior, y el texto sale en dos columnas; la columna sobrante queda vacia y ``_unir_columnas_corridas``
+    la une con la vecina."""
+    for f in filas:
+        for j in range(1, len(f)):
+            t = norm(f[j].replace(MARCA_COMBINADA, ""))
+            if len(t) >= MIN_CARACTERES_REPETIDA and t == norm(f[j - 1].replace(MARCA_COMBINADA, "")):
+                f[j] = ""
+    return filas
+
+
 def _quitar_vacias(filas, ncol):
     filas = [f for f in filas if any(c.strip() for c in f)]
     if filas:
@@ -432,7 +449,7 @@ def _tabla_desde_fitz(t, palabras=None, bordes=None):
             v = fila[j] if j < len(fila) else None
             nueva.append(_valor_celda_combinada(i, j, filas, filas_bbox) if v is None else limpiar_celda(v))
         filas.append(nueva)
-    filas = _quitar_vacias(filas, ncol)
+    filas = _quitar_vacias(_quitar_celdas_repetidas(filas), ncol)
     primera = next((r for r in filas_bbox if r), None)
     xs = [round(c[0]) for c in primera if c is not None] if primera else []
     return filas, xs, limites
@@ -477,20 +494,41 @@ def _formas_con_texto(page, lineas, rect_tablas, w, h):
 
 
 ALTO_BANDA = (18, 45)
+ALTO_BANDA_DELGADA = 10      # la plantilla GECA-ATTA-FOR-034 usa bandas de ~13 pt: solo cuentan con un titulo centrado en negrita
 MAX_SEPARACION_PRIMERA_FILA = 30   # puntos entre el encabezado de la pagina y la fila de continuacion de una caja
 MAX_SEPARACION_FILAS = 10
 MARGEN_SEPARADOR = 8
 
 
-def _rects_banda(page, w):
+def _sin_anidadas(rects):
+    """Quita los rectangulos contenidos en otro mas grande (la banda dibuja un rectangulo interior para el titulo)."""
+    return [b for b in rects
+            if not any(o is not b and abs(o) > abs(b) and o.x0 - 6 <= b.x0 and b.x1 <= o.x1 + 6
+                       and o.y0 - 6 <= b.y0 and b.y1 <= o.y1 + 6 for o in rects)]
+
+
+def _es_alto_de_banda(r, lineas):
+    """Altura de una banda de titulo: 18-45 pt, o 10-18 pt si trae un titulo en negrita centrado (asi una fila con
+    relleno de color de la misma altura no se confunde con una banda)."""
+    if ALTO_BANDA[0] <= r.height <= ALTO_BANDA[1]:
+        return True
+    if not ALTO_BANDA_DELGADA <= r.height < ALTO_BANDA[0]:
+        return False
+    centro = (r.x0 + r.x1) / 2
+    return any(l.get("bold") and _dentro(l, r, 0) and abs((l["x0"] + l["x1"]) / 2 - centro) <= 0.08 * r.width
+               for l in lineas)
+
+
+def _rects_banda(page, w, lineas=()):
     """Rectangulos de color de una pagina con forma de banda de titulo (ancho, alto y relleno de las cajas)."""
     try:
         dibujos = page.get_drawings()
     except Exception:
         return []
-    return [dr["rect"] for dr in dibujos
-            if dr.get("rect") is not None and 0.4 * w <= dr["rect"].width <= 0.95 * w
-            and ALTO_BANDA[0] <= dr["rect"].height <= ALTO_BANDA[1] and dr.get("fill") not in (None, (0.0, 0.0, 0.0))]
+    return _sin_anidadas([dr["rect"] for dr in dibujos
+                          if dr.get("rect") is not None and 0.4 * w <= dr["rect"].width <= 0.95 * w
+                          and _es_alto_de_banda(dr["rect"], lineas)
+                          and dr.get("fill") not in (None, (0.0, 0.0, 0.0))])
 
 
 class _FilasBanda(list):
@@ -545,10 +583,11 @@ def _bandas_apiladas(fitz, page, lineas, rect_tablas, w, corte_sup=0.0, continua
             continue
         if r.height <= 2:
             separadores.append(r)
-        elif ALTO_BANDA[0] <= r.height <= ALTO_BANDA[1] and dr.get("fill") not in (None, (0.0, 0.0, 0.0)) \
+        elif _es_alto_de_banda(r, lineas) and dr.get("fill") not in (None, (0.0, 0.0, 0.0)) \
                 and r.width <= 0.95 * w:
             if not any(abs(b.y0 - r.y0) < 2 and abs(b.x0 - r.x0) < 2 for b in bandas):
                 bandas.append(r)
+    bandas = _sin_anidadas(bandas)
     bandas.sort(key=lambda r: r.y0)
     res = []
     for k, b in enumerate(bandas):
@@ -910,7 +949,7 @@ class _ExtraccionPDF:
         h, w = self.alturas[i], self.anchos[i]
         corte_sup, corte_inf, enc_lineas = self._encabezado_y_pie(i, page, lineas, h, w)
         tablas = self._tablas(i, page, self.fitz.Rect(0, corte_sup, w, corte_inf))
-        self.bandas_pagina = _rects_banda(page, w)
+        self.bandas_pagina = _rects_banda(page, w, lineas)
         ids_enc_tab = {id(l) for l in enc_lineas}
         tablas += _bandas_apiladas(self.fitz, page, [l for l in lineas if id(l) not in ids_enc_tab],
                                    [r for r, _, _ in tablas], w, corte_sup, self._termina_en_banda(i - 1))
@@ -997,8 +1036,8 @@ class _ExtraccionPDF:
                 continue
             if l["y0"] > fondo + SEPARACION_VALOR_ENCABEZADO or l["y1"] > ZONA_SUPERIOR * h:
                 break
-            if len(re.findall(r"[A-Za-z]", l["texto"])) < 3 and l["y1"] - fondo < 14:
-                fondo = l["y1"]
+            if len(re.findall(r"[A-Za-z]", l["texto"])) < 3 and l["y1"] - l["y0"] <= 16:
+                fondo = l["y1"]       # el valor ocupa su propia linea (no importa lo alta que quede bajo la etiqueta)
         return fondo
 
     def _guardar_encabezado(self, page, enc_lineas, corte_sup, corte_inf, w, h):

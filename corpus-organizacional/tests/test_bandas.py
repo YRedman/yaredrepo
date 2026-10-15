@@ -28,14 +28,19 @@ from corpus_org.conversion.extractores import extractor_para
 AZUL, CLARO = (0.584, 0.702, 0.843), (0.706, 0.776, 0.906)
 
 
-def _banda(c, y_arriba, titulo, filas, x0=72, x1=561):
-    """Dibuja una banda de color con el titulo y filas de texto separadas por una linea fina. Devuelve la y final."""
+def _banda(c, y_arriba, titulo, filas, x0=72, x1=561, alto=29, interior=False):
+    """Dibuja una banda de color con el titulo y filas de texto separadas por una linea fina. Devuelve la y final.
+
+    ``alto`` 13 reproduce la plantilla de bandas delgadas; ``interior`` agrega el rectangulo interior que dibuja
+    esa plantilla alrededor del titulo."""
     c.setFillColorRGB(*AZUL)
-    c.rect(x0, y_arriba - 29, x1 - x0, 29, stroke=0, fill=1)
+    c.rect(x0, y_arriba - alto, x1 - x0, alto, stroke=0, fill=1)
+    if interior:
+        c.rect(x0 + 5, y_arriba - alto, x1 - x0 - 10, alto - 2, stroke=0, fill=1)
     c.setFillColorRGB(0, 0, 0)
     c.setFont("Helvetica-Bold", 10)
-    c.drawCentredString((x0 + x1) / 2, y_arriba - 19, titulo)
-    y = y_arriba - 29
+    c.drawCentredString((x0 + x1) / 2, y_arriba - alto + (alto - 10) / 2 + 1, titulo)
+    y = y_arriba - alto
     for texto in filas:
         c.setFont("Helvetica", 10)
         c.drawString(x0 + 6, y - 12, texto)
@@ -134,6 +139,59 @@ class BandasTest(unittest.TestCase):
         self.assertIn([["Firma de Aprobacion"], ["Director del area"]], tablas)
         self.assertFalse(any("tabla partida" in a for a in d.avisos), d.avisos)
 
+    def test_bandas_delgadas_con_rectangulo_interior_son_una_sola_caja(self):
+        def pagina(c):
+            c.setFont("Helvetica", 10)
+            c.drawString(72, 740, "Texto de apertura del documento.")
+            y = _banda(c, 600, "Accesos a Sistemas", ["Office 365", "Licencia SAP"], alto=13, interior=True)
+            _banda(c, y - 24, "Herramientas de Trabajo", ["Laptop", "Flota"], alto=13, interior=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "delgadas.pdf"
+            _pdf(ruta, [pagina])
+            d, _ = _extraer(ruta)
+        tablas = [b["filas"] for b in d.bloques if b["k"] == "tabla"]
+        self.assertIn([["Accesos a Sistemas"], ["Office 365"], ["Licencia SAP"]], tablas)
+        self.assertIn([["Herramientas de Trabajo"], ["Laptop"], ["Flota"]], tablas)
+        self.assertFalse(d.avisos, d.avisos)
+
+    def test_encabezado_con_valor_bajo_su_etiqueta_no_se_cuela_entre_tablas_partidas(self):
+        """La fecha y el «2 de 3» bajo «Vigencia:» y «Pagina:» son encabezado aunque no tengan letras."""
+        def con_encabezado(n, cuerpo):
+            def pagina(c):
+                c.setFont("Helvetica-Bold", 14)
+                c.drawString(200, 760, "Descripcion de Puesto y Perfil por Competencias")
+                c.setFont("Helvetica", 9)
+                c.drawString(450, 745, "Codigo: GGH-FOR-040")
+                c.drawString(450, 730, "Vigencia:")
+                c.drawString(450, 715, "23/10/2023")
+                c.drawString(520, 730, "Pagina:")
+                c.drawString(522, 715, f"{n} de 3")
+                cuerpo(c)
+            return pagina
+
+        def p1(c):
+            _banda(c, 300, "Caracteristicas Especiales", ["Disponibilidad para viajar"], alto=13, interior=True)
+
+        def p2(c):
+            c.setFont("Helvetica", 10)
+            c.drawString(78, 695, "Disponibilidad para movilizarse")
+            c.setStrokeColorRGB(*CLARO)
+            c.line(72, 690, 561, 690)
+            _banda(c, 650, "Firma de Aprobacion", ["Director del area"], alto=13, interior=True)
+
+        def p3(c):
+            c.setFont("Helvetica", 10)
+            c.drawString(72, 600, "Texto final del documento.")
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "encabezado.pdf"
+            _pdf(ruta, [con_encabezado(1, p1), con_encabezado(2, p2), con_encabezado(3, p3)])
+            d, _ = _extraer(ruta)
+        tablas = [b["filas"] for b in d.bloques if b["k"] == "tabla"]
+        self.assertIn([["Caracteristicas Especiales"], ["Disponibilidad para viajar"],
+                       ["Disponibilidad para movilizarse"]], tablas)
+        self.assertIn([["Firma de Aprobacion"], ["Director del area"]], tablas)
+        self.assertFalse(d.avisos, d.avisos)
+
     def test_parrafo_con_letra_mayor_al_cuerpo_no_se_vuelve_titulo(self):
         def pagina(c):
             c.setFont("Helvetica", 10)
@@ -174,6 +232,18 @@ class IndiceTest(unittest.TestCase):
             self.assertIn(n, texto)
         self.assertEqual(sum(1 for b in d.bloques if b["k"] == "h" and "Alcance" in b["texto"]
                              and "Objetivo" in b["texto"]), 0)
+
+
+class CeldasRepetidasTest(unittest.TestCase):
+    def test_la_celda_interior_que_repite_a_la_grande_se_vacia_y_las_columnas_se_unen(self):
+        from corpus_org.conversion.extractores.pdf import _quitar_celdas_repetidas, _quitar_vacias
+        largo = "Administrar el control estadistico del proceso de levantamiento"
+        filas = [["FUNCIONES", "", "EVIDENCIA"], [largo, largo, "Informe"], ["", "Coordinar la evaluacion de puestos", "Escala"],
+                 ]
+        r = _quitar_vacias(_quitar_celdas_repetidas(filas), 3)
+        self.assertEqual(r[1], [largo, "Informe"])
+        self.assertEqual(r[2], ["Coordinar la evaluacion de puestos", "Escala"])
+        self.assertEqual(_quitar_celdas_repetidas([["N/A", "N/A", "N/A"]]), [["N/A", "N/A", "N/A"]])   # datos reales
 
 
 class CeldaSinBordeTest(unittest.TestCase):
