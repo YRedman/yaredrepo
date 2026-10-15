@@ -12,7 +12,7 @@ from ..modelo import DocumentoExtraido
 from .base import Extractor
 from ..secciones import clave_titulo, es_seccion_conocida
 from .ocr import configurar_pytesseract, idioma_ocr
-from .ocr_pagina import leer_pagina
+from .ocr_pagina import CONFIANZA_OBJETIVO, leer_pagina, leer_region
 from .maquetacion import agrupar_filas, bloques_desde_items
 
 RE_PATRON_ENC = re.compile(r"(p[aá]gina\s*\d+\s*(de|/)\s*\d+|\bversi[oó]n\s*:|\brevisi[oó]n\s*:|c[oó]digo\s*:|"
@@ -74,6 +74,8 @@ def _lineas_pagina(page, fitz):
 RAZON_PLIEGO = (1.38, 1.75)     # ancho/alto de dos paginas de libro lado a lado (A4: 1.41, carta: 1.55)
 ANCHO_CANAL = 4.0               # puntos a cada lado del centro donde no debe cruzar texto
 MAX_CRUZAN_CANAL = 0.03         # fraccion de lineas que pueden cruzar el centro
+MAX_IMAGENES_OCR = 30           # imagenes grandes por documento cuyo texto se lee con OCR
+MIN_PALABRAS_IMAGEN = 6         # palabras de 4+ letras para considerar que una imagen trae texto
 MIN_PALABRAS_OCR = 8            # palabras de 4+ letras que debe leer el OCR para tratar la pagina como texto
 MIN_PLIEGOS = 0.6               # fraccion de las paginas apaisadas que deben ser pliegos
 MIN_PLIEGOS_CON_AMBOS = 3       # pliegos con texto en las dos mitades para tratar el PDF como folleto
@@ -244,6 +246,23 @@ def _valor_celda_combinada(i, j, filas, filas_bbox):
     return arriba.replace(MARCA_COMBINADA, "") + MARCA_COMBINADA
 
 
+MIN_CARACTERES_REPETIDA = 20     # una celda mas corta ("N/A", "Equipo interdisciplinario") puede repetirse de verdad
+
+
+def _quitar_celdas_repetidas(filas):
+    """Vacia la celda que repite el texto de la de su izquierda en la misma fila.
+
+    Una celda con un rectangulo interior (relleno de color con margen) la reconoce PyMuPDF dos veces, la grande
+    y la interior, y el texto sale en dos columnas; la columna sobrante queda vacia y ``_unir_columnas_corridas``
+    la une con la vecina."""
+    for f in filas:
+        for j in range(1, len(f)):
+            t = norm(f[j].replace(MARCA_COMBINADA, ""))
+            if len(t) >= MIN_CARACTERES_REPETIDA and t == norm(f[j - 1].replace(MARCA_COMBINADA, "")):
+                f[j] = ""
+    return filas
+
+
 def _quitar_vacias(filas, ncol):
     filas = [f for f in filas if any(c.strip() for c in f)]
     if filas:
@@ -272,11 +291,23 @@ def _unir_columnas_corridas(filas):
     return filas
 
 
-def _palabras_celda(palabras, bbox):
-    """Texto de una celda armado con las palabras de ``get_text("words")`` cuyo centro cae en la celda."""
+def _cajas_de(filas_bbox):
+    """Todas las celdas con caja de una tabla de PyMuPDF."""
+    return [c for fila in filas_bbox for c in fila if c is not None]
+
+
+def _palabras_celda(palabras, bbox, excluir=()):
+    """Texto de una celda armado con las palabras de ``get_text("words")`` cuyo centro cae en la celda.
+
+    ``excluir``: cajas de otras celdas; sus palabras no se toman (solo para celdas sin borde propio)."""
     x0, y0, x1, y1 = bbox
+
+    def en_otra(w):
+        cx, cy = (w[0] + w[2]) / 2, (w[1] + w[3]) / 2
+        return any(c[0] - 1 <= cx <= c[2] + 1 and c[1] - 1 <= cy <= c[3] + 1 for c in excluir)
     sel = sorted((w for w in palabras
-                  if x0 - 1 <= (w[0] + w[2]) / 2 <= x1 + 1 and y0 - 1 <= (w[1] + w[3]) / 2 <= y1 + 1),
+                  if x0 - 1 <= (w[0] + w[2]) / 2 <= x1 + 1 and y0 - 1 <= (w[1] + w[3]) / 2 <= y1 + 1
+                  and not en_otra(w)),
                  key=lambda w: (w[5], w[6], w[7]))
     lineas, clave = [], None
     for w in sel:
@@ -285,6 +316,37 @@ def _palabras_celda(palabras, bbox):
             clave = (w[5], w[6])
         lineas[-1].append(w[4])
     return "\n".join(" ".join(l) for l in lineas)
+
+
+ANCHO_MIN_COLUMNA = 25     # puntos: una columna mas angosta es un hueco entre celdas, no una celda
+
+
+def _celda_sin_borde(filas_bbox, i, j):
+    """Caja de una celda que PyMuPDF no reconocio (sin borde propio) en una fila que si tiene otras celdas.
+
+    Ancho: el de la columna ``j`` en otra fila; alto: el de la fila. Si una celda de arriba en esa columna
+    cubre la fila, la celda esta combinada en vertical y no se inventa nada.
+    """
+    fila = [c for c in filas_bbox[i] if c is not None] if i < len(filas_bbox) else []
+    if not fila:
+        return None
+    y0, y1 = min(c[1] for c in fila), max(c[3] for c in fila)
+    cy = (y0 + y1) / 2
+    for ii in range(i - 1, -1, -1):                      # una celda combinada de arriba cubre esta fila
+        if j < len(filas_bbox[ii]) and filas_bbox[ii][j] is not None:
+            if filas_bbox[ii][j][1] <= cy <= filas_bbox[ii][j][3] + 0.5:
+                return None
+            break
+    columna = next((filas_bbox[k][j] for k in sorted(range(len(filas_bbox)), key=lambda k: abs(k - i))
+                    if j < len(filas_bbox[k]) and filas_bbox[k][j] is not None), None)
+    if columna is None:
+        return None
+    cx = (columna[0] + columna[2]) / 2
+    if any(c[0] - 1 <= cx <= c[2] + 1 for c in fila):    # otra celda de la fila cubre la columna: combinada en horizontal
+        return None
+    if columna[2] - columna[0] < ANCHO_MIN_COLUMNA:
+        return None
+    return (columna[0], y0, columna[2], y1)
 
 
 def _datos_por_palabras(datos, filas_bbox, palabras):
@@ -298,6 +360,11 @@ def _datos_por_palabras(datos, filas_bbox, palabras):
         nueva = []
         for j, v in enumerate(fila):
             bb = filas_bbox[i][j] if i < len(filas_bbox) and j < len(filas_bbox[i]) else None
+            if v is None and bb is None:
+                bb = _celda_sin_borde(filas_bbox, i, j)
+                texto = _palabras_celda(palabras, bb, excluir=_cajas_de(filas_bbox)) if bb is not None else ""
+                nueva.append(texto if texto.strip() else v)
+                continue
             texto = _palabras_celda(palabras, bb) if v is not None and bb is not None else ""
             nueva.append(texto if texto.strip() else v)
         nuevos.append(nueva)
@@ -382,7 +449,7 @@ def _tabla_desde_fitz(t, palabras=None, bordes=None):
             v = fila[j] if j < len(fila) else None
             nueva.append(_valor_celda_combinada(i, j, filas, filas_bbox) if v is None else limpiar_celda(v))
         filas.append(nueva)
-    filas = _quitar_vacias(filas, ncol)
+    filas = _quitar_vacias(_quitar_celdas_repetidas(filas), ncol)
     primera = next((r for r in filas_bbox if r), None)
     xs = [round(c[0]) for c in primera if c is not None] if primera else []
     return filas, xs, limites
@@ -427,11 +494,77 @@ def _formas_con_texto(page, lineas, rect_tablas, w, h):
 
 
 ALTO_BANDA = (18, 45)
+ALTO_BANDA_DELGADA = 10      # la plantilla GECA-ATTA-FOR-034 usa bandas de ~13 pt: solo cuentan con un titulo centrado en negrita
+MAX_SEPARACION_PRIMERA_FILA = 30   # puntos entre el encabezado de la pagina y la fila de continuacion de una caja
 MAX_SEPARACION_FILAS = 10
 MARGEN_SEPARADOR = 8
 
 
-def _bandas_apiladas(fitz, page, lineas, rect_tablas, w):
+def _sin_anidadas(rects):
+    """Quita los rectangulos contenidos en otro mas grande (la banda dibuja un rectangulo interior para el titulo)."""
+    return [b for b in rects
+            if not any(o is not b and abs(o) > abs(b) and o.x0 - 6 <= b.x0 and b.x1 <= o.x1 + 6
+                       and o.y0 - 6 <= b.y0 and b.y1 <= o.y1 + 6 for o in rects)]
+
+
+def _es_alto_de_banda(r, lineas):
+    """Altura de una banda de titulo: 18-45 pt, o 10-18 pt si trae un titulo en negrita centrado (asi una fila con
+    relleno de color de la misma altura no se confunde con una banda)."""
+    if ALTO_BANDA[0] <= r.height <= ALTO_BANDA[1]:
+        return True
+    if not ALTO_BANDA_DELGADA <= r.height < ALTO_BANDA[0]:
+        return False
+    centro = (r.x0 + r.x1) / 2
+    return any(l.get("bold") and _dentro(l, r, 0) and abs((l["x0"] + l["x1"]) / 2 - centro) <= 0.08 * r.width
+               for l in lineas)
+
+
+def _rects_banda(page, w, lineas=()):
+    """Rectangulos de color de una pagina con forma de banda de titulo (ancho, alto y relleno de las cajas)."""
+    try:
+        dibujos = page.get_drawings()
+    except Exception:
+        return []
+    return _sin_anidadas([dr["rect"] for dr in dibujos
+                          if dr.get("rect") is not None and 0.4 * w <= dr["rect"].width <= 0.95 * w
+                          and _es_alto_de_banda(dr["rect"], lineas)
+                          and dr.get("fill") not in (None, (0.0, 0.0, 0.0))])
+
+
+class _FilasBanda(list):
+    """Filas de una caja de una columna (banda con titulo). ``continuacion``: filas sin banda que siguen a la
+    caja con que termina la pagina anterior."""
+    continuacion = False
+
+
+def _filas_de_continuacion(fitz, page, lineas, rect_tablas, separadores, corte_sup, w):
+    """Filas con borde fino al comienzo de la pagina, sin banda de titulo: continuan la caja de la pagina anterior."""
+    en_tabla = lambda l: any(t.contains(fitz.Point((l["x0"] + l["x1"]) / 2, (l["y0"] + l["y1"]) / 2))
+                             for t in rect_tablas)
+    candidatas = sorted((l for l in lineas if l["texto"].strip() and not en_tabla(l)), key=lambda l: (l["y0"], l["x0"]))
+    filas, fila, previo, fin, x0, x1 = [], [], corte_sup, corte_sup, None, None
+    for l in candidatas:
+        limite = MAX_SEPARACION_PRIMERA_FILA if not filas and not fila else MAX_SEPARACION_FILAS
+        if l["y0"] - previo > limite or l.get("bold"):
+            break
+        fila.append(l["texto"].strip())
+        previo = l["y1"]
+        sep = next((s for s in separadores if l["y1"] - 1 <= s.y0 <= l["y1"] + MARGEN_SEPARADOR
+                    and s.x0 <= l["x0"] + 3 and s.x1 >= l["x1"] - 3 and (x0 is None or abs(s.x0 - x0) < 3)), None)
+        if sep is None:
+            continue
+        x0, x1 = sep.x0, sep.x1
+        filas.append([" ".join(fila)])
+        fila, fin = [], sep.y1
+        previo = sep.y1
+    if not filas:
+        return None
+    resultado = _FilasBanda(filas)
+    resultado.continuacion = True
+    return fitz.Rect(x0, corte_sup, x1, fin + 1), resultado, [round(x0)]
+
+
+def _bandas_apiladas(fitz, page, lineas, rect_tablas, w, corte_sup=0.0, continua=False):
     """Cajas de una columna dibujadas como una banda de color con el titulo y, debajo, filas con borde fino.
 
     Son tablas («Accesos a Sistemas», «Herramientas de Trabajo»...) que ``find_tables`` no reconoce: sin esto
@@ -450,10 +583,11 @@ def _bandas_apiladas(fitz, page, lineas, rect_tablas, w):
             continue
         if r.height <= 2:
             separadores.append(r)
-        elif ALTO_BANDA[0] <= r.height <= ALTO_BANDA[1] and dr.get("fill") not in (None, (0.0, 0.0, 0.0)) \
+        elif _es_alto_de_banda(r, lineas) and dr.get("fill") not in (None, (0.0, 0.0, 0.0)) \
                 and r.width <= 0.95 * w:
             if not any(abs(b.y0 - r.y0) < 2 and abs(b.x0 - r.x0) < 2 for b in bandas):
                 bandas.append(r)
+    bandas = _sin_anidadas(bandas)
     bandas.sort(key=lambda r: r.y0)
     res = []
     for k, b in enumerate(bandas):
@@ -482,7 +616,13 @@ def _bandas_apiladas(fitz, page, lineas, rect_tablas, w):
         if not filas:
             continue
         cabecera = " ".join(l["texto"].strip() for l in sorted(titulo, key=lambda l: (l["y0"], l["x0"])))
-        res.append((fitz.Rect(b.x0, b.y0, b.x1, fin + 1), [[cabecera]] + filas, [round(b.x0)]))
+        res.append((fitz.Rect(b.x0, b.y0, b.x1, fin + 1), _FilasBanda([[cabecera]] + filas), [round(b.x0)]))
+    if continua:
+        sobrantes = [l for l in lineas if not any(_dentro(l, r) for r, _, _ in res)]
+        cont = _filas_de_continuacion(fitz, page, sobrantes, rect_tablas + [r for r, _, _ in res], separadores,
+                                      corte_sup, w)
+        if cont is not None:
+            res.insert(0, cont)
     return res
 
 
@@ -634,6 +774,10 @@ def _unir_tablas_continuas(items, d):
         if pb != pa + 1 or any(items[m][0] not in (pa, pb) for m in medio) or not _columnas_compatibles(a, b):
             k += 1
             continue
+        if b.get("banda") and not b.get("continuacion") and [norm(c) for c in b["filas"][0]] != \
+                [norm(c) for c in a["filas"][0]]:
+            k += 1          # otra caja con su propia banda («Firma de Aprobación»), no la continuacion de la anterior
+            continue
         _agregar_continuacion(a, b, d, pb)
         sueltas = [items[m] for m in medio]
         del items[k]
@@ -665,6 +809,8 @@ class _ExtraccionPDF:
         self.claves_guardadas = set()
         self.rects_organigrama = []    # (pagina, rect) de organigramas ya agregados como marca
         self.ocr_idioma = None
+        self.imagenes_leidas = 0
+        self.bandas_pagina = []
         self.paginas_lineas = [_lineas_pagina(p, fitz) for p in doc_pdf]
         self.alturas = [p.rect.height for p in doc_pdf]
         self.anchos = [p.rect.width for p in doc_pdf]
@@ -737,6 +883,11 @@ class _ExtraccionPDF:
         self._marca(i, -1, 0, f"[TEXTO OCR: página {i + 1} escaneada; revisar contra el original]")
         if res is None:
             return
+        if res.mejora and res.mejora != "original":
+            self.d.notas.append(f"Página {i + 1} (OCR): imagen mejorada con {res.mejora}; confianza {res.confianza:.0f} %.")
+        if res.confianza < CONFIANZA_OBJETIVO:
+            self.d.avisos.append(f"p.{i + 1}: página poco legible (OCR {res.confianza:.0f} % < {CONFIANZA_OBJETIVO:.0f} % "
+                                 "aun mejorando la imagen): use una versión digital o un escaneo mejor")
         self.d.crudo_ocr |= palabras_ocr(textos)
         self.d.confianzas_ocr += res.confianzas
         if res.encabezado and not self.encabezado_guardado:
@@ -776,6 +927,18 @@ class _ExtraccionPDF:
                 f["ocr"] = True
                 self.items.append((i, f["y0"], f["x0"], f))
 
+    def _es_caja_con_banda(self, rect, filas):
+        """Tabla de una columna cuya primera fila es una banda de color (caja con titulo)."""
+        if isinstance(filas, _FilasBanda) and not filas.continuacion:
+            return True
+        return (bool(filas) and all(len(f) == 1 for f in filas) and not getattr(filas, "continuacion", False)
+                and any(abs(b.y0 - rect.y0) < 3 and abs(b.x0 - rect.x0) < 6 for b in self.bandas_pagina))
+
+    def _termina_en_banda(self, pagina):
+        """La ultima tabla de la pagina (la de mas abajo) es una caja de una columna con banda de titulo."""
+        tablas = [it for it in self.items if it[0] == pagina and it[3]["tipo"] == "tabla"]
+        return bool(tablas) and max(tablas, key=lambda it: it[3]["y1"])[3].get("banda", False)
+
     def _marca(self, pagina, y, x, texto):
         self.items.append((pagina, y, x, {"tipo": "marca", "texto": texto, "pagina": pagina}))
 
@@ -786,13 +949,17 @@ class _ExtraccionPDF:
         h, w = self.alturas[i], self.anchos[i]
         corte_sup, corte_inf, enc_lineas = self._encabezado_y_pie(i, page, lineas, h, w)
         tablas = self._tablas(i, page, self.fitz.Rect(0, corte_sup, w, corte_inf))
+        self.bandas_pagina = _rects_banda(page, w, lineas)
         ids_enc_tab = {id(l) for l in enc_lineas}
         tablas += _bandas_apiladas(self.fitz, page, [l for l in lineas if id(l) not in ids_enc_tab],
-                                   [r for r, _, _ in tablas], w)
+                                   [r for r, _, _ in tablas], w, corte_sup, self._termina_en_banda(i - 1))
         lineas = self._organigrama(i, page, lineas, enc_lineas, tablas, w, h)
         self._contenido(i, lineas, enc_lineas, tablas)
         ids_enc = {id(l) for l in enc_lineas}
-        en_formas = _formas_con_texto(page, [l for l in lineas if id(l) not in ids_enc], [r for r, _, _ in tablas], w, h)
+        # las cajas que ya se leyeron como organigrama no son «un diagrama sin orden»
+        sueltas = [l for l in lineas if id(l) not in ids_enc
+                   and not any(p == i and _dentro(l, r) for p, r in self.rects_organigrama)]
+        en_formas = _formas_con_texto(page, sueltas, [r for r, _, _ in tablas], w, h)
         if en_formas:
             self.d.avisos.append(f"p.{i + 1}: posible diagrama vectorial ({en_formas} líneas de texto dentro de "
                                  "formas); su texto quedó como líneas sueltas")
@@ -869,8 +1036,8 @@ class _ExtraccionPDF:
                 continue
             if l["y0"] > fondo + SEPARACION_VALOR_ENCABEZADO or l["y1"] > ZONA_SUPERIOR * h:
                 break
-            if len(re.findall(r"[A-Za-z]", l["texto"])) < 3 and l["y1"] - fondo < 14:
-                fondo = l["y1"]
+            if len(re.findall(r"[A-Za-z]", l["texto"])) < 3 and l["y1"] - l["y0"] <= 16:
+                fondo = l["y1"]       # el valor ocupa su propia linea (no importa lo alta que quede bajo la etiqueta)
         return fondo
 
     def _guardar_encabezado(self, page, enc_lineas, corte_sup, corte_inf, w, h):
@@ -972,10 +1139,30 @@ class _ExtraccionPDF:
                                 "como texto junto a la tabla")
             d.lineas_diag += [(i + 1, "tabla", l["texto"]) for l in propias]
             self.items.append((i, r.y0, r.x0, {"tipo": "tabla", "filas": filas, "xs": xs, "y0": r.y0, "y1": r.y1,
-                                               "pagina": i}))
+                                               "pagina": i, "banda": self._es_caja_con_banda(r, filas),
+                                               "continuacion": getattr(filas, "continuacion", False)}))
         for f in agrupar_filas(contenido):
             f["pagina"] = i
             self.items.append((i, f["y0"], f["x0"], f))
+
+    def _texto_de_imagen(self, i, rect):
+        """(lineas, confianza) del texto que el OCR lee dentro de una imagen grande que no trae texto digital;
+        None si no hay OCR, la imagen ya tiene texto digital encima o no se lee nada util."""
+        if self.ocr_idioma is None:
+            self.ocr_idioma = _idioma_ocr() or ""
+        if not self.ocr_idioma or self.imagenes_leidas >= MAX_IMAGENES_OCR:
+            return None
+        if sum(l["chars"] for l in self.paginas_lineas[i] if _dentro(l, rect)) >= 20:
+            return None
+        self.imagenes_leidas += 1
+        try:
+            res = leer_region(self.pdf[i], rect, self.ocr_idioma, configurar_pytesseract())
+        except Exception as e:
+            self.d.notas.append(f"OCR de una imagen falló en la página {i + 1}: {e}")
+            return None
+        if res is None or sum(1 for L in res.lineas for _ in re.findall(r"[^\W\d_]{4,}", L["texto"])) < MIN_PALABRAS_IMAGEN:
+            return None
+        return res
 
     def _imagenes_contenido(self, i, corte_sup, corte_inf, w, h):
         for im in self.info_img[i]:
@@ -987,6 +1174,22 @@ class _ExtraccionPDF:
                 continue
             if abs(r) > 0.06 * w * h:
                 self.d.diagramas.append(i + 1)
+                lectura = self._texto_de_imagen(i, r)
+                if lectura is not None and lectura.confianza >= CONFIANZA_OBJETIVO:
+                    self._marca(i, r.y0, r.x0, f"[DIAGRAMA O IMAGEN: ver página {i + 1} del documento original; texto leído "
+                                               f"de la imagen con OCR (confianza {lectura.confianza:.0f} %), revisar "
+                                               "contra el original]")
+                    for f in agrupar_filas(lectura.lineas):
+                        f["pagina"] = i
+                        f["ocr"] = True
+                        self.items.append((i, f["y0"], f["x0"], f))
+                    self.d.crudo_ocr |= palabras_ocr([L["texto"] for L in lectura.lineas])
+                    self.d.notas.append(f"Página {i + 1}: texto leído de una imagen con OCR ({lectura.mejora}; "
+                                        f"confianza {lectura.confianza:.0f} %).")
+                    continue
+                if lectura is not None:
+                    self.d.avisos.append(f"p.{i + 1}: una imagen trae texto poco legible (OCR {lectura.confianza:.0f} % < "
+                                         f"{CONFIANZA_OBJETIVO:.0f} % aun mejorando la imagen): revise el original")
                 self._marca(i, r.y0, r.x0, f"[DIAGRAMA O IMAGEN: ver página {i + 1} del documento original]")
             elif abs(r) > 400:
                 self.d.imagenes_omitidas += 1

@@ -207,6 +207,20 @@ def nivel_titulo(f, tam_cuerpo, tam_titulos):
     return 0
 
 
+def _renglon_de_parrafo_grande(items, k, it, tam_cuerpo):
+    """Un renglon solo un poco mas grande que el cuerpo, sin negrita ni numeracion, al que sigue otro del mismo
+    tamano y margen, es parte de un parrafo escrito con una letra mayor (p. ej. el objetivo del puesto junto a un
+    organigrama), no un titulo."""
+    texto = it["texto"].strip()
+    if (it["bold"] or it.get("marcador") or it.get("ocr") or it["tam"] >= tam_cuerpo + 2.5
+            or es_seccion_conocida(clave_titulo(texto)) or RE_NUM_INICIO.match(texto)):
+        return False
+    sig = items[k + 1] if k + 1 < len(items) else None
+    return bool(sig is not None and sig["tipo"] == "fila" and not sig["bold"] and sig.get("pagina") == it.get("pagina")
+                and abs(sig["tam"] - it["tam"]) < 0.3 and abs(sig["x0"] - it["x0"]) <= 3
+                and -0.3 * (it["y1"] - it["y0"]) <= sig["y0"] - it["y1"] < 0.6 * (it["y1"] - it["y0"]))
+
+
 def _tamano_cuerpo(filas):
     cuenta = collections.Counter()
     for f in filas:
@@ -241,7 +255,7 @@ def bloques_desde_items(items):
             bloques.append(actual)
             actual = None
 
-    for it in items:
+    for k, it in enumerate(items):
         if it["tipo"] != "fila":
             cerrar()
             previo = None
@@ -254,11 +268,14 @@ def bloques_desde_items(items):
         if not texto:
             continue
         nivel = nivel_titulo(it, tam_cuerpo, tam_titulos)
+        if nivel and _renglon_de_parrafo_grande(items, k, it, tam_cuerpo):
+            nivel = 0
         if nivel:
             # titulo partido en dos lineas
             if (actual is not None and actual["k"] == "h" and previo is not None and previo.get("es_titulo")
                     and it["y0"] - previo["y1"] < 0.6 * (it["y1"] - it["y0"]) and abs(it["tam"] - previo["tam"]) < 0.3
-                    and not RE_NUM_INICIO.match(texto) and not actual["texto"].endswith((".", ":"))):
+                    and not RE_NUM_INICIO.match(texto) and not it.get("marcador")
+                    and not actual["texto"].endswith((".", ":"))):
                 actual["texto"] = unir(actual["texto"], texto)
                 previo = dict(it, es_titulo=True)
                 continue

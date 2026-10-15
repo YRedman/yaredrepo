@@ -117,5 +117,22 @@ class TemporalesYCsvTest(unittest.TestCase):
         self.assertNotIn("~$", huellas)
 
 
+class CopiasDelContextoTest(unittest.TestCase):
+    def test_copia_con_sufijo_se_descarta_y_se_avisa_si_difiere(self):
+        from corpus_org.conversion.inventario import quitar_copias_contexto
+        with tempfile.TemporaryDirectory() as tmp:
+            r = Path(tmp)
+            archivos = []
+            for nombre, datos in (("Iniciativas 2026.csv", b"a;b\n1;2"), ("Iniciativas 2026 (1).csv", b"a;b\n1;3"),
+                                  ("Mapa.pdf", b"x"), ("Mapa (1).pdf", b"x"), ("Datos.csv", b"1"), ("Datos.md", b"1")):
+                (r / nombre).write_bytes(datos)
+                archivos.append(r / nombre)
+            usados, avisos = quitar_copias_contexto(archivos)
+        self.assertEqual(sorted(p.name for p in usados), ["Datos.csv", "Datos.md", "Iniciativas 2026.csv", "Mapa.pdf"])
+        self.assertEqual(len(avisos), 2)
+        self.assertTrue(any("distinto" in a for a in avisos if "Iniciativas" in a))
+        self.assertFalse(any("distinto" in a for a in avisos if "Mapa" in a))
+
+
 if __name__ == "__main__":
     unittest.main()

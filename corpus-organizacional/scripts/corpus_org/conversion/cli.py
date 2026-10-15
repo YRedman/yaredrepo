@@ -29,7 +29,7 @@ from .entradas import buscar_entradas, entrada_por_defecto, es_archivo_ignorado,
 from .huella import huella
 from .inventario import (RE_CODIGO_DEP, actualizar_plantilla_areas, candidatos_codigo, clave_documento,
                          construir_inventario, documentos_de_area_en_contexto, escribir_equivalencias,
-                         inventario_contexto, inventario_provisional,
+                         inventario_contexto, inventario_provisional, quitar_copias_contexto,
                          leer_areas, leer_base, leer_catalogo_codigos, leer_equivalencias, migrar_fila,
                          parsear_lista, tipo_de_carpeta)
 from .lote import Grupo, OpcionesConversion, procesar_grupo
@@ -49,7 +49,8 @@ def carpeta_salida(args):
 
 def _opciones(args):
     return OpcionesConversion(verificacion_cruzada=not args.sin_verificacion_cruzada,
-                              tiempo_max=args.tiempo_max or 0)
+                              tiempo_max=args.tiempo_max or 0, raiz_entrada=getattr(args, "entrada", None),
+                              raiz_contexto=getattr(args, "contexto", None))
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +189,7 @@ def _imprimir_resumen_conversion(resultados, asignacion):
             print()
             print(f"Revisar en {res.grupo.tipo}_{res.grupo.codigo_dep}:")
             for r in malos:
-                print(f"- {r.codigo} {r.archivo}: {'; '.join(r.motivos_consola())}")
+                print(f"- {r.codigo} {r.ruta or r.archivo}: {'; '.join(r.motivos_consola())}")
 
 
 def ejecutar_conversion(args):
@@ -269,6 +270,10 @@ def ejecutar_contexto(args):
         raise CorpusError("No encontré PDF, Word, .md, .csv ni .txt para el contexto.")
     inv_path = salida / ARCHIVO_INVENTARIO_CONTEXTO
     base = leer_csv(inv_path) if inv_path.is_file() else []
+    if not getattr(args, "incluir_duplicados", False):
+        entradas, avisos_copias = quitar_copias_contexto(entradas)
+        for a in avisos_copias:
+            print(f"AVISO: {a}")
     filas, equivalencias = inventario_contexto(entradas, carpeta, base, getattr(args, "anteriores", None))
     escribir_csv(inv_path, COLUMNAS_INVENTARIO, filas)
     if equivalencias:
@@ -581,8 +586,14 @@ def modo_construir(args):
         print("ERROR: " + x)
     if validacion.revision_visual:
         pendientes = list(validacion.revision_visual.items())
-        print(f"REVISIÓN VISUAL PENDIENTE ({len(pendientes)}): "
-              + ", ".join(f"{c} ({m[:50]})" for c, m in pendientes[:15]))
+        print(f"REVISIÓN VISUAL PENDIENTE ({len(pendientes)}); ubicación de cada original en "
+              f"{resumen_path.name} y control/revision_visual.csv:")
+        for c, m in pendientes[:15]:
+            print(f"- {c} {validacion.ubicacion.get(c, ('', ''))[1]} ({m[:60]})")
+        if len(pendientes) > 15:
+            print(f"- … y {len(pendientes) - 15} más")
+    for c, motivos in validacion.con_problemas.items():
+        print(f"- PROBLEMA en {c} {validacion.ubicacion.get(c, ('', ''))[1]}: {'; '.join(motivos)}")
     for x in validacion.avisos:
         print("AVISO: " + x)
     if validacion.codigo_salida:

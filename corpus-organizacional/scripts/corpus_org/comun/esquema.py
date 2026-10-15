@@ -39,6 +39,8 @@ COLUMNAS_INDICE = [
     "paginas_ocr", "confianza_ocr",
     # v4.0: area que emite una politica o protocolo (si el documento la trae)
     "area_propietaria",
+    # v4.1: donde esta el archivo original (ruta relativa a la carpeta de entrada o de contexto)
+    "ruta_original",
 ]
 SEPARADOR_LISTA = " | "
 
@@ -59,7 +61,7 @@ AREA_SIN_ASIGNAR = "Sin Área"
 # Aviso de un PDF con paginas escaneadas que no se pudieron leer (no hay OCR): su texto no esta en el corpus.
 AVISO_ESCANEADO = "páginas escaneadas sin texto"
 # Un documento leido con OCR pasa a revision visual solo si la confianza media de Tesseract es menor.
-CONFIANZA_OCR_REVISION = 85.0
+CONFIANZA_OCR_REVISION = 80.0
 PREFIJO_DIC = "DIC_"
 PREFIJO_REPORTE = "REPORTE_"
 COLUMNAS_INVENTARIO = ["codigo", "tipo", "codigo_departamento", "departamento", "archivo", "ruta_original",

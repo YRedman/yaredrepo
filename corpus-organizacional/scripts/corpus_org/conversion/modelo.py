@@ -108,6 +108,7 @@ class DocumentoConvertido:
     analisis: Optional[Analisis] = None
     verificacion: Optional[Verificacion] = None
     palabras: int = 0
+    ruta: str = ""                     # ubicacion del original: "entrada/<ruta>" o "contexto/<ruta>"
 
     @property
     def ok(self):

@@ -224,6 +224,33 @@ class BriefingAceptacionTest(unittest.TestCase):
         self.assertIn("POL_GEN.md", self.mapa)
         self.assertIn("PRO_GEN.md", self.mapa)
 
+    def test_citar_confirma_que_el_documento_existe_y_respalda(self):
+        codigo, out = _consultar(self.copilot, "citar", "DES-SEG-01", "--texto", "Proteger las instalaciones")
+        self.assertEqual(codigo, 0, out)
+        self.assertIn("EXISTE · DES-SEG-01", out)
+        self.assertIn("RESPALDADO (literal) · DES-SEG-01", out)
+        self.assertIn("Específico del área", out)
+        self.assertIn("entrada/Descriptivos/Seguridad/Jefe de Seguridad.docx", out)    # donde esta el original
+
+    def test_citar_avisa_si_no_hay_respaldo_o_no_existe(self):
+        codigo, out = _consultar(self.copilot, "citar", "DES-SEG-01", "--texto", "Administrar la nomina de la empresa")
+        self.assertEqual(codigo, 3, out)
+        self.assertIn("SIN RESPALDO · DES-SEG-01", out)
+        codigo, out = _consultar(self.copilot, "citar", "DES-SEG-99")
+        self.assertEqual(codigo, 2, out)
+        self.assertIn("NO EXISTE · DES-SEG-99", out)
+
+    def test_citar_un_documento_general_dice_que_no_es_especifico(self):
+        codigo, out = _consultar(self.copilot, "citar", self.codigo_de["Política global.docx"])
+        self.assertEqual(codigo, 0, out)
+        self.assertIn("GENERAL (GEN): contexto o norma de toda la empresa", out)
+
+    def test_el_indice_guarda_donde_esta_el_original(self):
+        with open(self.copilot / ayuda.INDICE / "indice_corpus.csv", encoding="utf-8-sig") as f:
+            filas = list(csv.DictReader(f, delimiter=";"))
+        rutas = {r["archivo_origen"]: r["ruta_original"] for r in filas}
+        self.assertEqual(rutas["Vigilante.docx"], "entrada/Descriptivos/Seguridad/Vigilante.docx")
+
     def test_construccion_sin_problemas(self):
         self.assertEqual(self.codigo, 0, self.salida)
 
