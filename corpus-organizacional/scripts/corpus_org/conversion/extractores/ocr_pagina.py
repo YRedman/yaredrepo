@@ -610,6 +610,46 @@ def leer_region(page, rect, idioma, pytesseract):
     return _elegir(lecturas)[0]
 
 
+LADO_MIN_IMAGEN = 2000         # px: una imagen pequena (captura, foto) se amplia hasta este lado mayor antes del OCR
+AMPLIACION_MAX = 4
+
+
+def leer_imagen(imagen, idioma, pytesseract):
+    """OCR de una imagen suelta (por ejemplo la captura pegada en una hoja de Excel): PIL.Image -> ``PaginaOCR``
+    con las lineas en pixeles de la imagen original.
+
+    Se amplia a un lado mayor de ``LADO_MIN_IMAGEN`` px (la captura de un documento ronda los 600 px y se lee mucho
+    mejor ampliada) y se lee como pagina (psm 3). Igual que en una pagina escaneada, si no llega a
+    ``CONFIANZA_OBJETIVO`` se prueban mas contraste, nitidez, brillo y blanco y negro."""
+    from PIL import Image
+    if imagen.mode in ("RGBA", "LA", "P"):                  # el fondo transparente se leeria como negro
+        rgba = imagen.convert("RGBA")
+        fondo = Image.new("RGB", rgba.size, "white")
+        fondo.paste(rgba, mask=rgba.split()[3])
+        imagen = fondo
+    gris = imagen.convert("L")
+    escala = min(AMPLIACION_MAX, max(1.0, LADO_MIN_IMAGEN / max(gris.size)))
+    if escala > 1.0:
+        gris = gris.resize((int(gris.width * escala), int(gris.height * escala)), Image.LANCZOS)
+    inicio, lecturas = time.monotonic(), []
+    for nombre, receta in RECETAS:
+        img = gris
+        if receta is not None:
+            try:
+                img = receta(gris)
+            except ImportError:
+                pass
+        palabras = _ocr(img, idioma, pytesseract, psm=3)
+        res = PaginaOCR(lineas=_lineas(palabras, 1.0 / escala), confianzas=[p[5] for p in palabras])
+        res.mejora = nombre
+        lecturas.append((res, nombre, receta))
+        if len(lecturas) == 1 and (res.confianza >= CONFIANZA_OBJETIVO or not palabras):
+            return res
+        if time.monotonic() - inicio > TIEMPO_MAX_MEJORA:
+            break
+    return _elegir(lecturas)[0]
+
+
 def _mejor_lectura(nueva, actual):
     """La nueva lectura gana si tiene mas confianza sin perder texto (al menos 90 % de las palabras)."""
     return (nueva.confianza > actual.confianza + 0.5 and len(nueva.confianzas) >= 0.9 * len(actual.confianzas)) or \

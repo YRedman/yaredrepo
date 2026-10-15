@@ -365,6 +365,26 @@ def _pagina(b):
     return f"p.{p + 1}" if isinstance(p, int) else "documento"
 
 
+CERCA_REPETIDO = 3      # bloques: un parrafo repetido tan cerca de su copia es casi seguro un duplicado
+
+
+def _repetidos_por_conversion(bloques):
+    """Parrafos largos que aparecen dos veces como si la conversion los hubiera duplicado: en la misma pagina o a
+    pocos bloques de distancia. Una frase que vuelve en otra pagina (el pie de cada diapositiva, una clausula que
+    el documento repite en dos secciones) es contenido del original, no un duplicado de la conversion."""
+    posiciones = collections.defaultdict(list)
+    for i, b in enumerate(bloques):
+        if b["k"] in ("p", "li") and len(b.get("texto", "")) >= 40:
+            pag = b.get("pagina")
+            posiciones[norm(b["texto"])].append((i, pag if isinstance(pag, int) else None))
+    repetidos = []
+    for t, apariciones in posiciones.items():
+        if any(a[1] is None or b[1] is None or a[1] == b[1] or b[0] - a[0] <= CERCA_REPETIDO
+               for k, a in enumerate(apariciones) for b in apariciones[k + 1:]):
+            repetidos.append(t)
+    return repetidos
+
+
 def avisos_de_estructura(bloques, imagenes_grandes):
     """Senales de que la estructura pudo leerse mal aunque el texto este completo.
 
@@ -382,9 +402,7 @@ def avisos_de_estructura(bloques, imagenes_grandes):
                 if huerfanas:
                     avisos.append(f"{_pagina(b)}: {len(huerfanas)} filas de tabla sin primera celda "
                                   "(posible fila partida)")
-    cuenta = collections.Counter(norm(b["texto"]) for b in bloques
-                                 if b["k"] in ("p", "li") and len(b.get("texto", "")) >= 40)
-    repetidos = [t for t, n in cuenta.items() if n > 1]
+    repetidos = _repetidos_por_conversion(bloques)
     if repetidos:
         avisos.append(f"{len(repetidos)} párrafos repetidos (posible duplicado de conversión): «{repetidos[0][:60]}…»")
     palabras = sum(len(tokens(texto_bloque(b))) for b in bloques if b["k"] != "marca")
