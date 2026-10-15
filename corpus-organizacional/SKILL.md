@@ -6,7 +6,7 @@ description: >-
 
 # Corpus organizacional
 
-> Compatible con `convertir.py` v4.0 y `corpus.py` v4.0.
+> Compatible con `convertir.py` v4.1 y `corpus.py` v4.1.
 
 Este skill consulta exclusivamente el corpus publicado. Los documentos son la fuente de verdad; el índice sirve para localizar, contar y filtrar, pero los datos sustantivos se confirman en el Markdown original.
 
@@ -90,10 +90,15 @@ python scripts/corpus.py <comando> <argumentos>
 | `participacion "<área o código>" [--detalle N\|todo]` | Resumen por puesto (completo) y detalle acotado |
 | `gobierno [--area "<área>"]` | Versión, estado, vigencia, propietario y responsable |
 | `procesos [--area "<área>"]` | Macroproceso, proceso, procedimiento y actividades del desarrollo |
+| `citar <CÓDIGO>… [--texto "<afirmación>"]` | Confirma que el documento existe, si es específico de un área o general, dónde está su original y, con `--texto` (repetible), si respalda la afirmación: `RESPALDADO (literal)`, `RESPALDO PARCIAL` o `SIN RESPALDO` |
 | `kpis [--gestion "<texto>"] [--sin-medicion] [--relacionar] [--area "<área>"]` | Indicadores y documentos que mencionan sus términos |
 | `verificar` | Integridad (huellas), inventario, cobertura, corpus completo, peso y número de archivos por carpeta |
 
 ### Reglas de uso
+
+- **Solo documentos suministrados.** Responde únicamente con lo que traen los documentos del corpus (`doc`, `ficha`, tablas del script). No completes con conocimiento general ni con lo que “sería conveniente”; si algo no está, dilo (`No documentado`).
+- **Cada documento es un registro único.** No mezcles datos de dos documentos (puestos, versiones, funciones) en una sola afirmación; cita el código de cada uno.
+- **Respalda lo que afirmas.** Antes de citar un documento, confirma con `citar <CÓDIGO> --texto "<lo que afirmas>"` que existe y que lo dice. Con `SIN RESPALDO` no lo atribuyas a ese documento; con `RESPALDO PARCIAL` usa el pasaje literal. Un documento `GENERAL (GEN)` no es específico del área consultada: preséntalo como contexto o norma de toda la empresa y reevalúa si hay un documento más específico.
 
 - El área puede escribirse por nombre, código o alias (glosario o `areas_extra.csv`).
 - `--tipo GEN` filtra los documentos con área `GEN`: los generales (organigramas, glosario, mapas de procesos…) y las políticas y protocolos de toda la empresa.

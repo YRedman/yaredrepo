@@ -113,6 +113,44 @@ class BandasTest(unittest.TestCase):
         self.assertIn([["Firma de Aprobacion"], ["Director / Gerente del area:"]], tablas)
         self.assertFalse(any("tabla partida" in a for a in d.avisos), d.avisos)
 
+    def test_fila_suelta_al_inicio_continua_la_caja_anterior_y_otra_caja_no(self):
+        """La fila con borde que abre la pagina 2 sigue a la caja de la pagina 1; «Firma» es otra caja."""
+        def pagina1(c):
+            _banda(c, 300, "Caracteristicas Especiales", ["Disponibilidad para viajar"])
+
+        def pagina2(c):
+            c.setFont("Helvetica", 10)
+            c.drawString(78, 760, "Disponibilidad para movilizarse")
+            c.setStrokeColorRGB(*CLARO)
+            c.line(72, 755, 561, 755)
+            _banda(c, 700, "Firma de Aprobacion", ["Director del area"])
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "continua.pdf"
+            _pdf(ruta, [pagina1, pagina2])
+            d, _ = _extraer(ruta)
+        tablas = [b["filas"] for b in d.bloques if b["k"] == "tabla"]
+        self.assertIn([["Caracteristicas Especiales"], ["Disponibilidad para viajar"],
+                       ["Disponibilidad para movilizarse"]], tablas)
+        self.assertIn([["Firma de Aprobacion"], ["Director del area"]], tablas)
+        self.assertFalse(any("tabla partida" in a for a in d.avisos), d.avisos)
+
+    def test_parrafo_con_letra_mayor_al_cuerpo_no_se_vuelve_titulo(self):
+        def pagina(c):
+            c.setFont("Helvetica", 10)
+            for k in range(12):
+                c.drawString(72, 740 - 14 * k, f"Linea de cuerpo numero {k} con texto corriente del documento.")
+            c.setFont("Helvetica", 11.5)
+            for k, l in enumerate(["Garantizar el seguimiento eficiente del proceso de compras",
+                                   "de bienes y servicios, asegurando la gestion de facturacion",
+                                   "de proveedores y el registro contable de las mismas."]):
+                c.drawString(72, 500 - 15 * k, l)
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "letra.pdf"
+            _pdf(ruta, [pagina])
+            d, _ = _extraer(ruta)
+        titulos = [b["texto"] for b in d.bloques if b["k"] == "h"]
+        self.assertFalse(any("Garantizar" in t for t in titulos), titulos)
+
 
 @unittest.skipUnless(DEPENDENCIAS, "faltan reportlab o PyMuPDF")
 class IndiceTest(unittest.TestCase):
@@ -136,6 +174,20 @@ class IndiceTest(unittest.TestCase):
             self.assertIn(n, texto)
         self.assertEqual(sum(1 for b in d.bloques if b["k"] == "h" and "Alcance" in b["texto"]
                              and "Objetivo" in b["texto"]), 0)
+
+
+class CeldaSinBordeTest(unittest.TestCase):
+    def test_celda_sin_borde_toma_el_ancho_de_su_columna_y_el_alto_de_su_fila(self):
+        from corpus_org.conversion.extractores.pdf import _celda_sin_borde
+        filas = [[(75, 0, 332, 20), (337, 0, 554, 20)], [None, (337, 20, 554, 60)]]
+        self.assertEqual(_celda_sin_borde(filas, 1, 0), (75, 20, 332, 60))
+
+    def test_celda_combinada_no_se_inventa(self):
+        from corpus_org.conversion.extractores.pdf import _celda_sin_borde
+        horizontal = [[(75, 0, 332, 20), (337, 0, 554, 20)], [(75, 20, 554, 40), None]]
+        self.assertIsNone(_celda_sin_borde(horizontal, 1, 1))
+        vertical = [[(75, 0, 332, 20), (337, 0, 554, 80)], [(75, 20, 332, 40), None]]
+        self.assertIsNone(_celda_sin_borde(vertical, 1, 1))
 
 
 if __name__ == "__main__":

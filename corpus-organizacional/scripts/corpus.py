@@ -22,6 +22,9 @@ Uso: python scripts/corpus.py <comando> [argumentos]
   gobierno [--area "<area>"]       Versiones, vigencia, propietario y responsable.
   procesos [--area "<area>"]       Macroproceso, proceso, procedimiento y actividades.
   normativa [--area "<area>"]      Citas de leyes, reglamentos, normas, politicas, protocolos... (literales), por tipo.
+  citar <CODIGO>... [--texto "<afirmacion>"]
+                                   Confirma que el documento existe, donde esta su original y, con --texto (repetible),
+                                   si respalda la afirmacion (RESPALDADO, RESPALDO PARCIAL o SIN RESPALDO).
   kpis [--gestion "<texto>"] [--sin-medicion] [--relacionar] [--area "<area>"]
                                    Indicadores y documentos que mencionan sus terminos.
   verificar                        Integridad (huellas), inventario, cobertura y corpus completo.

@@ -3,6 +3,7 @@
 import datetime
 
 from .. import VERSION
+from ..comun.esquema import CONFIANZA_OCR_REVISION
 from ..comun.markdown import esc_celda
 from .huella import huella
 
@@ -30,8 +31,39 @@ def _tabla(documentos):
     return l, revisar
 
 
+def _legibilidad(d):
+    """Digital, OCR con su confianza (el objetivo es 80 %) o sin texto."""
+    if d.paginas_escaneadas_sin_ocr:
+        return "páginas escaneadas sin leer (sin OCR): su texto no está en el corpus"
+    if d.paginas_ocr:
+        c = d.confianza_ocr
+        if c is None:
+            return "OCR con confianza desconocida: confirmar con el original"
+        return (f"OCR con {c:.0f} % de confianza" +
+                ("" if c >= CONFIANZA_OCR_REVISION else f" (menos de {CONFIANZA_OCR_REVISION:.0f} %: poco legible, "
+                                                        "use una versión digital o un escaneo mejor)"))
+    return "texto digital"
+
+
+def _construccion(r):
+    """Una linea que compara lo que trae el original con lo que quedo en el corpus."""
+    d, v = r.doc, r.verificacion
+    unidas = sum(1 for n in d.notas if "tabla partida entre páginas" in n)
+    partes = [f"{d.paginas or '?'} páginas", f"{v.total} palabras en el original → {r.palabras} en el corpus "
+              f"(texto presente {v.cobertura:.1f} %)", f"{d.tablas} tablas"]
+    if unidas:
+        partes.append(f"{unidas} filas de tabla partida unidas entre páginas")
+    if d.paginas_ocr:
+        partes.append(f"{len(d.paginas_ocr)} páginas leídas con OCR")
+    if d.diagramas:
+        partes.append(f"{len(d.diagramas)} diagramas o imágenes (solo su texto, si lo tienen; el gráfico no está en el corpus)")
+    return "- Construcción frente al original: " + " · ".join(partes)
+
+
 def _detalle(r):
     l = ["", f"### {r.codigo} · {r.archivo}"]
+    if r.ruta:
+        l.append(f"- Ubicación del original: `{r.ruta}`")
     if not r.ok:
         l.append(f"- Estado: {r.estado}")
         if r.error:
@@ -67,6 +99,8 @@ def _detalle(r):
         l.append(f"- Secciones de diagrama no transcritas: {', '.join(a.secciones_diagrama)}")
     l.append(f"- Tablas: {d.tablas} · diagramas o imágenes grandes: {len(d.diagramas)} · "
              f"imágenes pequeñas omitidas: {d.imagenes_omitidas}")
+    l.append(_construccion(r))
+    l.append(f"- Legibilidad: {_legibilidad(d)}")
     if d.paginas_ocr:
         conf = f"; confianza media {d.confianza_ocr:.1f} %" if d.confianza_ocr is not None else ""
         l.append(f"- OCR aplicado en páginas: {', '.join(map(str, d.paginas_ocr))} (idioma: {d.idioma_ocr}{conf}); "

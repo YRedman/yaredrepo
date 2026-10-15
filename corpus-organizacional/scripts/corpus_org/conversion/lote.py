@@ -1,9 +1,11 @@
 """Conversion de un grupo de documentos (un tipo de un departamento) a Markdown e indice."""
 
 import os
+import re
 import time
 import traceback
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List
 
 from ..comun.archivos import escribir_csv
@@ -24,6 +26,8 @@ class OpcionesConversion:
     verificacion_cruzada: bool = True
     tiempo_max: float = 0          # segundos; 0 = sin limite
     inicio: float = field(default_factory=time.time)
+    raiz_entrada: object = None    # carpetas de las que se muestra la ruta relativa del original
+    raiz_contexto: object = None
 
     def tiempo_agotado(self):
         return bool(self.tiempo_max) and time.time() - self.inicio > self.tiempo_max
@@ -79,8 +83,30 @@ def convertir_documento(path, fila, grupo, opciones):
                                   grupo.departamento, fila["archivo"], titulo)
     v = verificar(doc, bloques, analisis, cuerpo)
     r = DocumentoConvertido(codigo=fila["codigo"], archivo=fila["archivo"], estado="OK", doc=doc,
-                            analisis=analisis, verificacion=v, palabras=len(tokens(RE_MARCAS.sub(" ", cuerpo))))
+                            analisis=analisis, verificacion=v, palabras=len(tokens(RE_MARCAS.sub(" ", cuerpo))),
+                            ruta=ruta_original(fila, grupo, opciones))
     return r, md
+
+
+def ruta_original(fila, grupo, opciones=None):
+    """Donde esta el archivo para revisarlo: 'entrada/<ruta>' o 'contexto/<ruta>', relativa a esa carpeta.
+
+    Los documentos de area que vienen de la carpeta de contexto (procedimientos, politicas...) se muestran
+    como 'contexto/...'. Si la ruta del inventario es absoluta y no cuelga de ninguna de las dos carpetas,
+    se muestran sus tres ultimas partes (Tipo/Departamento/Archivo)."""
+    ruta = (fila.get("ruta_original") or fila.get("archivo") or "").strip()
+    for raiz, etiqueta in ((getattr(opciones, "raiz_contexto", None), "contexto"),
+                           (getattr(opciones, "raiz_entrada", None), "entrada")):
+        if raiz is None:
+            continue
+        try:
+            return f"{etiqueta}/" + Path(ruta).resolve().relative_to(Path(raiz).resolve()).as_posix()
+        except (ValueError, OSError):
+            continue
+    partes = [x for x in re.split(r"[\\/]+", ruta) if x]
+    if grupo.es_contexto or fila.get("desde_contexto"):
+        return "contexto/" + "/".join(partes)
+    return "entrada/" + "/".join(partes[-3:] if len(partes) > 3 else partes)
 
 
 def fila_indice(r, grupo, archivo_md, linea_ini, linea_fin):
@@ -114,6 +140,7 @@ def fila_indice(r, grupo, archivo_md, linea_ini, linea_fin):
         "paginas_ocr": ", ".join(map(str, r.doc.paginas_ocr)),
         "confianza_ocr": f"{r.doc.confianza_ocr:.1f}" if r.doc.confianza_ocr is not None else "",
         "area_propietaria": meta.area_propietaria,
+        "ruta_original": r.ruta,
     }
 
 
@@ -135,17 +162,20 @@ def procesar_grupo(grupo, salida, opciones):
     for fila in grupo.filas:
         path = grupo.archivos.get(fila["codigo"])
         if path is None:
-            documentos.append(DocumentoConvertido(fila["codigo"], fila["archivo"], "NO ADJUNTO"))
+            documentos.append(DocumentoConvertido(fila["codigo"], fila["archivo"], "NO ADJUNTO",
+                                                  ruta=ruta_original(fila, grupo, opciones)))
             continue
         if opciones.tiempo_agotado():
-            documentos.append(DocumentoConvertido(fila["codigo"], fila["archivo"], "PENDIENTE (tiempo)"))
+            documentos.append(DocumentoConvertido(fila["codigo"], fila["archivo"], "PENDIENTE (tiempo)",
+                                                  ruta=ruta_original(fila, grupo, opciones)))
             continue
         try:
             r, md = convertir_documento(path, fila, grupo, opciones)
         except Exception as e:
             documentos.append(DocumentoConvertido(fila["codigo"], fila["archivo"], "ERROR",
                                                   error=f"{type(e).__name__}: {e}",
-                                                  traza=traceback.format_exc(limit=3)))
+                                                  traza=traceback.format_exc(limit=3),
+                                                  ruta=ruta_original(fila, grupo, opciones)))
             continue
         linea_ini = len(lineas_md) + 1
         lineas_md.extend(md)

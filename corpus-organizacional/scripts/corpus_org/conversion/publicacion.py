@@ -46,6 +46,8 @@ class Validacion:
     problemas: List[str] = field(default_factory=list)
     avisos: List[str] = field(default_factory=list)
     revision_visual: Dict[str, str] = field(default_factory=dict)   # codigo -> motivo (pendientes)
+    ubicacion: Dict[str, tuple] = field(default_factory=dict)       # codigo -> (archivo, ruta del original)
+    con_problemas: Dict[str, List[str]] = field(default_factory=dict)  # codigo -> problemas de su texto
 
     @property
     def listo(self):
@@ -295,15 +297,20 @@ def validar_publicacion(publicado, duplicados=(), revisados=frozenset(), muestra
     revision = collections.OrderedDict()
     for f in filas:
         c = (f.get("codigo") or "").upper()
+        v.ubicacion[c] = (f.get("archivo_origen") or "", f.get("ruta_original") or "")
         try:
             if f.get("cobertura") and _cobertura(f["cobertura"]) < 100.0:
                 bajos.append(f"{c} ({f['cobertura']})")
+                v.con_problemas.setdefault(c, []).append(f"texto del original ausente (cobertura {f['cobertura']})")
         except ValueError:
             v.problemas.append(f"Cobertura no interpretable: {c} = {f.get('cobertura')}")
         if (f.get("palabras_agregadas") or "").strip():
             agregadas.append(f"{c} ({f['palabras_agregadas'][:60]})")
+            v.con_problemas.setdefault(c, []).append("palabras que no están en el original: "
+                                                     + f["palabras_agregadas"][:60])
         if AVISO_ESCANEADO in (f.get("detalle_avisos") or ""):
             escaneados.append(c)
+            v.con_problemas.setdefault(c, []).append("páginas escaneadas sin leer")
         if (f.get("avisos_estructura") or "0").strip() not in ("", "0"):
             revision[c] = (f.get("detalle_avisos") or "")[:200]
         if estado_no_publicable(f.get("estado_documental", "")):
@@ -323,8 +330,9 @@ def validar_publicacion(publicado, duplicados=(), revisados=frozenset(), muestra
         revision[c] = f"muestra aleatoria ({muestra:.0%})"
     v.revision_visual = collections.OrderedDict((c, m) for c, m in revision.items() if c not in revisados)
     if control is not None:
-        escribir_csv(control / ARCHIVO_REVISION, ["codigo", "motivo", "revisado"],
-                     [{"codigo": c, "motivo": m, "revisado": "sí" if c in revisados else ""}
+        escribir_csv(control / ARCHIVO_REVISION, ["codigo", "motivo", "revisado", "archivo", "ruta_original"],
+                     [{"codigo": c, "motivo": m, "revisado": "sí" if c in revisados else "",
+                       "archivo": v.ubicacion.get(c, ("", ""))[0], "ruta_original": v.ubicacion.get(c, ("", ""))[1]}
                       for c, m in revision.items()])
     v.documentos_inventariados = len(cod_inv)
     v.documentos_indexados = len(cod_indice)
@@ -347,12 +355,20 @@ def escribir_resumen_construccion(path, v, publicados, medidas=()):
         lineas += ["## Peso y número de archivos por carpeta", ""] + ["- " + x for x in medidas] + [""]
     if v.problemas:
         lineas += ["## Problemas", ""] + ["- " + x for x in v.problemas] + [""]
+    if v.con_problemas:
+        lineas += ["## Documentos con problemas y dónde está su original", "",
+                   "| Código | Archivo | Ubicación del original | Problema |", "|---|---|---|---|"]
+        lineas += [f"| {c} | {esc_celda(v.ubicacion.get(c, ('', ''))[0])} | "
+                   f"`{esc_celda(v.ubicacion.get(c, ('', ''))[1])}` | {esc_celda('; '.join(m))} |"
+                   for c, m in v.con_problemas.items()] + [""]
     if v.revision_visual:
         lineas += ["## Revisión visual pendiente", "",
                    "Abra cada documento original junto a su Markdown. Cuando esté correcto, agregue su código a "
                    f"`{ARCHIVO_REVISADOS}` (uno por línea) y vuelva a ejecutar `construir`.", "",
-                   "| Código | Motivo |", "|---|---|"]
-        lineas += [f"| {c} | {esc_celda(m)} |" for c, m in v.revision_visual.items()] + [""]
+                   "| Código | Archivo | Ubicación del original | Motivo |", "|---|---|---|---|"]
+        lineas += [f"| {c} | {esc_celda(v.ubicacion.get(c, ('', ''))[0])} | "
+                   f"`{esc_celda(v.ubicacion.get(c, ('', ''))[1])}` | {esc_celda(m)} |"
+                   for c, m in v.revision_visual.items()] + [""]
     if v.avisos:
         lineas += ["## Avisos", ""] + ["- " + x for x in v.avisos] + [""]
     lineas += ["## Carpetas", "",

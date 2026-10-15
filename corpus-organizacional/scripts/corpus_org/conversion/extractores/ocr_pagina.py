@@ -16,6 +16,7 @@ Requiere numpy (deteccion de lineas); sin numpy se usa solo el OCR de texto corr
 
 import collections
 import io
+import time
 import re
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -23,6 +24,10 @@ from typing import List, Optional
 from ...comun.texto import nfc, norm
 
 DPI_OCR = 300
+DPI_OCR_ALTO = 400          # una pasada extra, con el mejor tratamiento, cuando la confianza no llega al objetivo
+TIEMPO_MAX_MEJORA = 150.0   # segundos por pagina o imagen para seguir probando tratamientos
+CONFIANZA_SIN_ESPERANZA = 40.0  # si ningun tratamiento a 300 dpi pasa de esto, 400 dpi no lo salvara
+CONFIANZA_OBJETIVO = 80.0   # confianza media de Tesseract que debe alcanzar cada pagina (calidad antes que velocidad)
 CONTRASTE_DIST = 5          # px: distancia a la que se compara cada pixel con su entorno
 CONTRASTE_MIN = 20          # diferencia de gris para considerar un pixel parte de un borde
 GROSOR_MAX_LINEA = 8        # px: un trazo mas grueso es un relleno, no una linea
@@ -83,6 +88,55 @@ class TablaImagen:
         return [[texto_celda(c) for c in f] for f in self.filas]
 
 
+def _receta_contraste(img):
+    from PIL import ImageOps
+    return ImageOps.autocontrast(img, cutoff=1)
+
+
+def _receta_nitidez(img):
+    from PIL import ImageFilter, ImageOps
+    return ImageOps.autocontrast(img, cutoff=1).filter(ImageFilter.UnsharpMask(radius=2, percent=160, threshold=3))
+
+
+def _receta_brillo(img):
+    """Aclara una pagina oscura u oscurece una palida (gamma segun el gris medio) y estira el contraste."""
+    from PIL import ImageOps
+    import numpy as np
+    media = float(np.asarray(img).mean())
+    gamma = 1.0
+    if media < 140:
+        gamma = 0.6
+    elif media > 225:
+        gamma = 1.6
+    tabla = [int(255 * ((v / 255.0) ** gamma)) for v in range(256)]
+    return ImageOps.autocontrast(img.point(tabla), cutoff=1)
+
+
+def _receta_binarizada(img):
+    """Blanco y negro con el umbral de Otsu y sin motas (fondos con ruido o sellos de color)."""
+    from PIL import Image, ImageFilter, ImageOps
+    import numpy as np
+    gris = np.asarray(ImageOps.autocontrast(img, cutoff=1))
+    hist = np.bincount(gris.ravel(), minlength=256).astype(float)
+    total, suma = hist.sum(), (hist * np.arange(256)).sum()
+    mejor, w0, s0, umbral = -1.0, 0.0, 0.0, 128
+    for t in range(256):
+        w0 += hist[t]
+        s0 += t * hist[t]
+        if w0 == 0 or w0 == total:
+            continue
+        m0, m1 = s0 / w0, (suma - s0) / (total - w0)
+        entre = w0 * (total - w0) * (m0 - m1) ** 2
+        if entre > mejor:
+            mejor, umbral = entre, t
+    binaria = Image.fromarray(((gris > umbral) * 255).astype("uint8"))
+    return binaria.filter(ImageFilter.MedianFilter(3))
+
+
+RECETAS = (("original", None), ("contraste y nitidez", _receta_nitidez), ("brillo y contraste", _receta_brillo),
+           ("blanco y negro", _receta_binarizada))
+
+
 @dataclass
 class PaginaOCR:
     lineas: list                                    # lineas fuera de tablas (formato de _lineas_pagina, en pt)
@@ -90,6 +144,9 @@ class PaginaOCR:
     cajas: list = field(default_factory=list)       # (y0, x0, textos) de un organigrama
     encabezado: list = field(default_factory=list)  # textos de las celdas del encabezado del formato
     confianzas: list = field(default_factory=list)  # confianza de cada palabra leida
+    mejora: str = ""                                # tratamiento de imagen con que se obtuvo la lectura
+    dpi: int = 0
+    orientacion: int = 0                            # grados que se giro la pagina (0, 90, 180, 270)
 
     @property
     def confianza(self):
@@ -441,11 +498,140 @@ def angulo_inclinacion(img, maximo=2.0):
     return max(finos, key=lambda a: _nitidez(media, a))
 
 
+def _giro_por_osd(img, pytesseract):
+    """Grados (0, 90, 180, 270) que hay que girar la pagina para que el texto quede derecho, segun el OSD de
+    Tesseract. 0 si no esta disponible (necesita osd.traineddata) o no hay certeza."""
+    try:
+        osd = pytesseract.image_to_osd(img, config="--psm 0")
+    except Exception:
+        return 0
+    giro = re.search(r"Rotate:\s*(\d+)", osd)
+    conf = re.search(r"Orientation confidence:\s*([\d.]+)", osd)
+    if giro and conf and float(conf.group(1)) >= 2.0 and int(giro.group(1)) in (90, 180, 270):
+        return int(giro.group(1))
+    return 0
+
+
 def leer_pagina(page, idioma, pytesseract):
-    """OCR de una pagina escaneada con tablas, cajas de organigrama y encabezado separados."""
+    """OCR de una pagina escaneada con tablas, cajas de organigrama y encabezado separados.
+
+    Calidad antes que velocidad: si la confianza media no llega a ``CONFIANZA_OBJETIVO`` se vuelve a leer con
+    la pagina girada (si esta de lado), mas contraste, nitidez, brillo, blanco y negro y mayor resolucion, y se
+    conserva la mejor lectura. El tratamiento usado queda en ``mejora``.
+    """
+    def etiqueta(nombre, dpi, giro):
+        partes = [nombre] + ([f"{dpi} dpi"] if dpi != DPI_OCR else []) + ([f"giro de {giro}°"] if giro else [])
+        return ", ".join(partes)
+
+    inicio, giro, lecturas = time.monotonic(), 0, []
+    intentos = [(DPI_OCR, nombre, receta) for nombre, receta in RECETAS]
+    while intentos:
+        dpi, nombre, receta = intentos.pop(0)
+        res = _leer_pagina_con(page, idioma, pytesseract, dpi, receta, giro)
+        res.mejora, res.dpi, res.orientacion = etiqueta(nombre, dpi, giro), dpi, giro
+        lecturas.append((res, nombre, receta))
+        if len(lecturas) == 1 and res.confianza >= CONFIANZA_OBJETIVO:
+            return res                                  # la lectura normal ya llega al objetivo
+        if time.monotonic() - inicio > TIEMPO_MAX_MEJORA:
+            break
+        if dpi == DPI_OCR and nombre == "original" and giro == 0:
+            giro_osd = _giro_por_osd(_imagen_pagina(page, dpi), pytesseract)      # pagina de lado o al reves
+            if giro_osd:
+                girada = _leer_pagina_con(page, idioma, pytesseract, dpi, None, giro_osd)
+                girada.mejora, girada.dpi, girada.orientacion = etiqueta(nombre, dpi, giro_osd), dpi, giro_osd
+                lecturas.append((girada, nombre, None))
+                if girada.confianza >= CONFIANZA_OBJETIVO:
+                    break
+                if _mejor_lectura(girada, res):
+                    giro = giro_osd
+        if not intentos and dpi == DPI_OCR and not _elegir(lecturas, solo_buenas=True):
+            parcial = _elegir(lecturas)
+            if parcial is not None and parcial[0].confianza >= CONFIANZA_SIN_ESPERANZA:     # ultimo recurso: 400 dpi
+                intentos.append((DPI_OCR_ALTO, parcial[1], parcial[2]))
+    return _elegir(lecturas)[0]
+
+
+def _elegir(lecturas, solo_buenas=False):
+    """(lectura, nombre, receta) preferida: entre las que llegan a CONFIANZA_OBJETIVO, la que recupera mas texto
+    (otra con 90 % de confianza pero 20 palabras de 150 no sirve); si ninguna llega, la de mayor confianza sin
+    perder texto. Con ``solo_buenas`` devuelve None si ninguna llega al objetivo."""
+    buenas = [x for x in lecturas if x[0].confianza >= CONFIANZA_OBJETIVO]
+    if buenas:
+        return max(buenas, key=lambda x: (len(x[0].confianzas), x[0].confianza))
+    if solo_buenas or not lecturas:
+        return None
+    mejor = lecturas[0]
+    for x in lecturas[1:]:
+        if _mejor_lectura(x[0], mejor[0]):
+            mejor = x
+    return mejor
+
+
+def leer_region(page, rect, idioma, pytesseract):
+    """OCR del texto dentro de una imagen o grafico de una pagina digital (``rect`` en puntos).
+
+    Texto disperso (psm 11). Igual que en una pagina escaneada, si la confianza no llega a
+    ``CONFIANZA_OBJETIVO`` se prueban mas contraste, nitidez, brillo, blanco y negro y mayor resolucion.
+    Devuelve un ``PaginaOCR`` con las lineas en coordenadas de la pagina, o None si no se pudo leer.
+    """
     from PIL import Image
-    pix = page.get_pixmap(dpi=DPI_OCR)
+
+    def leer(dpi, nombre, receta):
+        pix = page.get_pixmap(dpi=dpi, clip=rect)
+        img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("L")
+        if receta is not None:
+            try:
+                img = receta(img)
+            except ImportError:
+                pass
+        palabras = _ocr(img, idioma, pytesseract, psm=11)
+        res = PaginaOCR(lineas=[], confianzas=[p[5] for p in palabras])
+        for L in _lineas(palabras, 72.0 / dpi):
+            L["x0"], L["x1"] = L["x0"] + rect.x0, L["x1"] + rect.x0
+            L["y0"], L["y1"] = L["y0"] + rect.y0, L["y1"] + rect.y0
+            res.lineas.append(L)
+        res.mejora, res.dpi = nombre if dpi == DPI_OCR else f"{nombre}, {dpi} dpi", dpi
+        return res, bool(palabras)
+
+    inicio, lecturas = time.monotonic(), []
+    intentos = [(DPI_OCR, nombre, receta) for nombre, receta in RECETAS]
+    while intentos:
+        dpi, nombre, receta = intentos.pop(0)
+        res, hay_texto = leer(dpi, nombre, receta)
+        lecturas.append((res, nombre, receta))
+        if len(lecturas) == 1 and (res.confianza >= CONFIANZA_OBJETIVO or not hay_texto):
+            return res                                  # buena lectura, o una foto sin texto: nada que mejorar
+        if time.monotonic() - inicio > TIEMPO_MAX_MEJORA:
+            break
+        if not intentos and dpi == DPI_OCR and not _elegir(lecturas, solo_buenas=True):
+            parcial = _elegir(lecturas)
+            if parcial is not None and parcial[0].confianza >= CONFIANZA_SIN_ESPERANZA:
+                intentos.append((DPI_OCR_ALTO, parcial[1], parcial[2]))
+    return _elegir(lecturas)[0]
+
+
+def _mejor_lectura(nueva, actual):
+    """La nueva lectura gana si tiene mas confianza sin perder texto (al menos 90 % de las palabras)."""
+    return (nueva.confianza > actual.confianza + 0.5 and len(nueva.confianzas) >= 0.9 * len(actual.confianzas)) or \
+        (not actual.confianzas and bool(nueva.confianzas))
+
+
+def _imagen_pagina(page, dpi, giro=0):
+    from PIL import Image
+    pix = page.get_pixmap(dpi=dpi)
     img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("L")
+    return img.rotate(-giro, expand=True, fillcolor=255) if giro else img
+
+
+def _leer_pagina_con(page, idioma, pytesseract, dpi, receta, giro):
+    """Una pasada de OCR de la pagina a ``dpi`` con un tratamiento de imagen (``receta``) y un giro."""
+    from PIL import Image
+    img = _imagen_pagina(page, dpi, giro)
+    if receta is not None:
+        try:
+            img = receta(img)
+        except ImportError:
+            pass
     try:
         angulo = angulo_inclinacion(img)
         if abs(angulo) >= ANGULO_MIN:
@@ -472,7 +658,7 @@ def leer_pagina(page, idioma, pytesseract):
                             not c.palabras or (_media(nuevas) > _media(c.palabras) and
                                                len(texto_de(nuevas)) >= 0.8 * len(texto_celda(c)))):
                         c.palabras = nuevas
-    esc = 72.0 / DPI_OCR
+    esc = 72.0 / dpi
     res = PaginaOCR(lineas=_lineas(fuera, esc))
     for t in tablas:
         res.confianzas += [p[5] for f in t.filas for c in f for p in c.palabras]
