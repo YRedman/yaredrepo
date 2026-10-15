@@ -36,6 +36,7 @@ class DocumentoExtraido:
     texto_cruzado: Optional[Set[str]] = None                # tokens de un segundo motor (pdfplumber)
     idioma_ocr: Optional[str] = None
     confianzas_ocr: List[float] = field(default_factory=list)   # confianza de cada palabra leida por OCR
+    hoja_de_calculo: bool = False                           # Excel o CSV: una celda vacia es un dato, no una fila partida
 
     @property
     def confianza_ocr(self):

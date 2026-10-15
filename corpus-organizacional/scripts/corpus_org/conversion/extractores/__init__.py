@@ -3,6 +3,8 @@
 import zipfile
 from pathlib import Path
 
+EXTENSIONES_IMAGEN = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp")
+
 DESCRIPCION_FORMATOS = {".zip": "un archivo comprimido",
                         ".ole": "un archivo de Office antiguo (.doc, .xls, .ppt)"}
 
@@ -17,6 +19,10 @@ def formato_real(path):
         return None
     if cabecera.startswith(b"%PDF"):
         return ".pdf"
+    if cabecera.startswith(b"\x89PNG"):
+        return ".png"
+    if cabecera.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
     if cabecera.startswith(b"\xd0\xcf\x11\xe0"):
         return ".ole"
     if cabecera.startswith(b"PK\x03\x04"):
@@ -50,6 +56,9 @@ def extractor_para(path, verificacion_cruzada=True):
     if ext == ".docx":
         from .word import ExtractorDocx
         return ExtractorDocx()
+    if ext in EXTENSIONES_IMAGEN or real in EXTENSIONES_IMAGEN:
+        from .imagen import ExtractorImagen
+        return ExtractorImagen()
     if ext == ".pptx":
         from .pptx import ExtractorPptx
         return ExtractorPptx()

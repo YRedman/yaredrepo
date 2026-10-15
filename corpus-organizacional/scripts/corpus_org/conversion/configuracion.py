@@ -7,7 +7,7 @@ aqui; no hace falta tocar el codigo de extraccion (principio abierto/cerrado).
 EXT_SOPORTADAS = {".pdf", ".docx"}
 EXT_RECONOCIDAS = {".pdf", ".docx", ".doc"}
 # Transcripciones manuales (Markdown, CSV, texto): solo se aceptan como material de contexto.
-EXT_TEXTO = {".md", ".csv", ".txt", ".xlsx", ".xlsm", ".pptx"}
+EXT_TEXTO = {".md", ".csv", ".txt", ".xlsx", ".xlsm", ".pptx", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
 # Archivos del sistema o temporales que nunca son documentos (bloqueos de Word, miniaturas...).
 ARCHIVOS_IGNORADOS = r"^(~\$|\.~lock|\._)|^(thumbs\.db|desktop\.ini|\.ds_store)$"
 # Si el mismo documento existe en varios formatos se usa el de menor valor.
