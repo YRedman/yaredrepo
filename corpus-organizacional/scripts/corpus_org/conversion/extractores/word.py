@@ -284,10 +284,29 @@ def _tabla_docx(tbl, ctx):
     ncol = max((len(f) for f in filas), default=0)
     filas = [f + [""] * (ncol - len(f)) for f in filas]
     filas = [f for f in filas if any(c.strip() for c in f)]
+    filas = _unir_filas_partidas(filas)
     if filas:
         cols = [j for j in range(ncol) if any(f[j].strip() for f in filas)]
         filas = [[f[j] for j in cols] for f in filas]
     return filas
+
+
+def _unir_filas_partidas(filas):
+    """Une a la fila anterior las filas sin primera celda que continuan una frase cortada (el autor partio el texto de
+    una celda en dos filas): cada celda llena debe seguir a una celda anterior que no cierra la frase y empezar en
+    minuscula. Una fila que no cumple se deja (puede ser una fila nueva, como «Fin del proceso»)."""
+    salida = []
+    for f in filas:
+        previa = salida[-1] if salida else None
+        llenas = [j for j, c in enumerate(f) if c.strip()]
+        if (previa is not None and llenas and not f[0].strip() and len(salida) > 1 and all(
+                previa[j].strip() and previa[j].rstrip()[-1] not in ".:;?!)" and f[j].lstrip()[0].islower()
+                for j in llenas)):
+            for j in llenas:
+                previa[j] = previa[j].rstrip() + " " + f[j].strip()
+            continue
+        salida.append(list(f))
+    return salida
 
 
 def _textos_celda(tc, ctx):
@@ -315,8 +334,8 @@ def _crudo_docx_xml(datos):
     txt = re.sub(r"<mc:Fallback>.*?</mc:Fallback>", " ", txt, flags=re.S)
     # solo <w:del ...>...</w:del> con contenido: la marca de parrafo borrado <w:del .../> es autocontenida
     txt = re.sub(r"<w:del\b[^>]*(?<!/)>.*?</w:del>", " ", txt, flags=re.S)
-    salida = []
-    for m in re.finditer(r"<w:t(?:\s[^>]*)?>(.*?)</w:t>|(<w:tab/>|<w:br/>|</w:p>|</w:tc>)", txt, flags=re.S):
+    salida = []        # <m:t> es el texto de una ecuacion de Word (Office Math), que el extractor tambien lee
+    for m in re.finditer(r"<[wm]:t(?:\s[^>]*)?>(.*?)</[wm]:t>|(<w:tab/>|<w:br/>|</w:p>|</w:tc>)", txt, flags=re.S):
         salida.append(html.unescape(m.group(1)) if m.group(1) is not None else " ")
     return "".join(salida)
 
@@ -355,13 +374,24 @@ class _ConversionDocx:
                 self.d.imagenes_omitidas += 1
                 self.bloques.append({"k": "marca", "texto": "[IMAGEN OMITIDA]"})
         for cb in cuadros:
-            for p in cb.findall("w:p", NS):
-                t = ctx.texto_parrafo(p)[0]
-                if t:
-                    self.bloques.append({"k": "p", "texto": "[CUADRO DE TEXTO] " + t})
+            self._cuadro(cb)
         for fid in notas:
             if fid in ctx.notas:
                 self.bloques.append({"k": "p", "texto": f"[NOTA AL PIE {fid}] {ctx.notas[fid]}"})
+
+    def _cuadro(self, cb):
+        """Contenido de un cuadro de texto: parrafos, tablas (los diagramas de flujo de Word son tablas dentro de
+        cuadros) y cuadros anidados."""
+        for el in cb:
+            nom = _local(el)
+            if nom == "p":
+                texto, _imgs, anidados, _notas = self.ctx.texto_parrafo(el)
+                if texto:
+                    self.bloques.append({"k": "p", "texto": "[CUADRO DE TEXTO] " + texto})
+                for a in anidados:
+                    self._cuadro(a)
+            elif nom == "tbl":
+                self._tabla(el)
 
     def _bloque_texto(self, texto, nombre, numpr, outline, bold):
         nivel = _nivel_estilo(nombre, outline)

@@ -4,6 +4,7 @@ Las imagenes se generan con texto ficticio; ningun documento real entra al repos
 """
 
 import io
+import unittest.mock
 import tempfile
 import unittest
 from pathlib import Path
@@ -195,3 +196,37 @@ class RecetasTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(OCR, "faltan Tesseract (spa), pytesseract, Pillow o numpy")
+class FotoTest(unittest.TestCase):
+    def test_una_foto_sin_texto_se_lee_dos_veces_y_no_en_todas_las_mejoras(self):
+        import pymupdf
+        from corpus_org.conversion.extractores.ocr import configurar_pytesseract
+        rng = np.random.RandomState(3)
+        base = np.kron(rng.randint(40, 220, (22, 17)), np.ones((100, 100)))        # manchas de tonos medios, sin texto
+        img = Image.fromarray(np.clip(base + rng.normal(0, 12, base.shape), 0, 255).astype("uint8"))
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, "PNG")
+        doc = pymupdf.open()
+        pagina = doc.new_page(width=612, height=792)
+        pagina.insert_image(pagina.rect, stream=buf.getvalue())
+        llamadas = []
+        original = O._leer_pagina_con
+
+        def contar(*a, **k):
+            llamadas.append(1)
+            return original(*a, **k)
+        with unittest.mock.patch.object(O, "_leer_pagina_con", contar):
+            res = O.leer_pagina(pagina, idioma_ocr(), configurar_pytesseract())
+        self.assertLess(res.palabras_utiles, O.MIN_PALABRAS_TEXTO)
+        self.assertEqual(len(llamadas), 2)          # antes eran 5 o 6 lecturas completas por foto
+
+    def test_pixmap_a_gris_conserva_la_imagen_sin_pasar_por_png(self):
+        import pymupdf
+        doc = pymupdf.open()
+        pagina = doc.new_page(width=200, height=100)
+        pagina.draw_rect(pymupdf.Rect(20, 20, 100, 60), fill=(0, 0, 0))
+        img = O._imagen_pagina(pagina, 72)
+        self.assertEqual((img.mode, img.size), ("L", (200, 100)))
+        self.assertEqual((img.getpixel((50, 40)), img.getpixel((150, 80))), (0, 255))

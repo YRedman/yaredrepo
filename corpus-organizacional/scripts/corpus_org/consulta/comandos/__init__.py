@@ -3,6 +3,7 @@
 from .area import IndiceArea
 from .briefing import Briefing
 from .buscar import Buscar
+from .cadena import Cadena
 from .catalogo import Catalogo
 from .citar import Citar
 from .doc import Documento
@@ -16,4 +17,4 @@ from .relaciones import Relaciones
 from .verificar import Verificar
 
 COMANDOS = {c.nombre: c for c in (Catalogo(), IndiceArea(), Briefing(), Ficha(), Documento(), Buscar(), Relaciones(),
-                                   Participacion(), Gobierno(), Procesos(), Indicadores(), Normativa(), Citar(), Verificar())}
+                                   Participacion(), Gobierno(), Procesos(), Indicadores(), Normativa(), Cadena(), Citar(), Verificar())}

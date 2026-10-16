@@ -32,7 +32,7 @@ from .inventario import (RE_CODIGO_DEP, actualizar_plantilla_areas, candidatos_c
                          inventario_contexto, inventario_provisional, quitar_copias_contexto,
                          leer_areas, leer_base, leer_catalogo_codigos, leer_equivalencias, migrar_fila,
                          parsear_lista, tipo_de_carpeta)
-from .lote import Grupo, OpcionesConversion, procesar_grupo
+from .lote import Grupo, OpcionesConversion, procesar_grupo, trabajadores_por_defecto
 from .publicacion import (MUESTRA_REVISION, escribir_huellas, escribir_resumen_construccion,
                           leer_revisados, limpiar_generados, publicar_corpus, validar_publicacion)
 
@@ -50,7 +50,14 @@ def carpeta_salida(args):
 def _opciones(args):
     return OpcionesConversion(verificacion_cruzada=not args.sin_verificacion_cruzada,
                               tiempo_max=args.tiempo_max or 0, raiz_entrada=getattr(args, "entrada", None),
-                              raiz_contexto=getattr(args, "contexto", None))
+                              raiz_contexto=getattr(args, "contexto", None),
+                              trabajadores=_trabajadores(args))
+
+
+def _trabajadores(args):
+    """--trabajadores N (0 o sin indicar = automatico, 1 = un documento a la vez)."""
+    n = getattr(args, "trabajadores", 0) or 0
+    return n if n >= 1 else trabajadores_por_defecto()
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +221,12 @@ def ejecutar_conversion(args):
         raise CorpusError("No encontré archivos adjuntos que coincidan con el inventario.\n"
                           f"Archivos encontrados en el entorno:\n{nombres}")
     print(f"CONVERSIÓN · convertir.py v{VERSION} · huella {huella()}")
-    resultados = [procesar_grupo(g, salida, opciones) for g in grupos_a_convertir(asignacion)]
+    grupos = list(grupos_a_convertir(asignacion))
+    try:
+        opciones.lanzar(grupos)
+        resultados = [procesar_grupo(g, salida, opciones) for g in grupos]
+    finally:
+        opciones.cerrar()
     _imprimir_resumen_conversion(resultados, asignacion)
     usados = asignacion.usados
     sobrantes = [p for p in entradas if str(p) not in usados]
@@ -288,11 +300,15 @@ def ejecutar_contexto(args):
     por_tipo = {}
     for f in inventario_activo(filas):
         por_tipo.setdefault(f["codigo"].split("-")[0], []).append(f)
-    grupos = []
+    grupos, a_convertir, opciones = [], [], _opciones(args)
     for t, filas_t in por_tipo.items():
         mapa = {f["codigo"]: f["path"] for f in filas_t}
-        grupo = Grupo(t, AREA_GENERAL, NOMBRE_AREA_GENERAL, filas_t, mapa, nombre_archivo(t, AREA_GENERAL)[:-3])
-        grupos.append(procesar_grupo(grupo, salida, _opciones(args)))
+        a_convertir.append(Grupo(t, AREA_GENERAL, NOMBRE_AREA_GENERAL, filas_t, mapa, nombre_archivo(t, AREA_GENERAL)[:-3]))
+    try:
+        opciones.lanzar(a_convertir)
+        grupos = [procesar_grupo(g, salida, opciones) for g in a_convertir]
+    finally:
+        opciones.cerrar()
     res = ResultadoContexto(grupos, equivalencias)
     print(f"Materiales: {sum(len(v) for v in por_tipo.values())} · convertidos: {len(res.convertidos)} · "
           f"errores: {sum(1 for r in res.documentos if r.estado == 'ERROR')}")
@@ -525,7 +541,7 @@ def modo_construir(args):
 
     # 2) Conversion de los documentos de area (DES, PRD, PRO, POL).
     comunes = dict(salida=str(control), sin_verificacion_cruzada=args.sin_verificacion_cruzada,
-                   tiempo_max=args.tiempo_max)
+                   tiempo_max=args.tiempo_max, trabajadores=getattr(args, "trabajadores", 0))
     ejecutar_conversion(argparse.Namespace(entrada=str(entrada), inventario=str(control / ARCHIVO_INVENTARIO),
                                            tipo=None, dep=None, departamento=None,
                                            extra_entradas=[Path(f["ruta"]) for f in de_area], **comunes))
@@ -673,6 +689,8 @@ def crear_parser():
             sp.add_argument("--sin-verificacion-cruzada", action="store_true")
             sp.add_argument("--tiempo-max", type=float, default=0,
                             help="Segundos máximos; lo que no alcance queda como pendiente.")
+            sp.add_argument("--trabajadores", type=int, default=0,
+                            help="Documentos que se convierten a la vez (0 = automático según los núcleos, 1 = uno a uno).")
     return ap
 
 

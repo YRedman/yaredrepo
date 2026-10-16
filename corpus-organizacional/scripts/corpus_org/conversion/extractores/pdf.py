@@ -12,7 +12,7 @@ from ..modelo import DocumentoExtraido
 from .base import Extractor
 from ..secciones import clave_titulo, es_seccion_conocida
 from .ocr import configurar_pytesseract, idioma_ocr
-from .ocr_pagina import CONFIANZA_OBJETIVO, leer_pagina, leer_region
+from .ocr_pagina import CONFIANZA_OBJETIVO, MIN_PALABRAS_TEXTO, leer_pagina, leer_region
 from .maquetacion import agrupar_filas, bloques_desde_items
 
 RE_PATRON_ENC = re.compile(r"(p[aá]gina\s*\d+\s*(de|/)\s*\d+|\bversi[oó]n\s*:|\brevisi[oó]n\s*:|c[oó]digo\s*:|"
@@ -76,7 +76,7 @@ ANCHO_CANAL = 4.0               # puntos a cada lado del centro donde no debe cr
 MAX_CRUZAN_CANAL = 0.03         # fraccion de lineas que pueden cruzar el centro
 MAX_IMAGENES_OCR = 30           # imagenes grandes por documento cuyo texto se lee con OCR
 MIN_PALABRAS_IMAGEN = 6         # palabras de 4+ letras para considerar que una imagen trae texto
-MIN_PALABRAS_OCR = 8            # palabras de 4+ letras que debe leer el OCR para tratar la pagina como texto
+MIN_PALABRAS_OCR = MIN_PALABRAS_TEXTO
 MIN_PLIEGOS = 0.6               # fraccion de las paginas apaisadas que deben ser pliegos
 MIN_PLIEGOS_CON_AMBOS = 3       # pliegos con texto en las dos mitades para tratar el PDF como folleto
 
@@ -871,9 +871,8 @@ class _ExtraccionPDF:
             self.d.notas.append(f"OCR falló en la página {i + 1}: {e}")
         textos = []
         if res is not None:
-            textos = [l["texto"] for l in res.lineas] + [c for t in res.tablas for f in t[4] for c in f]
-            textos += [c[2] for c in res.cajas] + res.encabezado
-            if sum(1 for t in textos for w in re.findall(r"[^\W\d_]{4,}", t)) < MIN_PALABRAS_OCR:
+            textos = res.textos
+            if res.palabras_utiles < MIN_PALABRAS_OCR:
                 # una foto o ilustracion de pagina completa: el OCR solo saca ruido; se deja como imagen
                 self.d.diagramas.append(i + 1)
                 self._marca(i, 0, 0, f"[DIAGRAMA O IMAGEN: ver página {i + 1} del documento original]")
