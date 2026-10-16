@@ -138,6 +138,7 @@ class ExtractorPptx(Extractor):
         bloques, textos = [], []
         diapositivas = lector.diapositivas()
         d.paginas = len(diapositivas)
+        d.unidad = "diapositivas"
         repeticion = self._imagenes_repetidas(lector, diapositivas)
         leidas, ocultas = 0, 0
         for n, ruta in enumerate(diapositivas, 1):
