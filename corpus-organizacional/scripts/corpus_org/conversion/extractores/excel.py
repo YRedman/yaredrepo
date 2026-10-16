@@ -8,6 +8,7 @@ documento, un organigrama) se leen con OCR y quedan bajo una marca, igual que en
 import collections
 import datetime
 import io
+import warnings
 import zipfile
 from pathlib import Path
 
@@ -45,9 +46,16 @@ def valor_texto(celda):
     return " ".join(str(v).split())
 
 
-def _tabla_de_hoja(ws):
+def _texto_de_celda(c, formulas):
+    t = valor_texto(c)
+    if not t and formulas:
+        t = formulas.get((c.row, c.column), "")     # formula sin valor guardado: mejor la formula que una celda vacia
+    return t
+
+
+def _tabla_de_hoja(ws, formulas=None):
     """Filas (listas de texto) de la hoja sin filas ni columnas completamente vacias."""
-    filas = [[valor_texto(c) for c in fila] for fila in ws.iter_rows()]
+    filas = [[_texto_de_celda(c, formulas) for c in fila] for fila in ws.iter_rows()]
     filas = [f for f in filas if any(f)]
     if not filas:
         return []
@@ -61,7 +69,9 @@ def abrir_libro(path, data_only=True):
     """Libro de openpyxl desde los bytes del archivo: openpyxl se niega a abrir por la extension (un Excel guardado
     como .csv), pero lee igual desde un flujo."""
     import openpyxl
-    return openpyxl.load_workbook(io.BytesIO(Path(path).read_bytes()), data_only=data_only)
+    with warnings.catch_warnings():      # "Conditional Formatting extension is not supported": no afecta a los valores
+        warnings.simplefilter("ignore", UserWarning)
+        return openpyxl.load_workbook(io.BytesIO(Path(path).read_bytes()), data_only=data_only)
 
 
 def _imagenes_de_hoja(ws):
@@ -90,13 +100,14 @@ class ExtractorExcel(Extractor):
             raise RuntimeError("El archivo no es un libro de Excel válido (¿protegido con contraseña o dañado?).")
         d = DocumentoExtraido()
         d.paginas = 0
+        d.hoja_de_calculo = True
         textos, bloques = [], []
         ocultas = [ws.title for ws in wb.worksheets if ws.sheet_state != "visible"]
         visibles = [ws for ws in wb.worksheets if ws.sheet_state == "visible"]
         imagenes_leidas = 0
-        sin_valor = self._formulas_sin_valor(path, visibles)
+        sin_valor, formulas = self._formulas_sin_valor(path, visibles, wb)
         for n, ws in enumerate(visibles, 1):
-            tabla = _tabla_de_hoja(ws)
+            tabla = _tabla_de_hoja(ws, formulas.get(ws.title))
             imagenes = _imagenes_de_hoja(ws)
             if not tabla and not imagenes:
                 continue
@@ -129,8 +140,8 @@ class ExtractorExcel(Extractor):
         if ocultas:
             d.notas.append("Hojas ocultas que no se leyeron: " + ", ".join(ocultas) + ".")
         if sin_valor:
-            d.avisos.append(f"{sin_valor} fórmulas sin valor guardado (celdas que salen vacías): abra el archivo en "
-                            "Excel, guárdelo y vuelva a convertir")
+            d.avisos.append(f"{sin_valor} fórmulas sin valor guardado (se muestran como fórmula, no como resultado): "
+                            "abra el archivo en Excel, guárdelo y vuelva a convertir")
         d.bloques = bloques
         crudo = " ".join(textos)
         d.crudo = collections.Counter(tokens(RE_MARCAS.sub(" ", crudo)))
@@ -140,14 +151,14 @@ class ExtractorExcel(Extractor):
         return d
 
     @staticmethod
-    def _formulas_sin_valor(path, visibles):
-        """Cantidad de formulas de las hojas visibles que no tienen valor guardado (se leerian como vacias)."""
+    def _formulas_sin_valor(path, visibles, wv):
+        """(cantidad, {hoja: {(fila, columna): formula}}) de las formulas de las hojas visibles que no tienen valor
+        guardado (se leerian como celdas vacias)."""
         try:
             wf = abrir_libro(path, data_only=False)
-            wv = abrir_libro(path, data_only=True)
         except Exception:
-            return 0
-        total = 0
+            return 0, {}
+        total, por_hoja = 0, {}
         for ws in visibles:
             if ws.title not in wf.sheetnames:
                 continue
@@ -155,4 +166,5 @@ class ExtractorExcel(Extractor):
                 for cf, cv in zip(fila_f, fila_v):
                     if isinstance(cf.value, str) and cf.value.startswith("=") and cv.value is None:
                         total += 1
-        return total
+                        por_hoja.setdefault(ws.title, {})[(cf.row, cf.column)] = cf.value
+        return total, por_hoja

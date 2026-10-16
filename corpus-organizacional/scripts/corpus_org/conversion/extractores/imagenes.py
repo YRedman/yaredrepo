@@ -7,6 +7,7 @@ from .maquetacion import agrupar_filas, bloques_desde_items
 from .ocr_pagina import CONFIANZA_OBJETIVO
 
 MIN_PALABRAS_IMAGEN = 6      # palabras de 4+ letras para considerar que una imagen trae texto
+MIN_CONFIANZA_INCLUIR = 60   # por debajo, el OCR es ruido: se deja la marca y un aviso, no el texto
 LADO_MIN_PX = 300            # una imagen mas chica (icono, vineta) no se lee
 
 
@@ -50,6 +51,13 @@ def texto_de_imagen(d, bloques, donde, n_unidad, datos):
     if utiles < MIN_PALABRAS_IMAGEN:
         d.diagramas.append(n_unidad)
         bloques.append({"k": "marca", "texto": marca + "; sin texto legible, ver el original]"})
+        return
+    if res.confianza < MIN_CONFIANZA_INCLUIR:
+        d.diagramas.append(n_unidad)
+        bloques.append({"k": "marca", "texto": marca + f"; el OCR solo lo lee con {res.confianza:.0f} % de confianza "
+                                                       "(ilegible), ver el original]"})
+        d.avisos.append(f"la imagen de {donde} no se pudo leer (OCR {res.confianza:.0f} %): su contenido no está en el "
+                        "corpus; use una versión más nítida o transcríbala")
         return
     d.paginas_ocr.append(n_unidad)
     d.idioma_ocr = idioma

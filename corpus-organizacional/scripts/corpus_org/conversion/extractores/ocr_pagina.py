@@ -639,12 +639,15 @@ def leer_imagen(imagen, idioma, pytesseract):
                 img = receta(gris)
             except ImportError:
                 pass
-        palabras = _ocr(img, idioma, pytesseract, psm=3)
-        res = PaginaOCR(lineas=_lineas(palabras, 1.0 / escala), confianzas=[p[5] for p in palabras])
-        res.mejora = nombre
-        lecturas.append((res, nombre, receta))
-        if len(lecturas) == 1 and (res.confianza >= CONFIANZA_OBJETIVO or not palabras):
-            return res
+        for psm in (3, 11):                 # pagina con diseno, y texto disperso (diagramas, cajas sueltas)
+            palabras = _ocr(img, idioma, pytesseract, psm=psm)
+            res = PaginaOCR(lineas=_lineas(palabras, 1.0 / escala), confianzas=[p[5] for p in palabras])
+            res.mejora = nombre if psm == 3 else f"{nombre}, texto disperso"
+            lecturas.append((res, nombre, receta))
+            if len(lecturas) == 1 and not palabras:
+                return res                  # sin texto: nada que mejorar
+            if res.confianza >= CONFIANZA_OBJETIVO and (psm == 3 or len(lecturas) > 1):
+                return _elegir(lecturas)[0]
         if time.monotonic() - inicio > TIEMPO_MAX_MEJORA:
             break
     return _elegir(lecturas)[0]

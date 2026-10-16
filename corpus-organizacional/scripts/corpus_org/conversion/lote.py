@@ -84,26 +84,29 @@ def convertir_documento(path, fila, grupo, opciones):
     v = verificar(doc, bloques, analisis, cuerpo)
     r = DocumentoConvertido(codigo=fila["codigo"], archivo=fila["archivo"], estado="OK", doc=doc,
                             analisis=analisis, verificacion=v, palabras=len(tokens(RE_MARCAS.sub(" ", cuerpo))),
-                            ruta=ruta_original(fila, grupo, opciones))
+                            ruta=ruta_original(fila, grupo, opciones, path))
     return r, md
 
 
-def ruta_original(fila, grupo, opciones=None):
+def ruta_original(fila, grupo, opciones=None, path=None):
     """Donde esta el archivo para revisarlo: 'entrada/<ruta>' o 'contexto/<ruta>', relativa a esa carpeta.
 
-    Los documentos de area que vienen de la carpeta de contexto (procedimientos, politicas...) se muestran
-    como 'contexto/...'. Si la ruta del inventario es absoluta y no cuelga de ninguna de las dos carpetas,
-    se muestran sus tres ultimas partes (Tipo/Departamento/Archivo)."""
-    ruta = (fila.get("ruta_original") or fila.get("archivo") or "").strip()
-    for raiz, etiqueta in ((getattr(opciones, "raiz_contexto", None), "contexto"),
-                           (getattr(opciones, "raiz_entrada", None), "entrada")):
-        if raiz is None:
-            continue
-        try:
-            return f"{etiqueta}/" + Path(ruta).resolve().relative_to(Path(raiz).resolve()).as_posix()
-        except (ValueError, OSError):
-            continue
-    partes = [x for x in re.split(r"[\\/]+", ruta) if x]
+    Se parte del archivo realmente leido (``path``): un documento de area que vino de la carpeta de contexto
+    (procedimientos, politicas...) se muestra como 'contexto/...' aunque su fila del inventario base traiga otra
+    ruta. Sin archivo (no adjunto) se usa la ruta del inventario; si no cuelga de ninguna carpeta, sus tres
+    ultimas partes (Tipo/Departamento/Archivo)."""
+    raices = ((getattr(opciones, "raiz_contexto", None), "contexto"), (getattr(opciones, "raiz_entrada", None), "entrada"))
+    candidatos = [str(path)] if path is not None else []
+    candidatos.append((fila.get("ruta_original") or fila.get("archivo") or "").strip())
+    for ruta in candidatos:
+        for raiz, etiqueta in raices:
+            if raiz is None:
+                continue
+            try:
+                return f"{etiqueta}/" + Path(ruta).resolve().relative_to(Path(raiz).resolve()).as_posix()
+            except (ValueError, OSError):
+                continue
+    partes = [x for x in re.split(r"[\\/]+", candidatos[-1]) if x]
     if grupo.es_contexto or fila.get("desde_contexto"):
         return "contexto/" + "/".join(partes)
     return "entrada/" + "/".join(partes[-3:] if len(partes) > 3 else partes)
@@ -167,7 +170,7 @@ def procesar_grupo(grupo, salida, opciones):
             continue
         if opciones.tiempo_agotado():
             documentos.append(DocumentoConvertido(fila["codigo"], fila["archivo"], "PENDIENTE (tiempo)",
-                                                  ruta=ruta_original(fila, grupo, opciones)))
+                                                  ruta=ruta_original(fila, grupo, opciones, path)))
             continue
         try:
             r, md = convertir_documento(path, fila, grupo, opciones)
@@ -175,7 +178,7 @@ def procesar_grupo(grupo, salida, opciones):
             documentos.append(DocumentoConvertido(fila["codigo"], fila["archivo"], "ERROR",
                                                   error=f"{type(e).__name__}: {e}",
                                                   traza=traceback.format_exc(limit=3),
-                                                  ruta=ruta_original(fila, grupo, opciones)))
+                                                  ruta=ruta_original(fila, grupo, opciones, path)))
             continue
         linea_ini = len(lineas_md) + 1
         lineas_md.extend(md)

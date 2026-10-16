@@ -306,7 +306,7 @@ class DosSkillsIntegracionTest(unittest.TestCase):
         proc(ctx / "Reglamento interno.docx", "Código: RG-001", "Normar la convivencia.", pasos, [])
         # formatos que no se leen, un .zip y un descriptivo que ya esta en la entrada (mismo nombre)
         (ctx / "Plan.ppt").write_bytes(b"x")
-        (ctx / "Captura.png").write_bytes(b"x")
+        (ctx / "Datos.dat").write_bytes(b"x")
         (ctx / "todo.zip").write_bytes(b"x")
         desc(ctx / "Jefe de Seguridad.docx", "Jefe de Seguridad", "Gerente General", "Proteger.", ["Rondas."], "Código: DP-SEG-01")
         g = docx.Document()

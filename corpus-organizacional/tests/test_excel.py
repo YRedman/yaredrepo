@@ -100,6 +100,9 @@ class ExcelTest(unittest.TestCase):
             _libro(ruta, construir)
             d = _extraer(ruta)
         self.assertTrue(any("fórmulas sin valor guardado" in a for a in d.avisos), d.avisos)
+        self.assertEqual([b["filas"] for b in d.bloques if b["k"] == "tabla"],
+                         [[["a", "b", "suma"], ["1", "2", "=A2+B2"]]])      # la formula en vez de una celda vacia
+        self.assertTrue(d.hoja_de_calculo)
 
     def test_un_excel_con_extension_csv_se_lee_como_excel(self):
         def construir(wb):
@@ -145,6 +148,32 @@ class FormatoRealTest(unittest.TestCase):
             with self.assertRaises(RuntimeError) as e:
                 extractor_para(t / "c.csv")
             self.assertIn("Office antiguo", str(e.exception))
+
+
+@unittest.skipUnless(DEPENDENCIAS, "faltan openpyxl o Pillow")
+class AvisosDeHojaTest(unittest.TestCase):
+    def test_celda_inicial_vacia_es_un_dato_en_una_hoja_y_una_fila_partida_en_un_pdf(self):
+        from corpus_org.conversion.analisis import avisos_de_estructura
+        filas = [["Área", "Meta"]] + [[f"Área {k}", str(k)] for k in range(1, 8)] + [["", "20"]]
+        tabla = {"k": "tabla", "filas": filas}
+        self.assertTrue(any("sin primera celda" in a for a in avisos_de_estructura([tabla], 0)))
+        self.assertEqual(avisos_de_estructura([tabla], 0, hoja_de_calculo=True), [])
+
+    def test_ruta_original_sale_del_archivo_realmente_leido(self):
+        from types import SimpleNamespace
+        from corpus_org.conversion.lote import ruta_original
+        with tempfile.TemporaryDirectory() as tmp:
+            t = Path(tmp)
+            (t / "contexto" / "Plan").mkdir(parents=True)
+            (t / "entrada").mkdir()
+            archivo = t / "contexto" / "Plan" / "Procedimiento.pdf"
+            archivo.write_bytes(b"x")
+            opciones = SimpleNamespace(raiz_entrada=t / "entrada", raiz_contexto=t / "contexto")
+            fila = {"ruta_original": "corpus-organizacional/contexto/Plan/Procedimiento.pdf", "archivo": "Procedimiento.pdf"}
+            grupo = SimpleNamespace(es_contexto=False)
+            self.assertEqual(ruta_original(fila, grupo, opciones, archivo), "contexto/Plan/Procedimiento.pdf")
+            # sin el archivo (no adjunto) se usa la ruta del inventario
+            self.assertEqual(ruta_original(fila, grupo, opciones), "entrada/contexto/Plan/Procedimiento.pdf")
 
 
 @unittest.skipUnless(OCR, "faltan Tesseract (spa), pytesseract o Pillow")

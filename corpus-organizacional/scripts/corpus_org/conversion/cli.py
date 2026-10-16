@@ -179,10 +179,16 @@ def _imprimir_resumen_conversion(resultados, asignacion):
     for res in resultados:
         g = res.grupo
         hechos = {r.codigo for r in res.convertidos}
-        faltan = [f["codigo"] for f in asignacion.grupos[(g.tipo, g.codigo_dep)] if f["codigo"] not in hechos]
+        faltan = [f for f in asignacion.grupos[(g.tipo, g.codigo_dep)] if f["codigo"] not in hechos]
         if faltan:
             print()
-            print(f"Faltan por convertir en {g.tipo}_{g.codigo_dep} ({len(faltan)}): {', '.join(faltan)}")
+            print(f"Faltan por convertir en {g.tipo}_{g.codigo_dep} ({len(faltan)}): "
+                  + ", ".join(f["codigo"] for f in faltan))
+            sin_archivo = [f for f in faltan if f["codigo"] not in g.archivos]
+            for f in sin_archivo:
+                print(f"- {f['codigo']} «{f['archivo']}»: está en el inventario pero no encontré ese archivo en la carpeta "
+                      "de entrada. ¿Se movió, se borró o cambió de nombre? Si hay una lista.txt antigua en la entrada, "
+                      "bórrela para que el inventario se arme con las carpetas.")
     for res in resultados:
         malos = [r for r in res.documentos if r.motivos_consola()]
         if malos:

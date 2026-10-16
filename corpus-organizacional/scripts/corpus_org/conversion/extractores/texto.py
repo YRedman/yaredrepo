@@ -84,6 +84,7 @@ class ExtractorTexto(Extractor):
         if Path(path).suffix.lower() == ".csv":
             filas = _filas_csv(txt)
             d.bloques = [{"k": "tabla", "filas": filas}] if filas else []
+            d.hoja_de_calculo = True
         else:
             d.bloques = _bloques_markdown(txt)
         d.tablas = sum(1 for b in d.bloques if b["k"] == "tabla")

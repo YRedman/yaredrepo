@@ -107,6 +107,44 @@ class MejoraDeLecturaTest(unittest.TestCase):
 
 
 @unittest.skipUnless(DEPENDENCIAS, "faltan dependencias de imagen")
+class ImagenSueltaTest(unittest.TestCase):
+    def test_un_png_de_contexto_se_lee_con_ocr(self):
+        if not OCR:
+            self.skipTest("falta Tesseract (spa)")
+        img = _imagen_con_texto(["Reunion de seguimiento semanal del proyecto", "Responsable: Gerencia de Operaciones",
+                                 "Entregable: informe de avance mensual", "Fecha limite: fin de mes"], tam=(1000, 500))
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "captura.png"
+            img.save(ruta)
+            d = extractor_para(ruta).extraer(ruta)
+        texto = " ".join(b.get("texto", "") for b in d.bloques)
+        self.assertIn("Gerencia de Operaciones", texto)
+        self.assertEqual(d.paginas_ocr, [1])
+
+    def test_una_imagen_que_el_ocr_lee_con_menos_de_60_no_aporta_su_texto(self):
+        from unittest import mock
+        from corpus_org.conversion.extractores.imagenes import texto_de_imagen
+        from corpus_org.conversion.modelo import DocumentoExtraido
+        ruido = O.PaginaOCR(lineas=[{"texto": "xqzv wklp rtmn bhjc vfgd ssdd", "x0": 0, "y0": 0, "x1": 10, "y1": 5,
+                                     "tam": 0.0, "bold": False, "font": "ocr", "spans": [], "chars": 20, "ocr": True}],
+                            confianzas=[26.0] * 6)
+        d, bloques = DocumentoExtraido(), []
+        with mock.patch("corpus_org.conversion.extractores.ocr.idioma_ocr", return_value="spa"), \
+                mock.patch("corpus_org.conversion.extractores.ocr_pagina.leer_imagen", return_value=ruido):
+            texto_de_imagen(d, bloques, "LA HOJA «Diagrama»", 1, _png_bytes())
+        self.assertEqual([b["k"] for b in bloques], ["marca"])
+        self.assertIn("ilegible", bloques[0]["texto"])
+        self.assertEqual(d.paginas_ocr, [])
+        self.assertTrue(any("no se pudo leer" in a for a in d.avisos), d.avisos)
+
+
+def _png_bytes():
+    buf = io.BytesIO()
+    Image.new("RGB", (50, 50), "white").save(buf, "PNG")
+    return buf.getvalue()
+
+
+@unittest.skipUnless(DEPENDENCIAS, "faltan dependencias de imagen")
 class RecetasTest(unittest.TestCase):
     def test_las_recetas_conservan_el_tamano_de_la_pagina(self):
         img = _imagen_con_texto(["Prueba de recetas"], tam=(400, 200))

@@ -43,7 +43,7 @@ def analizar(doc, tipo):
     a.metadatos = extraer_metadatos(doc.encabezado, iniciales)
     a.actividades = _actividades(secciones) if tipo == "P" else []
     a.codigos_citados = _codigos_citados(doc.encabezado, bloques, a.metadatos.codigo_interno)
-    a.avisos += avisos_de_estructura(bloques, len(doc.diagramas))
+    a.avisos += avisos_de_estructura(bloques, len(doc.diagramas), doc.hoja_de_calculo)
     return bloques, a
 
 
@@ -385,7 +385,7 @@ def _repetidos_por_conversion(bloques):
     return repetidos
 
 
-def avisos_de_estructura(bloques, imagenes_grandes):
+def avisos_de_estructura(bloques, imagenes_grandes, hoja_de_calculo=False):
     """Senales de que la estructura pudo leerse mal aunque el texto este completo.
 
     - tabla con filas sin primera celda (fila partida que quedo como fila nueva);
@@ -394,7 +394,7 @@ def avisos_de_estructura(bloques, imagenes_grandes):
     """
     avisos = []
     for b in bloques:
-        if b["k"] == "tabla" and len(b["filas"]) >= 4:
+        if b["k"] == "tabla" and len(b["filas"]) >= 4 and not hoja_de_calculo:
             datos = b["filas"][1:]
             if sum(1 for f in datos if f and f[0].strip()) >= 0.8 * len(datos):
                 huerfanas = [f for f in datos if f and not f[0].strip()
