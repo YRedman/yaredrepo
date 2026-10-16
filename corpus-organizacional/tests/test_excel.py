@@ -90,6 +90,63 @@ class ExcelTest(unittest.TestCase):
         self.assertEqual([b["texto"] for b in d.bloques if b["k"] == "p"],
                          ["Primer renglon del texto", "Segundo renglon del texto"])
 
+    def test_una_hoja_con_varias_zonas_queda_en_tablas_y_titulos_separados(self):
+        def construir(wb):
+            ws = wb.active
+            ws.title = "Ficha"
+            ws["B2"], ws["C2"] = "Proceso:", "Compras"
+            ws["B3"], ws["C3"] = "Lider:", "Director"
+            ws["B5"], ws["D5"], ws["F5"] = "Proveedor", "Actividad", "Salida"       # tabla con columnas vacias entre medio
+            ws["B6"], ws["D6"], ws["F6"] = "Almacen", "Recibir", "Orden"
+            ws["D7"], ws["F7"] = "Registrar", "Registro"
+            ws["B10"] = "RECURSOS"
+            ws["B11"], ws["D11"] = "Actividad", "Recurso"
+            ws["B12"], ws["D12"] = "Recibir", "Escaner"
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "ficha.xlsx"
+            _libro(ruta, construir)
+            d = _extraer(ruta)
+        self.assertEqual([b["texto"] for b in d.bloques if b["k"] == "h"], ["RECURSOS"])
+        tablas = [b["filas"] for b in d.bloques if b["k"] == "tabla"]
+        self.assertEqual(tablas, [[["Proceso:", "Compras"], ["Lider:", "Director"]],
+                                  [["Proveedor", "Actividad", "Salida"], ["Almacen", "Recibir", "Orden"],
+                                   ["", "Registrar", "Registro"]],
+                                  [["Actividad", "Recurso"], ["Recibir", "Escaner"]]])
+        self.assertEqual(d.tablas, 3)
+
+    def test_una_fila_en_blanco_dentro_de_la_misma_tabla_no_la_parte(self):
+        def construir(wb):
+            ws = wb.active
+            ws.append(["Id", "Nombre"])
+            ws.append([1, "Uno"])
+            ws.append([])
+            ws.append([2, "Dos"])
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "t.xlsx"
+            _libro(ruta, construir)
+            d = _extraer(ruta)
+        self.assertEqual([b["filas"] for b in d.bloques if b["k"] == "tabla"],
+                         [[["Id", "Nombre"], ["1", "Uno"], ["2", "Dos"]]])
+
+    def test_celdas_combinadas_en_vertical_repiten_su_valor_pero_un_rotulo_ancho_no(self):
+        def construir(wb):
+            ws = wb.active
+            ws["B1"] = "TITULO DEL FORMULARIO"
+            ws.merge_cells("B1:H2")
+            ws.append([])
+            ws["A4"], ws["B4"] = "Area", "Tarea"
+            ws["A5"], ws["B5"] = "Ventas", "Cotizar"
+            ws["B6"] = "Cobrar"
+            ws.merge_cells("A5:A6")
+            ws["A7"], ws["B7"] = "Compras", "Pedir"
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "m.xlsx"
+            _libro(ruta, construir)
+            d = _extraer(ruta)
+        self.assertEqual([b["texto"] for b in d.bloques if b["k"] == "p"], ["TITULO DEL FORMULARIO"])
+        self.assertEqual([b["filas"] for b in d.bloques if b["k"] == "tabla"],
+                         [[["Area", "Tarea"], ["Ventas", "Cotizar"], ["Ventas", "Cobrar"], ["Compras", "Pedir"]]])
+
     def test_formulas_sin_valor_guardado_se_avisan(self):
         def construir(wb):
             ws = wb.active

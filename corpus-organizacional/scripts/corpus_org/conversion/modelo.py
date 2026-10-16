@@ -36,6 +36,7 @@ class DocumentoExtraido:
     texto_cruzado: Optional[Set[str]] = None                # tokens de un segundo motor (pdfplumber)
     idioma_ocr: Optional[str] = None
     confianzas_ocr: List[float] = field(default_factory=list)   # confianza de cada palabra leida por OCR
+    unidad: str = "páginas"                                 # "hojas" (Excel) o "diapositivas" (PowerPoint) si no es un PDF/Word
     hoja_de_calculo: bool = False                           # Excel o CSV: una celda vacia es un dato, no una fila partida
 
     @property
@@ -126,7 +127,7 @@ class DocumentoConvertido:
             avisos.append("números del original que no aparecen completos: " + ", ".join(list(v.numeros_faltan)[:8]))
         if d.ocr_dudoso:
             conf = f"confianza {d.confianza_ocr:.0f} %" if d.confianza_ocr is not None else "confianza desconocida"
-            avisos.append("OCR en páginas " + ", ".join(map(str, d.paginas_ocr)) + f" ({conf}): revisar contra el original")
+            avisos.append(f"OCR en {d.unidad} " + ", ".join(map(str, d.paginas_ocr)) + f" ({conf}): revisar contra el original")
         if d.paginas_escaneadas_sin_ocr:
             avisos.append(AVISO_ESCANEADO + ": " + ", ".join(map(str, d.paginas_escaneadas_sin_ocr)))
         return avisos
@@ -143,7 +144,7 @@ class DocumentoConvertido:
             extra.append(f"{len(v.agregadas)} palabras que no están en el original")
         if d.ocr_dudoso:   # el OCR con confianza alta no necesita revision: no se lista
             conf = f" (confianza {d.confianza_ocr:.0f} %)" if d.confianza_ocr is not None else ""
-            extra.append("OCR en páginas " + ", ".join(map(str, d.paginas_ocr)) + conf)
+            extra.append(f"OCR en {d.unidad} " + ", ".join(map(str, d.paginas_ocr)) + conf)
         if d.paginas_escaneadas_sin_ocr:
             extra.append("páginas escaneadas sin texto")
         if self.palabras == 0:
@@ -163,7 +164,7 @@ class DocumentoConvertido:
         if v.cruz:
             motivos.append(f"{len(v.cruz)} palabras solo detectadas por el segundo motor")
         if d.paginas_ocr:
-            motivos.append(f"OCR en páginas {', '.join(map(str, d.paginas_ocr))}")
+            motivos.append(f"OCR en {d.unidad} {', '.join(map(str, d.paginas_ocr))}")
         if d.paginas_escaneadas_sin_ocr:
             motivos.append(f"páginas escaneadas sin texto: {', '.join(map(str, d.paginas_escaneadas_sin_ocr))}")
         if self.palabras == 0:

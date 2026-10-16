@@ -49,12 +49,12 @@ def _construccion(r):
     """Una linea que compara lo que trae el original con lo que quedo en el corpus."""
     d, v = r.doc, r.verificacion
     unidas = sum(1 for n in d.notas if "tabla partida entre páginas" in n)
-    partes = [f"{d.paginas or '?'} páginas", f"{v.total} palabras en el original → {r.palabras} en el corpus "
+    partes = [f"{d.paginas or '?'} {d.unidad}", f"{v.total} palabras en el original → {r.palabras} en el corpus "
               f"(texto presente {v.cobertura:.1f} %)", f"{d.tablas} tablas"]
     if unidas:
         partes.append(f"{unidas} filas de tabla partida unidas entre páginas")
     if d.paginas_ocr:
-        partes.append(f"{len(d.paginas_ocr)} páginas leídas con OCR")
+        partes.append(f"{len(d.paginas_ocr)} {d.unidad} leídas con OCR")
     if d.diagramas:
         partes.append(f"{len(d.diagramas)} diagramas o imágenes (solo su texto, si lo tienen; el gráfico no está en el corpus)")
     return "- Construcción frente al original: " + " · ".join(partes)
@@ -103,7 +103,7 @@ def _detalle(r):
     l.append(f"- Legibilidad: {_legibilidad(d)}")
     if d.paginas_ocr:
         conf = f"; confianza media {d.confianza_ocr:.1f} %" if d.confianza_ocr is not None else ""
-        l.append(f"- OCR aplicado en páginas: {', '.join(map(str, d.paginas_ocr))} (idioma: {d.idioma_ocr}{conf}); "
+        l.append(f"- OCR aplicado en {d.unidad}: {', '.join(map(str, d.paginas_ocr))} (idioma: {d.idioma_ocr}{conf}); "
                  "ese texto no se puede verificar automáticamente.")
     if d.paginas_escaneadas_sin_ocr:
         l.append(f"- Páginas escaneadas sin texto y sin OCR: {', '.join(map(str, d.paginas_escaneadas_sin_ocr))}")

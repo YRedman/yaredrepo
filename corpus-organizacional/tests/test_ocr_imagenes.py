@@ -51,6 +51,27 @@ def _pdf_con_imagen(ruta, img):
     c.save()
 
 
+@unittest.skipUnless(DEPENDENCIAS, "faltan dependencias de imagen")
+class EtiquetasDeDiagramaTest(unittest.TestCase):
+    def test_las_palabras_de_una_caja_se_unen_y_las_cajas_vecinas_no(self):
+        def pal(t, x0, y0, x1, y1):
+            return (t, x0, y0, x1, y1, 90.0, None)
+        palabras = [pal("Recibir", 100, 100, 190, 130), pal("pedido", 200, 100, 280, 130),            # una linea
+                    pal("Enviar", 100, 300, 175, 330), pal("notificacion", 100, 336, 240, 366),       # dos lineas
+                    pal("Cobro", 600, 100, 670, 130)]
+        self.assertEqual([e[0] for e in O.agrupar_etiquetas(palabras)],
+                         ["Recibir pedido", "Cobro", "Enviar notificacion"])
+
+    def test_las_etiquetas_se_corrigen_con_el_texto_del_libro_y_se_quitan_los_fragmentos(self):
+        from corpus_org.conversion.extractores.imagenes import depurar_etiquetas
+        referencia = ["Ejecución del Pedido", "Cotización"]
+        etiquetas, corregidas, quitadas = depurar_etiquetas(
+            ["Ejecucion del pedido", "Ejecuciom del Pedido", "ión", "USO", "do Cotización", "SI", "Si", "Cobro de Pedido"],
+            referencia)
+        self.assertEqual(etiquetas, ["Ejecución del Pedido", "Cotización", "SI", "Cobro de Pedido"])
+        self.assertEqual((corregidas, quitadas), (2, 2))
+
+
 @unittest.skipUnless(OCR, "faltan Tesseract (spa), pytesseract, Pillow o numpy")
 class TextoEnImagenTest(unittest.TestCase):
     def test_el_texto_de_una_imagen_grande_se_lee_con_ocr(self):

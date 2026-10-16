@@ -30,7 +30,7 @@ def _metadatos_conversion(doc, analisis, codigo, tipo, departamento, archivo, ti
         if valor:
             lineas.append(f"> - {etiqueta}: {valor}")
     if doc.paginas:
-        lineas.append(f"> - Páginas: {doc.paginas}")
+        lineas.append(f"> - {doc.unidad.capitalize()}: {doc.paginas}")
     if familia(tipo) in ("P", "D"):
         if analisis.faltantes:
             lineas += [f"> - {f}: {NO_ESPECIFICADO}" for f in analisis.faltantes]
@@ -40,7 +40,7 @@ def _metadatos_conversion(doc, analisis, codigo, tipo, departamento, archivo, ti
         lineas.append("> - Secciones no incluidas: " + ", ".join(analisis.secciones_excluidas))
     if doc.paginas_ocr:
         conf = f" (confianza media {doc.confianza_ocr:.0f} %)" if doc.confianza_ocr is not None else ""
-        lineas.append("> - Páginas leídas con OCR: " + ", ".join(map(str, doc.paginas_ocr)) + conf)
+        lineas.append(f"> - {doc.unidad.capitalize()} leídas con OCR: " + ", ".join(map(str, doc.paginas_ocr)) + conf)
     lineas.append("")
     return lineas
 
