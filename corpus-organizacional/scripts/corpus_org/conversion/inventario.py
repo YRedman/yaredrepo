@@ -19,7 +19,7 @@ from ..comun.tipos import (AREA_GENERAL, NOMBRE_AREA_GENERAL, TIPO_CONTEXTO_POR_
                            tipo_de_carpeta, tipo_de_material, tipo_desde_texto, tipo_general_de,
                            tipos_candidatos, RE_CODIGO_ANTERIOR)
 from ..comun.tipos import tipo as tipo_documento
-from .configuracion import EXT_RECONOCIDAS, PALABRAS_VACIAS_DEP, PREFERENCIA_EXT
+from .configuracion import EXT_IMAGEN, EXT_RECONOCIDAS, PALABRAS_VACIAS_DEP, PREFERENCIA_EXT
 from .entradas import es_archivo_ignorado, partes_ruta
 
 RE_CODIGO_DEP = re.compile(r"^[A-Z0-9]{3}$")
@@ -454,7 +454,7 @@ def documentos_de_area_en_contexto(archivos, carpeta_contexto, areas=None):
     return filas
 
 
-def quitar_copias_contexto(archivos):
+def quitar_copias_contexto(archivos, carpeta=None):
     """Un mismo material repetido en el contexto ('X (1).csv' junto a 'X.csv', o 'X.docx' y 'X.pdf') se numera una sola
     vez: se conserva el original (sin sufijo de copia) en el formato preferido. Un .csv y un .md del mismo nombre no son
     el mismo material. Devuelve (archivos, avisos)."""
@@ -462,7 +462,9 @@ def quitar_copias_contexto(archivos):
     for p in archivos:
         ext = p.suffix.lower()
         familia = "documento" if ext in PREFERENCIA_EXT else ext
-        grupos.setdefault((clave_documento(p.name), familia), []).append(p)
+        # las capturas «cafeImageExport (1).png», «(2).png»... son imagenes distintas, no copias: solo se unen las identicas
+        clave = (_huella_archivo(p),) if ext in EXT_IMAGEN else (clave_documento(p.name),)
+        grupos.setdefault(clave + (familia,), []).append(p)
     salida, avisos = [], []
     for lista_p in grupos.values():
         if len(lista_p) == 1:
@@ -471,13 +473,22 @@ def quitar_copias_contexto(archivos):
         lista_p.sort(key=lambda p: (_es_copia(p.name), PREFERENCIA_EXT.get(p.suffix.lower(), 9), norm(p.name)))
         usado, descartados = lista_p[0], lista_p[1:]
         salida.append(usado)
-        distintos = [q.name for q in descartados if _huella_archivo(q) != _huella_archivo(usado)]
-        aviso = f"Duplicado en el contexto: se usa «{usado.name}» y se descarta " + ", ".join(
-            f"«{q.name}»" for q in descartados)
+        distintos = [q for q in descartados if _huella_archivo(q) != _huella_archivo(usado)]
+        aviso = f"Duplicado en el contexto: se usa «{_mostrar(usado, carpeta)}» y se descarta " + ", ".join(
+            f"«{_mostrar(q, carpeta)}»" for q in descartados)
         if distintos:
-            aviso += " (el contenido de " + ", ".join(f"«{n}»" for n in distintos) + " es distinto: confirme cuál es el vigente)"
+            aviso += " (el contenido de " + ", ".join(f"«{_mostrar(q, carpeta)}»" for q in distintos) + \
+                " es distinto: confirme cuál es el vigente)"
         avisos.append(aviso)
     return salida, avisos
+
+
+def _mostrar(p, carpeta):
+    """Nombre del archivo con su carpeta (relativa al contexto) para distinguir los que se llaman igual."""
+    try:
+        return Path(p).relative_to(carpeta).as_posix() if carpeta is not None else Path(p).name
+    except ValueError:
+        return Path(p).name
 
 
 def _huella_archivo(p):

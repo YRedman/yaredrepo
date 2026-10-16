@@ -182,3 +182,29 @@ class ParaleloTest(unittest.TestCase):
             finally:
                 opciones.cerrar()
         self.assertEqual([d.estado for d in r.documentos], ["OK", "ERROR", "OK", "OK"])
+
+
+class NombresYDuplicadosTest(unittest.TestCase):
+    def test_una_sigla_del_archivo_explicada_por_el_puesto_leido_no_es_un_aviso(self):
+        from corpus_org.conversion.analisis import _siglas_explicadas
+        self.assertTrue(_siglas_explicadas("3. ENFERMERO-A TSMO GGH-FOR-040", "Enfermero Terapia de Soporte Multiorgánica"))
+        self.assertTrue(_siglas_explicadas("3. Analista GDC GECA-ATTA-FOR-034_DESCRIPCIÓN DE PUESTO",
+                                           "Analista de Gestión del Conocimiento"))
+        self.assertFalse(_siglas_explicadas("3. ENFERMERO-A TSMO GGH-FOR-040", "Gerente de Compras"))
+
+    def test_las_capturas_con_numero_son_imagenes_distintas_y_solo_se_unen_las_identicas(self):
+        from corpus_org.conversion.inventario import quitar_copias_contexto
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp)
+            (raiz / "a").mkdir()
+            (raiz / "b").mkdir()
+            rutas = [raiz / "a" / "captura (1).png", raiz / "a" / "captura (2).png", raiz / "b" / "captura (1).png"]
+            for r, contenido in zip(rutas, (b"uno", b"dos", b"uno")):
+                r.write_bytes(contenido)
+            otras = [raiz / "Datos.csv", raiz / "Datos (1).csv"]
+            otras[0].write_text("a;b\n1;2\n")
+            otras[1].write_text("a;b\n1;3\n")
+            usados, avisos = quitar_copias_contexto(rutas + otras, raiz)
+        self.assertEqual(sorted(p.name for p in usados), ["Datos.csv", "captura (1).png", "captura (2).png"])
+        self.assertTrue(any("a/captura (1).png" in a and "b/captura (1).png" in a for a in avisos), avisos)
+        self.assertTrue(any("Datos (1).csv" in a and "es distinto" in a for a in avisos), avisos)
