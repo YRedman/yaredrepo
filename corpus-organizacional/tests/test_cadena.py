@@ -14,10 +14,10 @@ W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 def _meta():
     return {
-        "POL-ALM-01": {"codigo_interno": "SUMI-ALMA-RD-POL-001",
-                       "codigos_citados": "ALMA-RD-PRO-011, DIST-RD-FOR-036, SUMI-ALMA-RD-POL-001"},
-        "PRD-ALM-03": {"codigo_interno": "SUMI-ALMA-RD-PRO-011", "codigos_citados": "ALM-FOR-012, SUMI-ALMA-RD-POL-001"},
-        "PRD-LOG-01": {"codigo_interno": "SUMI-LOGI-PRO-001", "codigos_citados": "SUMI-ALMA-RD-PRO-011, ALM-FOR-012"},
+        "POL-ALM-01": {"codigo_interno": "XYZ-ALMA-RD-POL-001",
+                       "codigos_citados": "ALMA-RD-PRO-011, DIST-RD-FOR-036, XYZ-ALMA-RD-POL-001"},
+        "PRD-ALM-03": {"codigo_interno": "XYZ-ALMA-RD-PRO-011", "codigos_citados": "ALM-FOR-012, XYZ-ALMA-RD-POL-001"},
+        "PRD-LOG-01": {"codigo_interno": "XYZ-LOGI-PRO-001", "codigos_citados": "XYZ-ALMA-RD-PRO-011, ALM-FOR-012"},
         "DES-GCO-01": {"codigo_interno": "", "codigos_citados": ""},
     }
 
@@ -30,7 +30,7 @@ class CadenaTest(unittest.TestCase):
                                   ("PRD-ALM-03", "POL-ALM-01", "exacto"),
                                   ("PRD-LOG-01", "PRD-ALM-03", "exacto")})
         # el documento no se cita a si mismo (su propio codigo en el pie de pagina)
-        self.assertFalse(any(e.origen == "POL-ALM-01" and e.citado == "SUMI-ALMA-RD-POL-001" for e in enlaces))
+        self.assertFalse(any(e.origen == "POL-ALM-01" and e.citado == "XYZ-ALMA-RD-POL-001" for e in enlaces))
 
     def test_vecinos_hacia_delante_y_hacia_atras_con_profundidad(self):
         enlaces = calcular_enlaces(_meta())
@@ -129,3 +129,56 @@ class AvisosRepetidosTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ParaleloTest(unittest.TestCase):
+    def test_convertir_en_paralelo_da_lo_mismo_que_uno_a_uno(self):
+        from corpus_org.conversion.lote import Grupo, OpcionesConversion, procesar_grupo
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            archivos, filas = {}, []
+            for k in range(1, 6):
+                ruta = tmp / f"Procedimiento {k}.docx"
+                _docx(ruta, _p(f"Objetivo del procedimiento número {k}") + _p("Alcance general de la operación diaria."))
+                filas.append({"codigo": f"PRD-GEN-0{k}", "archivo": ruta.name})
+                archivos[f"PRD-GEN-0{k}"] = ruta
+            resultados = []
+            for n in (1, 3):
+                salida = tmp / f"salida{n}"
+                salida.mkdir()
+                grupo = Grupo("PRD", "GEN", "General", filas, archivos, "PRD_GEN")
+                opciones = OpcionesConversion(verificacion_cruzada=False, trabajadores=n)
+                opciones.lanzar([grupo])
+                self.assertEqual(bool(opciones._futuros), n > 1)
+                try:
+                    r = procesar_grupo(grupo, salida, opciones)
+                finally:
+                    opciones.cerrar()
+                resultados.append(([d.codigo for d in r.documentos], [d.estado for d in r.documentos],
+                                   [d.palabras for d in r.documentos],
+                                   (salida / "PRD_GEN.md").read_text(encoding="utf-8")))
+        self.assertEqual(resultados[0][:3], resultados[1][:3])
+        self.assertEqual(resultados[0][3].split("\n", 3)[0], resultados[1][3].split("\n", 3)[0])
+        self.assertEqual(resultados[0][1], ["OK"] * 5)
+
+    def test_un_error_en_un_documento_no_detiene_a_los_demas(self):
+        from corpus_org.conversion.lote import Grupo, OpcionesConversion, procesar_grupo
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            archivos, filas = {}, []
+            for k in range(1, 5):
+                ruta = tmp / f"Doc {k}.docx"
+                if k == 2:
+                    ruta.write_bytes(b"no es un zip")
+                else:
+                    _docx(ruta, _p(f"Objetivo número {k}") + _p("Alcance general de la operación."))
+                filas.append({"codigo": f"PRD-GEN-0{k}", "archivo": ruta.name})
+                archivos[f"PRD-GEN-0{k}"] = ruta
+            grupo = Grupo("PRD", "GEN", "General", filas, archivos, "PRD_GEN")
+            opciones = OpcionesConversion(verificacion_cruzada=False, trabajadores=2)
+            opciones.lanzar([grupo])
+            try:
+                r = procesar_grupo(grupo, tmp, opciones)
+            finally:
+                opciones.cerrar()
+        self.assertEqual([d.estado for d in r.documentos], ["OK", "ERROR", "OK", "OK"])

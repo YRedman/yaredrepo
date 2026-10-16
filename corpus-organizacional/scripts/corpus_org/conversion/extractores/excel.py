@@ -138,12 +138,6 @@ def bloques_de_hoja(ws, formulas=None):
     return salida
 
 
-def _tabla_de_hoja(ws, formulas=None):
-    """Filas (listas de texto) de la hoja sin filas ni columnas completamente vacias."""
-    filas = [f for f in _grilla_de_hoja(ws, formulas) if any(f)]
-    return _tabla_de_bloque(filas) if filas else []
-
-
 def abrir_libro(path, data_only=True):
     """Libro de openpyxl desde los bytes del archivo: openpyxl se niega a abrir por la extension (un Excel guardado
     como .csv), pero lee igual desde un flujo."""
@@ -180,7 +174,7 @@ class ExtractorExcel(Extractor):
 
     def extraer(self, path):
         try:
-            import openpyxl
+            import openpyxl  # noqa: F401 - solo para dar el mensaje de instalacion
         except ImportError:
             raise RuntimeError("Falta openpyxl para leer Excel: python -m pip install openpyxl")
         path = Path(path)

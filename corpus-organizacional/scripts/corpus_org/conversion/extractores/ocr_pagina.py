@@ -15,17 +15,19 @@ Requiere numpy (deteccion de lineas); sin numpy se usa solo el OCR de texto corr
 """
 
 import collections
-import io
 import time
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List
 
 from ...comun.texto import nfc, norm
 
 DPI_OCR = 300
 DPI_OCR_ALTO = 400          # una pasada extra, con el mejor tratamiento, cuando la confianza no llega al objetivo
 TIEMPO_MAX_MEJORA = 150.0   # segundos por pagina o imagen para seguir probando tratamientos
+TONOS_MEDIOS_FOTO = 0.30        # fraccion de pixeles ni claros ni oscuros: una foto tiene muchos, una hoja de texto casi ninguno
+MAX_CELDAS_FOTO = 12            # mas celdas que esto, sin texto y con tonos medios, es una foto y no una tabla
+MIN_PALABRAS_TEXTO = 8          # palabras de 4+ letras que debe leer el OCR para tratar la pagina como texto
 CONFIANZA_SIN_ESPERANZA = 40.0  # si ningun tratamiento a 300 dpi pasa de esto, 400 dpi no lo salvara
 CONFIANZA_OBJETIVO = 80.0   # confianza media de Tesseract que debe alcanzar cada pagina (calidad antes que velocidad)
 CONTRASTE_DIST = 5          # px: distancia a la que se compara cada pixel con su entorno
@@ -86,11 +88,6 @@ class TablaImagen:
 
     def textos(self):
         return [[texto_celda(c) for c in f] for f in self.filas]
-
-
-def _receta_contraste(img):
-    from PIL import ImageOps
-    return ImageOps.autocontrast(img, cutoff=1)
 
 
 def _receta_nitidez(img):
@@ -156,8 +153,15 @@ class PaginaOCR:
         return sum(self.confianzas) / len(self.confianzas) if self.confianzas else 0.0
 
     @property
-    def dudosas(self):
-        return sum(1 for c in self.confianzas if c < CONFIANZA_BAJA)
+    def textos(self):
+        """Todos los textos leidos: lineas, celdas de tablas, cajas y encabezado."""
+        return ([l["texto"] for l in self.lineas] + [c for t in self.tablas for f in t[4] for c in f]
+                + [c[2] for c in self.cajas] + list(self.encabezado))
+
+    @property
+    def palabras_utiles(self):
+        """Palabras de 4 o mas letras: una pagina con menos de MIN_PALABRAS_TEXTO es una foto, no texto."""
+        return sum(1 for t in self.textos for _ in re.findall(r"[^\W\d_]{4,}", t))
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +447,10 @@ def textos_encabezado(tabla):
 # ---------------------------------------------------------------------------
 
 def _ocr(img, idioma, pytesseract, psm=3):
+    # pytesseract guarda la imagen en un archivo temporal con su formato: el PNG comprime y tarda ~0,15 s por lectura;
+    # un TIFF sin comprimir se escribe al instante y Tesseract lo lee igual (un BMP de 8 bits cambia la lectura)
+    if img.mode in ("L", "RGB") and not img.format:
+        img.format = "TIFF"
     return palabras_tesseract(pytesseract.image_to_data(
         img, lang=idioma, config=f"--oem 1 --psm {psm}", output_type=pytesseract.Output.DICT))
 
@@ -537,6 +545,8 @@ def leer_pagina(page, idioma, pytesseract):
             return res                                  # la lectura normal ya llega al objetivo
         if time.monotonic() - inicio > TIEMPO_MAX_MEJORA:
             break
+        if len(lecturas) == 2 and giro == 0 and all(x[0].palabras_utiles < MIN_PALABRAS_TEXTO for x in lecturas):
+            return _elegir(lecturas)[0]     # la lectura normal y la de contraste y nitidez no sacan texto: es una foto
         if dpi == DPI_OCR and nombre == "original" and giro == 0:
             giro_osd = _giro_por_osd(_imagen_pagina(page, dpi), pytesseract)      # pagina de lado o al reves
             if giro_osd:
@@ -579,11 +589,11 @@ def leer_region(page, rect, idioma, pytesseract):
     ``CONFIANZA_OBJETIVO`` se prueban mas contraste, nitidez, brillo, blanco y negro y mayor resolucion.
     Devuelve un ``PaginaOCR`` con las lineas en coordenadas de la pagina, o None si no se pudo leer.
     """
-    from PIL import Image
-
     def leer(dpi, nombre, receta):
         pix = page.get_pixmap(dpi=dpi, clip=rect)
-        img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("L")
+        if pix.width < 8 or pix.height < 8:          # imagen recortada fuera de la pagina o de un punto: no hay nada que leer
+            return PaginaOCR(lineas=[], confianzas=[]), False
+        img = _pixmap_a_gris(pix)
         if receta is not None:
             try:
                 img = receta(img)
@@ -755,15 +765,20 @@ def _mejor_lectura(nueva, actual):
         (not actual.confianzas and bool(nueva.confianzas))
 
 
-def _imagen_pagina(page, dpi, giro=0):
+def _pixmap_a_gris(pix):
+    """Imagen PIL en grises de un pixmap de PyMuPDF, sin pasar por un PNG (codificarlo y leerlo costaba ~0,2 s)."""
     from PIL import Image
-    pix = page.get_pixmap(dpi=dpi)
-    img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("L")
+    img = Image.frombytes("L" if pix.n == 1 else "RGB", (pix.width, pix.height), pix.samples)
+    return img if pix.n == 1 else img.convert("L")
+
+
+def _imagen_pagina(page, dpi, giro=0):
+    img = _pixmap_a_gris(page.get_pixmap(dpi=dpi))
     return img.rotate(-giro, expand=True, fillcolor=255) if giro else img
 
 
-def _leer_pagina_con(page, idioma, pytesseract, dpi, receta, giro):
-    """Una pasada de OCR de la pagina a ``dpi`` con un tratamiento de imagen (``receta``) y un giro."""
+def _preparar(page, dpi, receta, giro):
+    """Imagen de la pagina lista para el OCR: girada, con el tratamiento ``receta`` y enderezada."""
     from PIL import Image
     img = _imagen_pagina(page, dpi, giro)
     if receta is not None:
@@ -776,7 +791,13 @@ def _leer_pagina_con(page, idioma, pytesseract, dpi, receta, giro):
         if abs(angulo) >= ANGULO_MIN:
             img = img.rotate(angulo, resample=Image.BICUBIC, fillcolor=255)
     except ImportError:
-        angulo = 0.0
+        pass
+    return img
+
+
+def _leer_pagina_con(page, idioma, pytesseract, dpi, receta, giro):
+    """Una pasada de OCR de la pagina a ``dpi`` con un tratamiento de imagen (``receta``) y un giro."""
+    img = _preparar(page, dpi, receta, giro)
     palabras = _ocr(img, idioma, pytesseract)
     tablas = []
     gris = None
@@ -787,7 +808,10 @@ def _leer_pagina_con(page, idioma, pytesseract, dpi, receta, giro):
     except ImportError:
         pass
     fuera = repartir(palabras, tablas)
-    if gris is not None:
+    celdas = sum(len(f) for t in tablas for f in t.filas)
+    foto = (gris is not None and celdas > MAX_CELDAS_FOTO and float(((gris > 60) & (gris < 200)).mean()) >= TONOS_MEDIOS_FOTO
+            and sum(1 for p in palabras if re.search(r"[^\W\d_]{4,}", p[0])) < MIN_PALABRAS_TEXTO)
+    if gris is not None and not foto:     # una foto da decenas de "celdas" sin texto: releerlas una a una no lee nada
         for t in tablas:
             for f in t.filas:
                 for c in f:
@@ -840,8 +864,3 @@ def _lineas(palabras, esc):
                        "y1": L["y1"] * esc, "tam": 0.0, "bold": False, "font": "ocr", "spans": [],
                        "chars": len(texto.replace(" ", "")), "ocr": True})
     return salida
-
-
-def confianza_texto(paginas: List[PaginaOCR]) -> Optional[float]:
-    confs = [c for p in paginas for c in p.confianzas]
-    return sum(confs) / len(confs) if confs else None

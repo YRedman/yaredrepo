@@ -4,7 +4,6 @@ Para reconocer un titulo de seccion o una etiqueta nueva basta con agregarla
 aqui; no hace falta tocar el codigo de extraccion (principio abierto/cerrado).
 """
 
-EXT_SOPORTADAS = {".pdf", ".docx"}
 EXT_RECONOCIDAS = {".pdf", ".docx", ".doc"}
 # Transcripciones manuales (Markdown, CSV, texto): solo se aceptan como material de contexto.
 EXT_TEXTO = {".md", ".csv", ".txt", ".xlsx", ".xlsm", ".pptx", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
