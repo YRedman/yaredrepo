@@ -14,7 +14,7 @@ from .secciones import buscar_alias, clave_titulo, es_excluida, es_seccion_conoc
 
 # Codigos de otros documentos: al menos dos guiones (PR-ALM-001, NOM-035-STPS-2018).
 # Asi no se confunden con normas o nombres como ISO-9001 o COVID-19.
-CODIGO_DOC = r"[A-Z]{1,6}-[A-Z0-9]{2,6}-(?:[A-Z0-9]{1,6}-){0,2}\d{1,4}"     # hasta 5 segmentos: SUMI-ALMA-RD-PRO-011
+CODIGO_DOC = r"[A-Z]{1,6}-[A-Z0-9]{2,6}-(?:[A-Z0-9]{1,6}-){0,2}\d{1,4}"     # hasta 5 segmentos: XYZ-ALMA-RD-PRO-011
 RE_CODIGO_PROPIO = re.compile(r"C[oó]digo\s*:?\s*(" + CODIGO_DOC + r")\b")
 RE_CODIGO_DOC = re.compile(r"\b" + CODIGO_DOC + r"\b")
 

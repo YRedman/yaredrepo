@@ -1,6 +1,6 @@
 """Cadena documental: que documento cita a cual, resuelto contra los codigos internos del propio corpus.
 
-Cada documento trae en su encabezado su codigo interno (SUMI-ALMA-RD-PRO-011) y, en el texto, los codigos de los
+Cada documento trae en su encabezado su codigo interno (XYZ-ALMA-RD-PRO-011) y, en el texto, los codigos de los
 documentos que cita (a veces completos, a veces sin el prefijo de gerencia: ALMA-RD-PRO-011). Aqui se unen: un codigo
 citado es de un documento del corpus si es igual a su codigo interno o si es su final (con al menos tres segmentos y
 sin ambiguedad). Lo que no se encuentra queda como documento citado que falta en el corpus. No se interpreta: solo se
