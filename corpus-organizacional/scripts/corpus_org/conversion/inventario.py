@@ -391,7 +391,8 @@ def clasificar_material(path, carpeta_contexto=None):
     El tipo sale de la subcarpeta mas cercana que lo indique (Procedimientos\\, Políticas\\, Normativas\\,
     Organigramas\\...) o, si ninguna lo indica, del nombre del archivo (ficha de proceso, procedimiento,
     politica, organigrama, kpi...). Para un documento de area (DES, PRD, PRO, POL) el area es la subcarpeta
-    que sigue a la del tipo (Procedimientos\\Calidad\\x.pdf), o '' si no la hay. Solo PDF y Word pueden
+    que sigue a la del tipo (Procedimientos\\Calidad\\x.pdf) o, si el archivo esta directamente en la carpeta del tipo,
+    la carpeta que la contiene (Calidad\\Procedimiento\\x.pdf); '' si no hay ninguna. Solo PDF y Word pueden
     ser documentos de area; lo demas es un documento general (CTX si no se reconoce)."""
     partes = []
     if carpeta_contexto is not None:
@@ -414,6 +415,8 @@ def clasificar_material(path, carpeta_contexto=None):
             generales = [c for c in candidatos if c in TIPOS_GENERALES]
             t = por_nombre or (generales[0] if generales else candidatos[0])
         area = partes[i + 1] if i + 1 < len(partes) else ""
+        if not area and i >= 1 and not tipos_candidatos(partes[i - 1]):
+            area = partes[i - 1]    # Gestión Comercial\Ventas\Procedimiento\x.docx: el area es la carpeta que contiene la del tipo
         break
     if not t:
         t = tipo_de_material(nombre)
@@ -445,7 +448,7 @@ def documentos_de_area_en_contexto(archivos, carpeta_contexto, areas=None):
         t, area = clasificar_material(p, carpeta_contexto)
         if t not in TIPOS_AREA:
             continue
-        explicita = area or areas.get(clave_documento(p.name), "")
+        explicita = areas.get(clave_documento(p.name), "") or area      # lo que escribio el usuario en areas.csv manda
         filas.append({"tipo": t, "departamento": explicita or NOMBRE_AREA_GENERAL, "archivo": nfc(p.name).strip(),
                       "ruta": str(p), "desde_contexto": True, "area_por_defecto": not explicita})
     return filas

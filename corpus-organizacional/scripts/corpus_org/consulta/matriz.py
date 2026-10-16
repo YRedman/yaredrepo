@@ -17,6 +17,7 @@ from ..comun.estructura import CARPETA_PUBLICADA, rutas_publicadas
 from ..comun.esquema import ARCHIVO_RESUMEN, ARCHIVO_REVISION, AVISO_ESCANEADO, area_de
 from ..comun.texto import sin_acentos
 from ..comun.tipos import TIPOS_PROCESO, es_general, tipo as tipo_documento, tipo_de_codigo
+from .cadena import calcular_enlaces, tipo_de_codigo_cliente
 from .extraccion import alcance, funciones, normativa, perfil, relaciones
 from .participacion import calcular_participacion
 from .puestos import DetectorPuestos
@@ -73,7 +74,8 @@ def datos_matriz(raiz):
     detector = DetectorPuestos.desde_corpus(corpus)
     revision = _revision(raiz)
     hojas = collections.OrderedDict((k, []) for k in (
-        "Puestos", "Funciones", "Relaciones", "Perfil y requisitos", "Normativa citada", "Procedimientos",
+        "Puestos", "Funciones", "Relaciones", "Perfil y requisitos", "Normativa citada", "Cadena documental",
+        "Procedimientos",
         "Políticas y protocolos", "Documentos generales", "Participación", "Puestos x Procedimientos",
         "Indicadores", "Revisión"))
     descriptivos = sorted(c for c in corpus.meta if tipo_de_codigo(c) == "DES")
@@ -122,6 +124,14 @@ def datos_matriz(raiz):
             hojas["Revisión"].append([c, area, nombre, lectura, f.get("detalle_avisos", "") or
                                       ("muestra aleatoria" if c in revision else ""),
                                       "Pendiente" if pendiente or c not in revision else "Revisado", ""])
+    for e in calcular_enlaces(corpus.meta):
+        if es_general(e.origen):
+            continue
+        hojas["Cadena documental"].append([
+            e.origen, _nombre_tipo(e.origen), corpus.meta[e.origen].get("departamento", ""), corpus.nombre(e.origen),
+            e.citado, tipo_de_codigo_cliente(e.citado), e.destino, _nombre_tipo(e.destino) if e.destino else "",
+            corpus.meta[e.destino].get("departamento", "") if e.destino else "",
+            corpus.nombre(e.destino) if e.destino else "", e.via or "no está en el corpus"])
     part = calcular_participacion(corpus, procedimientos, detector)
     cruces = collections.defaultdict(set)
     for fp in part.filas:
@@ -160,6 +170,10 @@ COLUMNAS = {
                             ("Detalle", 70)],
     "Normativa citada": [("Código", 12), ("Área", 22), ("Documento", 34), ("Tipo de referencia", 18),
                          ("Texto donde se cita (literal)", 80), ("Sección", 26)],
+    "Cadena documental": [("Código que cita", 14), ("Tipo", 14), ("Área", 22), ("Documento que cita", 34),
+                          ("Código citado (literal)", 22), ("Tipo del código citado", 16),
+                          ("Código en el corpus", 14), ("Tipo", 14), ("Área", 22), ("Documento citado", 34),
+                          ("Cómo se unió", 18)],
     "Procedimientos": [("Código", 12), ("Tipo", 14), ("Área", 22), ("Procedimiento", 34), ("Propósito", 50),
                        ("Propietario", 24),
                        ("Responsable", 24), ("Código interno", 18), ("Versión", 9), ("Vigencia", 12),
@@ -181,6 +195,7 @@ COLUMNAS = {
 VACIAS = {
     "Procedimientos": "El corpus todavía no tiene procedimientos ni protocolos. Al agregarlos (carpetas "
                       "Procedimientos y Protocolos) esta hoja y las de participación se llenan solas.",
+    "Cadena documental": "Los documentos del corpus no citan códigos de otros documentos.",
     "Participación": "Sin procedimientos en el corpus: no hay participación de puestos que mostrar.",
     "Puestos x Procedimientos": "Sin procedimientos en el corpus: la matriz se llena cuando se agreguen.",
     "Indicadores": "El contexto no trae un archivo kpi*.csv.",
@@ -198,6 +213,9 @@ DESCRIPCIONES = [
     ("Perfil y requisitos", "Educación, experiencia, competencias y características especiales de cada puesto."),
     ("Normativa citada", "Cada texto donde un documento menciona una política, protocolo, procedimiento, norma, "
                          "reglamento, manual, ley o código de documento. Es la cita literal: no interpreta."),
+    ("Cadena documental", "Cada código de documento que un documento cita, unido al documento del corpus que lo "
+                          "tiene como código interno (igual o su final). Si no está en el corpus, queda marcado: "
+                          "son los documentos que faltan para completar la cadena."),
     ("Procedimientos", "Un procedimiento (PRD) o protocolo (PRO) por fila, con su tipo, propietario, responsable, "
                        "versión y actividades."),
     ("Políticas y protocolos", "Una política (POL) o protocolo (PRO) por fila. «Área» es General si aplica a "
@@ -256,7 +274,8 @@ def valores_resumen(hojas):
 
 NOMBRES_CSV = {"Léeme": "leeme", "Resumen": "resumen", "Puestos": "puestos", "Funciones": "funciones",
                "Relaciones": "relaciones", "Perfil y requisitos": "perfil_requisitos",
-               "Normativa citada": "normativa_citada", "Procedimientos": "procedimientos",
+               "Normativa citada": "normativa_citada", "Cadena documental": "cadena_documental",
+               "Procedimientos": "procedimientos",
                "Políticas y protocolos": "politicas_protocolos", "Documentos generales": "documentos_generales",
                "Participación": "participacion", "Puestos x Procedimientos": "puestos_x_procedimientos",
                "Indicadores": "indicadores", "Revisión": "revision"}

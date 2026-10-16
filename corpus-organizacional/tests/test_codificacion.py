@@ -178,6 +178,23 @@ class InventarioTest(unittest.TestCase):
                                       "Gestión humana.pdf": ("Gestión Humana", False),
                                       "Procedimiento de diseño y estructura organizacional.pdf": ("General", True)})
 
+    def test_area_del_documento_es_la_carpeta_que_contiene_la_del_tipo(self):
+        from corpus_org.conversion.inventario import clasificar_material, documentos_de_area_en_contexto
+        raiz = Path("/c")
+        base = "03. Políticas y procedimientos/Gestión de Cadena de Suministro"
+        casos = {
+            f"{base}/Almacén/Procedimiento/Recepción de mercancía.docx": ("PRD", "Almacén"),
+            f"{base}/Almacén/Política/Política de devolución.docx": ("POL", "Almacén"),
+            "03. Políticas y procedimientos/Procedimiento/Compras generales.docx": ("PRD", ""),   # el padre es un contenedor de tipos
+            "Procedimientos/Calidad/Auditoria.pdf": ("PRD", "Calidad"),                          # la carpeta siguiente al tipo manda
+        }
+        for ruta, esperado in casos.items():
+            self.assertEqual(clasificar_material(raiz / ruta, raiz), esperado, ruta)
+        # lo que el usuario escribe en areas.csv manda sobre la carpeta
+        ruta = raiz / base / "Almacén" / "Procedimiento" / "Recepción de mercancía.docx"
+        filas = documentos_de_area_en_contexto([ruta], raiz, {"recepcion de mercancia": "Logística"})
+        self.assertEqual((filas[0]["departamento"], filas[0]["area_por_defecto"]), ("Logística", False))
+
     def test_contexto_por_tipo_estable_y_migrado(self):
         with tempfile.TemporaryDirectory() as tmp:
             raiz = Path(tmp)

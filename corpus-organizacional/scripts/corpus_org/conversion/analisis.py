@@ -14,7 +14,9 @@ from .secciones import buscar_alias, clave_titulo, es_excluida, es_seccion_conoc
 
 # Codigos de otros documentos: al menos dos guiones (PR-ALM-001, NOM-035-STPS-2018).
 # Asi no se confunden con normas o nombres como ISO-9001 o COVID-19.
-RE_CODIGO_DOC = re.compile(r"\b[A-Z]{1,6}-[A-Z0-9]{2,6}-(?:[A-Z0-9]{1,6}-)?\d{1,4}\b")
+CODIGO_DOC = r"[A-Z]{1,6}-[A-Z0-9]{2,6}-(?:[A-Z0-9]{1,6}-){0,2}\d{1,4}"     # hasta 5 segmentos: SUMI-ALMA-RD-PRO-011
+RE_CODIGO_PROPIO = re.compile(r"C[oó]digo\s*:?\s*(" + CODIGO_DOC + r")\b")
+RE_CODIGO_DOC = re.compile(r"\b" + CODIGO_DOC + r"\b")
 
 
 def texto_bloque(b):
@@ -339,7 +341,10 @@ def _actividades(secciones):
 
 def _codigos_citados(encabezado, bloques, codigo_interno):
     todo = " ".join(encabezado) + " " + " ".join(texto_bloque(b) for b in bloques)
-    return sorted(set(RE_CODIGO_DOC.findall(todo)) - ({codigo_interno} if codigo_interno else set()))
+    # los codigos que el encabezado escribe tras «Código:» son del propio documento (a veces con el de una version
+    # anterior): no son citas
+    propios = set(RE_CODIGO_PROPIO.findall(" ".join(encabezado)))
+    return sorted(set(RE_CODIGO_DOC.findall(todo)) - propios - ({codigo_interno} if codigo_interno else set()))
 
 
 def avisar_nombre_puesto(analisis, titulo_archivo):
@@ -368,18 +373,35 @@ def _pagina(b):
 CERCA_REPETIDO = 3      # bloques: un parrafo repetido tan cerca de su copia es casi seguro un duplicado
 
 
+def es_subtitulo(texto):
+    """Linea corta sin punto final («Jurídicos», «Personas Físicas»): rotula la lista que sigue."""
+    t = texto.strip()
+    return 0 < len(t.split()) <= 6 and not t.endswith((".", ";", ","))
+
+
+RE_FIN_DE_FLUJO = re.compile(r"^\s*fin\b(?:\s+\w+){0,3}\s*\.?\s*$", re.I)      # «Fin del proceso»: fila propia de un flujo
+
+
+def _hay_separador(bloques, i, j):
+    """True si entre dos bloques hay un titulo, un subtitulo o una frase que introduce una lista («Director Comercial:»): la misma
+    funcion repetida para dos puestos es contenido del original, no un duplicado de la conversion."""
+    return any(b["k"] == "h" or (b["k"] == "p" and (b.get("texto", "").rstrip().endswith(":") or es_subtitulo(b["texto"])))
+               for b in bloques[i + 1:j])
+
+
 def _repetidos_por_conversion(bloques):
     """Parrafos largos que aparecen dos veces como si la conversion los hubiera duplicado: en la misma pagina o a
     pocos bloques de distancia. Una frase que vuelve en otra pagina (el pie de cada diapositiva, una clausula que
     el documento repite en dos secciones) es contenido del original, no un duplicado de la conversion."""
     posiciones = collections.defaultdict(list)
     for i, b in enumerate(bloques):
-        if b["k"] in ("p", "li") and len(b.get("texto", "")) >= 40:
+        if b["k"] in ("p", "li") and len(b.get("texto", "")) >= 40 and not b["texto"].rstrip().endswith(":"):
             pag = b.get("pagina")
             posiciones[norm(b["texto"])].append((i, pag if isinstance(pag, int) else None))
     repetidos = []
     for t, apariciones in posiciones.items():
-        if any(a[1] is None or b[1] is None or a[1] == b[1] or b[0] - a[0] <= CERCA_REPETIDO
+        if any((a[1] is None or b[1] is None or a[1] == b[1] or b[0] - a[0] <= CERCA_REPETIDO)
+               and not _hay_separador(bloques, a[0], b[0])
                for k, a in enumerate(apariciones) for b in apariciones[k + 1:]):
             repetidos.append(t)
     return repetidos
@@ -399,6 +421,7 @@ def avisos_de_estructura(bloques, imagenes_grandes, hoja_de_calculo=False):
             if sum(1 for f in datos if f and f[0].strip()) >= 0.8 * len(datos):
                 huerfanas = [f for f in datos if f and not f[0].strip()
                              and any(c.strip() and not c.endswith(MARCA_COMBINADA) for c in f[1:])]
+                huerfanas = [f for f in huerfanas if not RE_FIN_DE_FLUJO.match(" ".join(c for c in f if c.strip()))]
                 if huerfanas:
                     avisos.append(f"{_pagina(b)}: {len(huerfanas)} filas de tabla sin primera celda "
                                   "(posible fila partida)")
