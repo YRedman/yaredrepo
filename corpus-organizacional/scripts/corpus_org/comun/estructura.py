@@ -1,19 +1,24 @@
-"""Estructura publicada: dos carpetas listas para comprimir y subir como skills de Copilot.
+"""Estructura publicada: UN solo skill listo para comprimir y subir a Copilot (el agente admite un skill por carga).
 
     salida_corpus/copilot/
-      fuente-documentos/   DES/ PRD/ PRO/ POL/   (un .md por tipo y area)
-      fuente-contexto/     contexto/ indice/ matriz/ scripts/
+      fuente-corpus/       SKILL.md  documentos/ (DES/ PRD/ PRO/ POL/: un .md por tipo y area)
+                           contexto/ indice/ matriz/ scripts/
 
-``SKILL.md`` de cada carpeta lo provee el equipo: el script nunca lo escribe ni lo borra.
-En Copilot los skills cargados quedan en /home/oai/skills/appCatalog/<carpeta>/<skill>/ y la
-<carpeta> cambia, por eso ``corpus.py`` busca ``fuente-documentos`` por su nombre.
+El ``SKILL.md`` es el del repositorio (junto a ``scripts/``): ``construir`` lo copia a la carpeta del skill. Copilot carga
+el skill en /home/oai/skills/appCatalog/<carpeta>/fuente-corpus/ y la <carpeta> cambia, por eso ``corpus.py`` se localiza
+por su propia ubicacion y, si hace falta, buscando ``fuente-corpus`` por su nombre.
+
+Las versiones anteriores publicaban dos skills (``fuente-contexto`` y ``fuente-documentos``); esas carpetas se siguen
+reconociendo al leer, pero ``construir`` ya no las genera.
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 
-SKILL_DOCUMENTOS = "fuente-documentos"
-SKILL_CONTEXTO = "fuente-contexto"
+SKILL_CORPUS = "fuente-corpus"     # el unico skill publicado
+SKILL_DOCUMENTOS = "fuente-documentos"     # estructura anterior (dos skills): solo para reconocerla
+SKILL_CONTEXTO = "fuente-contexto"         # estructura anterior
+CARPETA_DOCUMENTOS = "documentos"  # dentro del skill: DES/ PRD/ PRO/ POL/
 CARPETA_PUBLICADA = "copilot"      # dentro de salida_corpus/
 CARPETA_CONTEXTO = "contexto"      # documentos generales (ORG_GEN.md...) y kpis.csv
 CARPETA_INDICE = "indice"          # indice, inventario, areas_extra, huellas, resumen, equivalencias
@@ -25,24 +30,23 @@ ARCHIVO_NOTA_UBICACION = "NOTA_UBICACION_SKILL.md"
 LLAVE_NOTA_UBICACION = "appCatalog"      # si el SKILL.md no la nombra, no explica donde quedan cargados los skills
 NOTA_UBICACION_SKILL = """## Dónde está el corpus (léelo antes de ejecutar nada)
 
-Los skills cargados **no** están en `/home/oai/skills/fuente-contexto`. Quedan en una carpeta intermedia que cambia en cada
-carga: `/home/oai/skills/appCatalog/<carpeta>/fuente-contexto` (y `.../<otra carpeta>/fuente-documentos`). No adivines la
-ruta; localízala primero:
+El skill cargado **no** está en `/home/oai/skills/fuente-corpus`. Queda en una carpeta intermedia que cambia en cada carga:
+`/home/oai/skills/appCatalog/<carpeta>/fuente-corpus`. No adivines la ruta; localízala primero:
 
 ```bash
-find /home/oai/skills -type f -path '*fuente-contexto/scripts/corpus.py' 2>/dev/null | head -1
+find /home/oai/skills -type f -path '*fuente-corpus/scripts/corpus.py' 2>/dev/null | head -1
 ```
 
 Ejecuta `corpus.py` con esa ruta completa (funciona desde cualquier carpeta). `python <ruta>/corpus.py donde` muestra dónde
-están las dos carpetas y el comando listo para copiar; `python <ruta>/corpus.py verificar` también lo informa.
+está el skill y el comando listo para copiar; `python <ruta>/corpus.py verificar` también lo informa.
 
 Si `find` no devuelve nada, o `corpus.py` dice «no encuentro el skill…», es un problema de localización, no de datos:
-carga primero los skills `fuente-contexto` y `fuente-documentos` (lee su SKILL.md) y repite. Nunca concluyas que un
-documento o un área «no está en el corpus» sin haber localizado antes las carpetas.
+carga primero el skill `fuente-corpus` (lee su SKILL.md) y repite. Nunca concluyas que un documento o un área «no está
+en el corpus» sin haber localizado antes el skill.
 """
 
 # Limites de Copilot para los skills de un agente
-MAX_NIVELES = 3                    # niveles de carpetas contando la del skill: fuente-contexto/scripts/corpus_org
+MAX_NIVELES = 3                    # niveles de carpetas contando la del skill: fuente-corpus/scripts/corpus_org
 MAX_BYTES_ARCHIVO = 25 * 1024 * 1024
 MAX_BYTES_SKILL = 50 * 1024 * 1024
 MAX_ARCHIVOS_AGENTE = 350
@@ -52,25 +56,39 @@ BYTES_DIVIDIR_MD = 20 * 1024 * 1024    # un Markdown mas grande se divide en par
 @dataclass(frozen=True)
 class Rutas:
     raiz: Path                 # salida_corpus/copilot
-    documentos: Path           # fuente-documentos
-    skill_contexto: Path       # fuente-contexto
+    skill: Path                # fuente-corpus: el unico skill
+    documentos: Path           # fuente-corpus/documentos
     contexto: Path
     indice: Path
     matriz: Path
     scripts: Path
 
+    @property
+    def skill_contexto(self):
+        """Nombre anterior de ``skill`` (cuando habia dos skills): hoy es el mismo skill."""
+        return self.skill
+
+
+def rutas_de_skill(skill, documentos=None):
+    """Carpetas de un skill: ``documentos`` es ``skill/documentos`` salvo que se indique otra (estructura anterior, con
+    el skill fuente-documentos como hermano)."""
+    skill = Path(skill)
+    return Rutas(skill.parent, skill, Path(documentos) if documentos else skill / CARPETA_DOCUMENTOS,
+                 skill / CARPETA_CONTEXTO, skill / CARPETA_INDICE, skill / CARPETA_MATRIZ, skill / CARPETA_SCRIPTS)
+
 
 def rutas_publicadas(publicado):
     """Carpetas de la publicacion (``publicado`` = salida_corpus/copilot)."""
-    raiz = Path(publicado)
-    skill = raiz / SKILL_CONTEXTO
-    return Rutas(raiz, raiz / SKILL_DOCUMENTOS, skill, skill / CARPETA_CONTEXTO, skill / CARPETA_INDICE,
-                 skill / CARPETA_MATRIZ, skill / CARPETA_SCRIPTS)
+    return rutas_de_skill(Path(publicado) / SKILL_CORPUS)
 
 
 def rutas_de_skill_contexto(skill_contexto):
-    """Las mismas carpetas a partir de la carpeta fuente-contexto (la de documentos es su hermana)."""
-    return rutas_publicadas(Path(skill_contexto).parent)
+    """Compatibilidad: las carpetas a partir de la carpeta del skill. Con la estructura anterior (``fuente-contexto``
+    con ``fuente-documentos`` al lado y sin ``documentos/`` dentro) los documentos son la carpeta hermana."""
+    skill = Path(skill_contexto)
+    if not (skill / CARPETA_DOCUMENTOS).is_dir() and (skill.parent / SKILL_DOCUMENTOS).is_dir():
+        return rutas_de_skill(skill, skill.parent / SKILL_DOCUMENTOS)
+    return rutas_de_skill(skill)
 
 
 def markdown_de_documentos(carpeta_documentos):
@@ -98,12 +116,10 @@ def archivos_de_skill(carpeta):
 
 
 def archivos_de_huellas(publicado):
-    """Archivos de las dos carpetas cuya huella se guarda (sin SKILL.md, que edita el equipo, ni la cache)."""
+    """Archivos del skill cuya huella se guarda (sin SKILL.md, que edita el equipo, ni la cache)."""
     publicado = Path(publicado)
-    archivos = []
-    for skill in (SKILL_CONTEXTO, SKILL_DOCUMENTOS):
-        archivos += [p for p in archivos_de_skill(publicado / skill)
-                     if p.name not in (NOMBRE_SKILL_MD, "huellas.sha256")]
+    archivos = [p for p in archivos_de_skill(publicado / SKILL_CORPUS)
+                if p.name not in (NOMBRE_SKILL_MD, "huellas.sha256")]
     return sorted(archivos, key=lambda p: p.relative_to(publicado).as_posix())
 
 
@@ -136,7 +152,7 @@ def informe_limites(carpetas):
         if niveles > MAX_NIVELES:
             avisos.append(f"{carpeta.name} tiene {niveles} niveles de carpetas y Copilot admite {MAX_NIVELES}.")
     if total > MAX_ARCHIVOS_AGENTE:
-        avisos.append(f"Las dos carpetas suman {total} archivos y Copilot admite {MAX_ARCHIVOS_AGENTE} entre todos "
+        avisos.append(f"El skill suma {total} archivos y Copilot admite {MAX_ARCHIVOS_AGENTE} entre todos "
                       "los skills del agente.")
     lineas.append(f"Total: {total} archivos (límite de Copilot para todos los skills del agente: "
                   f"{MAX_ARCHIVOS_AGENTE})")

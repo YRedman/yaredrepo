@@ -4,11 +4,11 @@ TTT es el tipo (3 letras), AAA el area (3 letras o GEN) y NN el numero (dos digi
 pasa de 99). Para agregar un tipo nuevo basta con agregar una fila a ``TIPOS_DOCUMENTO``: los patrones,
 los nombres de archivo, los filtros de los comandos y la estructura de skills se derivan de esta tabla.
 
-- Tipos de area (``general=False``): van en el skill fuente-documentos, en una carpeta por tipo
+- Tipos de area (``general=False``): van en fuente-corpus/documentos/, en una carpeta por tipo
   (DES/, PRD/...). Se reconocen por la carpeta de entrada (Descriptivos\\, Procedimientos\\...).
   Politicas y protocolos que aplican a mas de un area o a toda la empresa llevan el area GEN.
 - Tipos generales (``general=True``): documentos de contexto, siempre con area GEN; van en el skill
-  fuente-contexto. Se clasifican por la subcarpeta de contexto o por palabras del nombre del archivo.
+  fuente-corpus/contexto/. Se clasifican por la subcarpeta de contexto o por palabras del nombre del archivo.
 """
 
 import re
@@ -33,7 +33,7 @@ class TipoDocumento:
 
 
 TIPOS_DOCUMENTO = (
-    # --- documentos de area: skill fuente-documentos -------------------------------------------
+    # --- documentos de area: fuente-corpus/documentos -------------------------------------------
     TipoDocumento("DES", "Descriptivo de puesto", "Descriptivos de puesto", carpetas=("descrip", "perfil"),
                   palabras=("descriptivo", "perfil de puesto", "perfiles de puesto"), anterior="D"),
     TipoDocumento("PRD", "Procedimiento", "Procedimientos", carpetas=("procedim", "proceso"),

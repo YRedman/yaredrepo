@@ -1,6 +1,6 @@
 # Corpus organizacional
 
-Scripts del corpus organizacional para un agente de Copilot (ver `SKILL.md`, que es el del skill `fuente-contexto`):
+Scripts del corpus organizacional para un agente de Copilot (ver `SKILL.md`, que es el del único skill, `fuente-corpus`):
 
 - `scripts/convertir.py`: convierte descriptivos de puesto, procedimientos, protocolos y políticas (PDF/Word) a Markdown, construye el índice y publica el corpus en dos carpetas para comprimir: `fuente-documentos` y `fuente-contexto`.
 - `scripts/corpus.py`: consulta el corpus publicado (solo biblioteca estándar: en Copilot no hay red ni instalación de paquetes).
@@ -52,7 +52,7 @@ scripts/
     consulta/
       repositorio.py             Carga del corpus publicado y exclusión de no vigentes
       parser.py                  Recorrido único del Markdown de un documento
-      ubicacion.py               Localiza fuente-contexto y fuente-documentos (en Copilot, por el nombre del skill)
+      ubicacion.py               Localiza el skill fuente-corpus (en Copilot, por su nombre)
       areas.py, entidades.py, puestos.py, roles.py, relaciones.py, participacion.py, indicadores.py, integridad.py
       comandos/                  Un archivo por comando (catalogo, area, briefing, ficha, doc, kpis, ...)
       cli.py
@@ -126,7 +126,7 @@ Resultado en el caso de prueba de la v2.1: 60 de 60 filas, en orden, en una sola
 | Avisos de estructura | Cada documento registra señales de que la estructura pudo leerse mal aunque el texto esté completo: tabla tratada como texto, líneas fuera de celdas, tabla partida con líneas sueltas, filas sin primera celda, párrafos repetidos, contenido sobre todo en imágenes, posible diagrama vectorial, nombre del puesto distinto del archivo, números que no aparecen completos (`45.000,00` → `45.000`) y OCR. Columnas nuevas del índice: `palabras_agregadas`, `avisos_estructura`, `detalle_avisos` (al final; las anteriores no se mueven) | `extractores/pdf.py`, `analisis.avisos_de_estructura`, `modelo.DocumentoConvertido.avisos` |
 | Validación más estricta | Cobertura < 100 %, palabras que no están en el original y errores del contexto pasan a ser **problemas** (antes eran avisos) | `publicacion.validar_publicacion` |
 | Revisión visual | Los documentos con avisos y una muestra reproducible del 10 % quedan pendientes hasta anotar su código en `revision_visual_ok.txt`. Tres estados con código de salida: LISTO (0), REQUIERE REVISIÓN (2), PENDIENTE DE REVISIÓN VISUAL (3). `--muestra-revision` ajusta la muestra | `publicacion.py`, `cli.modo_construir` |
-| Huellas SHA-256 | `huellas.sha256` (desde la v4.0 en `fuente-contexto/indice/`); `corpus.py verificar` detecta archivos editados o borrados después de la conversión | `publicacion.escribir_huellas`, `consulta/integridad.py` |
+| Huellas SHA-256 | `huellas.sha256` (desde la v4.0 en `indice/` del skill); `corpus.py verificar` detecta archivos editados o borrados después de la conversión | `publicacion.escribir_huellas`, `consulta/integridad.py` |
 | Códigos estables | Al reconstruir con `lista.txt`, el inventario anterior es la base: cada documento conserva su código, los nuevos van al final de su grupo y los que ya no están quedan `RETIRADO` reservando su código (`inventario --base`) | `inventario.construir_inventario` |
 | Datos del contexto | Los `kpi*.csv` de la carpeta de contexto se unen en `kpis.csv` y `areas_extra.csv` se publica tal cual (no se convierte a `contexto.md`) | `cli._datos_de_contexto` |
 
@@ -188,7 +188,7 @@ Las páginas escaneadas se leen con Tesseract. `python scripts/convertir.py diag
 
 ## Matriz organizacional (Excel)
 
-`construir` escribe `salida_corpus/copilot/fuente-contexto/matriz/matriz_organizacional.xlsx` (requiere `openpyxl`) y un CSV por hoja, una base de datos para revisar el corpus sin ejecutar código. `python scripts/convertir.py matriz --salida salida_corpus` la regenera sin volver a convertir. Hojas:
+`construir` escribe `salida_corpus/copilot/fuente-corpus/matriz/matriz_organizacional.xlsx` (requiere `openpyxl`) y un CSV por hoja, una base de datos para revisar el corpus sin ejecutar código. `python scripts/convertir.py matriz --salida salida_corpus` la regenera sin volver a convertir. Hojas:
 
 | Hoja | Contenido |
 |---|---|
@@ -241,28 +241,27 @@ Resultado en el descriptivo escaneado real del piloto (4 páginas): 22 de 24 ele
 - **Migración:** `D-AAA-NN` → `DES-AAA-NN` y `P-AAA-NN` → `PRD-AAA-NN` con el mismo número; los `C-CTX-NN` se clasifican por tipo y se numeran dentro de `GEN` en su orden anterior. Todo queda en `equivalencias_codigos.csv` (`codigo_anterior;codigo_nuevo`, acumulativo), y `revision_visual_ok.txt` acepta los códigos anteriores.
 - Cada documento empieza con `## [TTT-AAA-NN] Título`. Un archivo por tipo y área (`DES_SEG.md`, `PRD_SEG.md`, `POL_GEN.md`…) y uno por tipo general (`ORG_GEN.md`, `GLO_GEN.md`…). Un Markdown de más de 20 MB se divide en partes (`PRD_SEG_01-20.md`, `PRD_SEG_21-40.md`) y el índice apunta a la parte correcta.
 
-**Dos carpetas listas para comprimir** (`salida_corpus/copilot/`). `construir` ya no genera el paquete de 20 archivos ni las instrucciones de la versión anterior:
+**Un solo skill listo para comprimir** (`salida_corpus/copilot/fuente-corpus/`; el agente de Copilot admite un skill por carga, así que desde la v4.5 todo va en una carpeta). `construir` ya no genera el paquete de 20 archivos ni las instrucciones de versiones anteriores:
 
 ```
-fuente-documentos/
-  SKILL.md                 lo provee el equipo; el script no lo escribe ni lo borra
-  DES/  PRD/  PRO/  POL/   un .md por tipo y área (PRO_GEN.md, POL_GEN.md…)
-fuente-contexto/
-  SKILL.md                 lo provee el equipo
+fuente-corpus/
+  SKILL.md                 el SKILL.md del repositorio (junto a scripts/): construir lo copia aquí (--skill-md indica otro)
+  documentos/ DES/ PRD/ PRO/ POL/   un .md por tipo y área (PRO_GEN.md, POL_GEN.md…)
   contexto/   ORG_GEN.md, GLO_GEN.md, MPR_GEN.md, CTX_GEN.md, kpis.csv
   indice/     indice_corpus.csv, inventario_maestro.csv, areas_extra.csv, huellas.sha256,
               RESUMEN_CONSTRUCCION.md, equivalencias_codigos.csv
   matriz/     matriz_organizacional.xlsx y un CSV por hoja (puestos.csv, funciones.csv, relaciones.csv,
               perfil_requisitos.csv, normativa_citada.csv, procedimientos.csv, politicas_protocolos.csv,
-              participacion.csv, indicadores.csv, revision.csv…)
+              participacion.csv, indicadores.csv, cadena_documental.csv, revision.csv…)
   scripts/    corpus.py y corpus_org/ (sin subcarpetas)
 ```
 
-- `convertir.py` y el código de conversión **no** van en `fuente-contexto/scripts/`: el agente no construye el corpus. `control/` tampoco se publica.
+- Si en `copilot/` quedaron las carpetas `fuente-contexto` y `fuente-documentos` de la publicación anterior, `construir` las **mueve** a `salida_corpus/anterior_dos_skills/` (no las suba; puede borrarlas). `corpus.py` sigue leyendo esa estructura si alguien la tiene cargada.
+- `convertir.py` y el código de conversión **no** van en `fuente-corpus/scripts/`: el agente no construye el corpus. `control/` tampoco se publica.
 - **Límites de Copilot:** máximo 3 niveles de carpetas, 25 MB por archivo, 50 MB por skill y 350 archivos entre todos los skills del agente. Para cumplir el primero, `corpus_org` se publica aplanado (`consulta/comandos/base.py` → `consulta_comandos_base.py`, con los imports reescritos; `conversion/skills.py`). El resumen de la construcción y `corpus.py verificar` informan el peso y el número de archivos de cada carpeta y avisan si se supera algún límite.
-- `RESUMEN_CONSTRUCCION.md` se copia a `indice/` y `huellas.sha256` se escribe al final, con rutas `<skill>/<ruta>`: se verifican aunque cada skill esté en otra carpeta.
+- `RESUMEN_CONSTRUCCION.md` se copia a `indice/` y `huellas.sha256` se escribe al final, con rutas `fuente-corpus/<ruta>`: se verifican esté donde esté el skill.
 
-**Localización en Copilot.** Un skill solo está en disco después de que el agente lo carga, y los skills cargados quedan en `/home/oai/skills/appCatalog/<carpeta>/<skill>/` (la `<carpeta>` cambia). `corpus.py` busca `fuente-documentos` como carpeta hermana de su skill; si no está, usa `CORPUS_DATOS` (la carpeta que contiene ambos skills) y luego busca por nombre en `/home/oai/skills/appCatalog/*/` y en las carpetas superiores. Si no la encuentra, imprime exactamente: `ERROR: no encuentro el skill fuente-documentos. Carga primero fuente-contexto y fuente-documentos (lee su SKILL.md) y vuelve a ejecutar.` La consulta usa solo la biblioteca estándar (una prueba la ejecuta con `python -I -S`).
+**Localización en Copilot.** Un skill solo está en disco después de que el agente lo carga, y queda en `/home/oai/skills/appCatalog/<carpeta>/fuente-corpus/` (la `<carpeta>` cambia). `corpus.py` encuentra su skill por su propia ubicación (los documentos están en `documentos/`, dentro del skill); si lo copiaron a otro lugar, usa `CORPUS_DATOS` (la carpeta del skill o la que lo contiene) y luego busca por nombre en `/home/oai/skills/…`. Si no lo encuentra, imprime exactamente: `ERROR: no encuentro el skill fuente-corpus. Carga primero el skill fuente-corpus (lee su SKILL.md) y vuelve a ejecutar.` (o, si falta `documentos/` dentro del skill, `…no encuentro la carpeta documentos del skill fuente-corpus…`). La consulta usa solo la biblioteca estándar (una prueba la ejecuta con `python -I -S`).
 
 **Comandos.** Los 12 de siempre, `citar <CÓDIGO>… [--texto "…"]` (aval de la fuente: confirma que el documento existe, dónde está su original y si respalda una afirmación) y `normativa [--area]` (citas literales agrupadas por tipo de referencia: ley, reglamento, norma, política, protocolo, procedimiento, manual, instructivo, código de documento). `--tipo DES|PRD|PRO|POL|GEN` en `buscar` y `ficha` (`GEN` = documentos con área `GEN`). Los verbos de `relaciones` son Entrega, Recibe, Solicita, Aprueba o revisa, Notifica, Coordina y Reporta.
 
@@ -274,11 +273,21 @@ fuente-contexto/
 
 Código: `comun/tipos.py`, `comun/estructura.py`, `conversion/inventario.py`, `conversion/publicacion.py`, `conversion/skills.py`, `consulta/ubicacion.py`, `consulta/extraccion.py`, `consulta/pertinencia.py`, `consulta/jerarquia.py`, `consulta/matriz.py`, `consulta/comandos/briefing.py` y `normativa.py`. La conversión y la verificación de fidelidad no cambian.
 
+## v4.5: un solo skill
+
+El agente de Copilot admite **un skill por carga**, y las versiones anteriores publicaban dos (`fuente-contexto` y `fuente-documentos`). Ahora `construir` publica **`salida_corpus/copilot/fuente-corpus/`** con todo dentro: `SKILL.md`, `documentos/` (DES, PRD, PRO, POL), `contexto/`, `indice/`, `matriz/` y `scripts/`. Se respetan los límites de Copilot (3 niveles de carpetas contando la del skill: `fuente-corpus/documentos/DES/`, `fuente-corpus/scripts/corpus_org/`; 50 MB y 350 archivos).
+
+- **SKILL.md.** El `SKILL.md` del repositorio (junto a `scripts/`) se copia solo al skill en cada `construir`; `--skill-md ruta` usa otro. Ya no hay que copiarlo a mano ni mantener dos.
+- **Comprimir y subir una sola carpeta:** `fuente-corpus`. Si en `copilot/` había `fuente-contexto` y `fuente-documentos`, se mueven a `salida_corpus/anterior_dos_skills/` con un aviso.
+- **Ubicación.** `corpus.py` sigue localizando el skill desde su propio lugar y, si hace falta, por nombre (`fuente-corpus`, y también la estructura anterior de dos skills). El `find` de la nota y de `donde` ahora busca `fuente-corpus/scripts/corpus.py`.
+- **Huellas.** `huellas.sha256` guarda rutas `fuente-corpus/<ruta>`; los corpus construidos con la estructura anterior se siguen verificando.
+- Código: `comun/estructura.py` (`SKILL_CORPUS`, `rutas_de_skill`), `consulta/ubicacion.py`, `consulta/integridad.py`, `conversion/cli.py` (`_skill_md_de_origen`, `_limpiar_publicacion_anterior`), `conversion/publicacion.py`.
+
 ## v4.4: el agente localiza el corpus sin adivinar rutas
 
 Un agente buscó el skill en `/home/oai/skills/fuente-contexto` cuando el corpus estaba en `/home/oai/skills/appCatalog/<carpeta>/fuente-contexto` (la `<carpeta>` cambia en cada carga) y concluyó, erróneamente, que algo faltaba. Cambios:
 
-- **`python corpus.py donde`** muestra dónde están `fuente-contexto` y `fuente-documentos`, la ruta completa de `corpus.py` y el comando listo para copiar. No carga el corpus, así que sirve justo cuando falta algo (con un comando `find` de pista). `verificar` ya informaba las dos rutas.
+- **`python corpus.py donde`** muestra dónde está el skill (`fuente-contexto` y `fuente-documentos` en las versiones 4.4 y anteriores; `fuente-corpus` desde la 4.5), la ruta completa de `corpus.py` y el comando listo para copiar. No carga el corpus, así que sirve justo cuando falta algo (con un comando `find` de pista). `verificar` ya informaba las dos rutas.
 - **Búsqueda más amplia.** Si `corpus.py` no está dentro de su skill (alguien copió los scripts), busca `fuente-contexto` y `fuente-documentos` en `/home/oai/skills/<skill>`, `/home/oai/skills/appCatalog/<carpeta>/<skill>` y un nivel más hondo, en `/mnt/data` y `/mnt/user-data`, en las carpetas superiores y, como último recurso, recorre esas carpetas hasta 5 niveles (tope de 20 000 carpetas). El mensaje de error no cambia.
 - **Nota para el SKILL.md.** `construir` escribe `salida_corpus\NOTA_UBICACION_SKILL.md` (fuera de lo publicado): un párrafo listo para pegar en el `SKILL.md` de los dos skills con el `find` y la regla «un “no encuentro” es un problema de localización, no de datos». Si el `SKILL.md` que ya está en `copilot\fuente-contexto` o `fuente-documentos` no nombra `appCatalog`, la construcción lo avisa.
 - Código: `consulta/ubicacion.py` (`describir_ubicacion`, `_recorrer`), `consulta/comandos/donde.py`, `comun/estructura.py` (`NOTA_UBICACION_SKILL`).

@@ -1,37 +1,32 @@
 ---
-name: fuente-contexto
+name: fuente-corpus
 description: >-
-  Consulta exacta del corpus organizacional publicado (descriptivos de puesto, procedimientos, protocolos, políticas, documentos generales e indicadores) con scripts/corpus.py. Trabaja junto con el skill fuente-documentos, que tiene el texto de los documentos. Úsalo cuando el usuario mencione un área, departamento, puesto, procedimiento, proceso, actividad, código, responsable, propietario, versión, vigencia, relación entre áreas, indicador, KPI, meta o preparación de reuniones.
+  Consulta exacta del corpus organizacional publicado (descriptivos de puesto, procedimientos, protocolos, políticas, documentos generales e indicadores) con scripts/corpus.py. Incluye el texto de los documentos (carpeta documentos/), el contexto, el índice y la matriz. Úsalo cuando el usuario mencione un área, departamento, puesto, procedimiento, proceso, actividad, código, responsable, propietario, versión, vigencia, relación entre áreas, indicador, KPI, meta o preparación de reuniones.
 ---
 
 # Corpus organizacional
 
-> Compatible con `convertir.py` v4.4 y `corpus.py` v4.4.
+> Compatible con `convertir.py` v4.5 y `corpus.py` v4.5.
 
 Este skill consulta exclusivamente el corpus publicado. Los documentos son la fuente de verdad; el índice sirve para localizar, contar y filtrar, pero los datos sustantivos se confirman en el Markdown original.
 
 ## 0. Dónde está el corpus (primero, antes de ejecutar nada)
 
-Los skills cargados **no** están en `/home/oai/skills/fuente-contexto`. Quedan en una carpeta intermedia que cambia en cada carga: `/home/oai/skills/appCatalog/<carpeta>/fuente-contexto` (y `.../<otra carpeta>/fuente-documentos`). **No adivines la ruta**; localízala primero:
+El skill cargado **no** está en `/home/oai/skills/fuente-corpus`. Queda en una carpeta intermedia que cambia en cada carga: `/home/oai/skills/appCatalog/<carpeta>/fuente-corpus`. **No adivines la ruta**; localízala primero:
 
 ```bash
-find /home/oai/skills -type f -path '*fuente-contexto/scripts/corpus.py' 2>/dev/null | head -1
+find /home/oai/skills -type f -path '*fuente-corpus/scripts/corpus.py' 2>/dev/null | head -1
 ```
 
-Ejecuta `corpus.py` con esa ruta completa (funciona desde cualquier carpeta): `python <ruta>/corpus.py <comando>`. Los ejemplos de este documento escriben `python scripts/corpus.py …` por brevedad; sustituye `scripts/corpus.py` por la ruta completa que hallaste. `corpus.py donde` muestra dónde están las dos carpetas y el comando listo para copiar; `corpus.py verificar` también las informa.
+Ejecuta `corpus.py` con esa ruta completa (funciona desde cualquier carpeta): `python <ruta>/corpus.py <comando>`. Los ejemplos de este documento escriben `python scripts/corpus.py …` por brevedad; sustituye `scripts/corpus.py` por la ruta completa que hallaste. `corpus.py donde` muestra dónde está el skill y el comando listo para copiar; `corpus.py verificar` también lo informa.
 
-Si `find` no devuelve nada, o `corpus.py` dice «no encuentro el skill…», es un problema de **localización, no de datos**: carga primero los skills `fuente-contexto` y `fuente-documentos` (lee su SKILL.md) y repite. Nunca concluyas que un documento o un área «no está en el corpus» sin haber localizado antes las dos carpetas.
+Si `find` no devuelve nada, o `corpus.py` dice «no encuentro el skill…», es un problema de **localización, no de datos**: carga primero el skill `fuente-corpus` (lee su SKILL.md) y repite. Nunca concluyas que un documento o un área «no está en el corpus» sin haber localizado antes el skill.
 
 ## 1. Estructura
 
-El corpus se publica en dos carpetas listas para comprimir (`salida_corpus/copilot/`). Cada una es un skill; sus `SKILL.md` los provee el equipo.
+El corpus se publica en **un solo skill**, `fuente-corpus` (`salida_corpus/copilot/fuente-corpus/`), con este `SKILL.md` en su raíz:
 
-**`fuente-documentos`** (solo datos): un Markdown por tipo y área, en una carpeta por tipo.
-
-- `DES/DES_<ÁREA>.md` descriptivos de puesto, `PRD/PRD_<ÁREA>.md` procedimientos, `PRO/PRO_<ÁREA>.md` protocolos y `POL/POL_<ÁREA>.md` políticas. Las políticas y protocolos que aplican a más de un área o a toda la empresa están en `POL_GEN.md` / `PRO_GEN.md`. Un área grande puede venir en partes (`PRD_SEG_01-20.md`).
-
-**`fuente-contexto`** (este skill):
-
+- `documentos/`: un Markdown por tipo y área, en una carpeta por tipo: `DES/DES_<ÁREA>.md` descriptivos de puesto, `PRD/PRD_<ÁREA>.md` procedimientos, `PRO/PRO_<ÁREA>.md` protocolos y `POL/POL_<ÁREA>.md` políticas. Las políticas y protocolos que aplican a más de un área o a toda la empresa están en `POL_GEN.md` / `PRO_GEN.md`. Un área grande puede venir en partes (`PRD_SEG_01-20.md`).
 - `scripts/corpus.py` consulta; `scripts/corpus_org/` es el paquete con la lógica (solo biblioteca estándar).
 - `contexto/<TTT>_GEN.md`: documentos generales: `ORG_GEN.md` organigramas, `GLO_GEN.md` glosarios, `MPR_GEN.md` mapas de procesos y `CTX_GEN.md` otro contexto. `contexto/kpis.csv`: indicadores transcritos (ID propio, meta, medición, unidad, estado según el color); no hay un Markdown de indicadores.
 - `indice/indice_corpus.csv`: índice maestro, una fila por documento (con `area_propietaria` para políticas y protocolos).
@@ -39,12 +34,12 @@ El corpus se publica en dos carpetas listas para comprimir (`salida_corpus/copil
 - `indice/equivalencias_codigos.csv`: `codigo_anterior;codigo_nuevo` de la codificación anterior (`D-`, `P-`, `C-CTX-`).
 - `indice/areas_extra.csv`: áreas y entidades sin documentos propios (internas, externas) y frases que no son menciones de un área.
 - `indice/RESUMEN_CONSTRUCCION.md`: resultado de la última construcción.
-- `indice/huellas.sha256`: SHA-256 de cada archivo publicado en las dos carpetas (integridad).
+- `indice/huellas.sha256`: SHA-256 de cada archivo publicado en el skill (integridad).
 - `matriz/matriz_organizacional.xlsx` y `matriz/*.csv`: la matriz maestra, una hoja por CSV (UTF-8, separador `;`). Incluye **Cadena documental** (qué documento cita a cuál) y **Revisión** (calidad de lectura de cada documento).
 
 El reporte de control (`salida_corpus/control/`) no se publica ni es fuente de respuestas. `convertir.py` construye el corpus; el agente no lo ejecuta.
 
-`corpus.py` busca `fuente-documentos` como carpeta hermana de este skill; si no, en `CORPUS_DATOS` (la carpeta que contiene ambos skills) y luego por nombre (en `/home/oai/skills/appCatalog/*/`, en `/home/oai/skills/`, en `/mnt/data` y recorriendo esas carpetas). Si no la encuentra imprime `ERROR: no encuentro el skill fuente-documentos. Carga primero fuente-contexto y fuente-documentos (lee su SKILL.md) y vuelve a ejecutar.`: carga los dos skills y repite el comando (ver sección 0).
+`corpus.py` encuentra los documentos en `documentos/`, dentro de su propio skill; si lo copiaron a otro lugar, usa `CORPUS_DATOS` (la carpeta del skill o la que lo contiene) y luego busca por nombre (en `/home/oai/skills/appCatalog/*/`, en `/home/oai/skills/`, en `/mnt/data` y recorriendo esas carpetas). Si no lo encuentra imprime `ERROR: no encuentro el skill fuente-corpus. Carga primero el skill fuente-corpus (lee su SKILL.md) y vuelve a ejecutar.`: carga el skill y repite el comando (ver sección 0).
 
 ## 2. Interpretación de documentos
 
@@ -74,7 +69,7 @@ python scripts/convertir.py construir --entrada <carpeta_documentos> --contexto 
 python scripts/corpus.py verificar        # informa también peso y número de archivos por carpeta
 ```
 
-`construir` convierte varios documentos a la vez (`--trabajadores N`; por defecto núcleos − 1, hasta 4; `1` = uno a uno) y escribe `salida_corpus\NOTA_UBICACION_SKILL.md` (el párrafo de la sección 0 para este `SKILL.md`; avisa si falta).
+`construir` convierte varios documentos a la vez (`--trabajadores N`; por defecto núcleos − 1, hasta 4; `1` = uno a uno) y escribe `salida_corpus\NOTA_UBICACION_SKILL.md` (el párrafo de la sección 0; avisa si este `SKILL.md` no lo trae) y copia este `SKILL.md` a `fuente-corpus/`. Se comprime y se sube **una sola carpeta**: `salida_corpus/copilot/fuente-corpus`.
 
 - Los documentos van en `Descriptivos\<Área>\archivo`, `Procedimientos\<Área>\…`, `Protocolos\<Área>\…` o `Políticas\<Área>\…`. Una política o protocolo de varias áreas o de toda la empresa va en la carpeta de área `General` (código `GEN`). Si están directamente en `Descriptivos\` (sin carpeta de área), el área se escribe en `entrada\areas.csv` (`archivo;area`); el script crea ese archivo con la columna `area` vacía. `lista.txt` es opcional: sin ella, la lista se arma con la carpeta de entrada.
 - En la carpeta de contexto, los procedimientos y fichas de proceso (`PRD`), las políticas, normativas y reglamentos (`POL`), los protocolos (`PRO`) y los descriptivos (`DES`) se tratan como documentos de área: área de `areas.csv` (manda si el archivo está ahí), de la subcarpeta que sigue a la del tipo (`Fichas de proceso\Calidad\`) o, si el archivo está directamente en la carpeta del tipo, de la carpeta que la contiene (`Gestión Comercial\Ventas\Procedimiento\x.docx` → Ventas); si no, `GEN`. Un árbol `Gestión X\<Área>\Procedimiento|Política\archivo` se clasifica solo. Lo demás es un documento general por su subcarpeta o nombre (organigrama, glosario, mapa de procesos) o `CTX`; los `kpi*.csv` van a `kpis.csv`.
@@ -95,7 +90,7 @@ python scripts/corpus.py <comando> <argumentos>
 
 | Comando | Uso |
 |---|---|
-| `donde` | Dónde están `fuente-contexto` y `fuente-documentos`, ruta completa de `corpus.py` y comando listo (no carga el corpus: úsalo si algo no se encuentra) |
+| `donde` | Dónde está el skill `fuente-corpus`, ruta completa de `corpus.py` y comando listo (no carga el corpus: úsalo si algo no se encuentra) |
 | `catalogo` | Áreas, cobertura por tipo (DES, PRD, PRO, POL), documentos generales, KPIs y entidades sin documentos |
 | `area "<área>"` | Índice completo del área |
 | `briefing "<área>" [--parte N]` | Tablas del briefing ya calculadas, 15 documentos por parte |

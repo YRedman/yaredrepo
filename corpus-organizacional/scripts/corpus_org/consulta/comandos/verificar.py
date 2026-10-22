@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from ... import VERSION
 from ...comun.estructura import informe_limites
 from ...comun.tipos import es_general
@@ -19,8 +21,8 @@ class Verificar(Comando):
 
     def ejecutar(self, ctx, args):
         cp, s = ctx.corpus, ctx.salida
-        s.linea(f"VERIFICACIÓN · corpus.py v{VERSION} · fuente-contexto: {cp.carpeta}")
-        s.linea(f"fuente-documentos: {cp.carpeta_documentos}")
+        s.linea(f"VERIFICACIÓN · corpus.py v{VERSION} · skill fuente-corpus: {cp.carpeta}")
+        s.linea(f"documentos: {cp.carpeta_documentos}")
         s.linea(f"Índice utilizado: {cp.fuente_indice}")
         problemas = []
         if cp.duplicados:
@@ -69,7 +71,8 @@ class Verificar(Comando):
         if cp.excluidos:
             s.linea("- Información: excluidos por estado documental (no es un problema): "
                     + resumir_lista(f"{c} ({e})" for c, e in sorted(cp.excluidos.items())))
-        carpetas = [c for c in (cp.carpeta, cp.carpeta_documentos) if c]
+        carpetas = [c for c in (cp.carpeta, cp.carpeta_documentos)
+                    if c and (c == cp.carpeta or cp.carpeta not in Path(c).parents)]       # los documentos ya van dentro del skill
         medidas, avisos_limites = informe_limites(carpetas)
         for m in medidas:
             s.linea(f"- Peso y archivos · {m}")

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List
 
 from ..comun.esquema import ARCHIVO_HUELLAS
-from ..comun.estructura import CARPETA_INDICE, SKILL_CONTEXTO, SKILL_DOCUMENTOS
+from ..comun.estructura import CARPETA_INDICE, SKILL_CONTEXTO, SKILL_CORPUS, SKILL_DOCUMENTOS
 
 
 @dataclass
@@ -21,10 +21,10 @@ class ResultadoHuellas:
 
 
 def _ruta(nombre, contexto_skill, documentos):
-    """Archivo de una linea de huellas: '<skill>/<ruta>'. En Copilot cada skill puede estar en otra carpeta,
-    asi que cada skill se resuelve con su propia ubicacion."""
+    """Archivo de una linea de huellas: '<skill>/<ruta>' (``fuente-corpus/...``; la estructura anterior tenia dos skills,
+    ``fuente-contexto/...`` y ``fuente-documentos/...``, y cada uno podia estar en otra carpeta)."""
     skill, _, resto = nombre.partition("/")
-    if skill == SKILL_CONTEXTO and resto:
+    if skill in (SKILL_CORPUS, SKILL_CONTEXTO) and resto:
         return contexto_skill / resto
     if skill == SKILL_DOCUMENTOS and resto:
         return (documentos or contexto_skill.parent / SKILL_DOCUMENTOS) / resto
@@ -32,7 +32,7 @@ def _ruta(nombre, contexto_skill, documentos):
 
 
 def verificar_huellas(contexto_skill, documentos=None):
-    """Compara los archivos con indice/huellas.sha256 de fuente-contexto."""
+    """Compara los archivos con indice/huellas.sha256 del skill."""
     contexto_skill = Path(contexto_skill)
     p = contexto_skill / CARPETA_INDICE / ARCHIVO_HUELLAS
     if not p.is_file():

@@ -15,7 +15,7 @@ from ..comun.esquema import (AREA_SIN_ASIGNAR, AVISO_ESCANEADO, ARCHIVO_AREAS_DO
                              ARCHIVO_EQUIVALENCIAS, ARCHIVO_HUELLAS, ARCHIVO_INDICE, ARCHIVO_INVENTARIO,
                              ARCHIVO_KPIS, ARCHIVO_REVISADOS, ARCHIVO_REVISION, COLUMNAS_INDICE, PATRON_CODIGO,
                              PREFIJO_DIC, PREFIJO_REPORTE, estado_no_publicable, inventario_activo)
-from ..comun.estructura import (BYTES_DIVIDIR_MD, NOMBRE_SKILL_MD, SKILL_CONTEXTO, SKILL_DOCUMENTOS,
+from ..comun.estructura import (BYTES_DIVIDIR_MD, CARPETA_DOCUMENTOS, NOMBRE_SKILL_MD, SKILL_CORPUS,
                                 archivos_de_huellas, markdown_de_documentos, rutas_publicadas)
 from ..comun.markdown import esc_celda
 from ..comun.tipos import POR_CODIGO, TIPOS_DOCUMENTO, es_general
@@ -28,7 +28,7 @@ RE_DOC_MD = re.compile(rf"^## \[({PATRON_CODIGO})\]", re.M)
 PATRONES_GENERADOS = tuple(f"{t.codigo}_*.md" for t in TIPOS_DOCUMENTO) + (
     "P_*.md", "D_*.md", "contexto.md", f"{PREFIJO_DIC}*.csv", f"{PREFIJO_REPORTE}*.md", ARCHIVO_KPIS,
     ARCHIVO_AREAS_EXTRA)
-# Archivos de control/ que se publican tal cual (si existen) en fuente-contexto/indice/. El catalogo y el
+# Archivos de control/ que se publican tal cual (si existen) en fuente-corpus/indice/. El catalogo y el
 # inventario del contexto son de la construccion: se quedan en control/.
 PUBLICADOS_EN_INDICE = (ARCHIVO_INVENTARIO, ARCHIVO_EQUIVALENCIAS, ARCHIVO_AREAS_EXTRA)
 MUESTRA_REVISION = 0.10
@@ -176,18 +176,18 @@ def dividir_markdown(texto, nombre, max_bytes):
 
 
 def publicar_corpus(control, publicado, avisos=None, max_md_bytes=BYTES_DIVIDIR_MD):
-    """Publica en dos carpetas listas para comprimir (``publicado`` = salida_corpus/copilot):
+    """Publica el skill fuente-corpus, listo para comprimir (``publicado`` = salida_corpus/copilot):
 
-    - fuente-documentos/: un .md por tipo y area en DES/, PRD/, PRO/ y POL/.
-    - fuente-contexto/: contexto/ (documentos generales y kpis.csv), indice/ (indice, inventario,
-      areas_extra, equivalencias), matriz/ (la escribe la matriz) y scripts/ (corpus.py y corpus_org/).
+    - documentos/: un .md por tipo y area en DES/, PRD/, PRO/ y POL/.
+    - contexto/ (documentos generales y kpis.csv), indice/ (indice, inventario, areas_extra, equivalencias),
+      matriz/ (la escribe la matriz) y scripts/ (corpus.py y corpus_org/).
 
     Reportes y DIC parciales quedan en control/. Un Markdown de mas de ``max_md_bytes`` se divide en partes.
-    SKILL.md de cada carpeta lo provee el equipo y no se sobrescribe.
+    SKILL.md no se borra al vaciar (``construir`` lo copia del repositorio despues de publicar).
     Devuelve (archivos publicados, codigos duplicados)."""
     rutas = rutas_publicadas(publicado)
     publicado.mkdir(parents=True, exist_ok=True)
-    bloqueados = _vaciar(rutas.skill_contexto) + _vaciar(rutas.documentos)
+    bloqueados = _vaciar(rutas.skill)
     if bloqueados and avisos is not None:
         avisos.append("No se pudieron reemplazar (¿abiertos en otro programa?): "
                       + ", ".join(str(p.relative_to(publicado)) for p in bloqueados))
@@ -217,7 +217,7 @@ def publicar_corpus(control, publicado, avisos=None, max_md_bytes=BYTES_DIVIDIR_
 
 def escribir_huellas(publicado):
     """SHA-256 de cada archivo de las dos carpetas (rutas '<skill>/<ruta>'), en
-    fuente-contexto/indice/huellas.sha256; ``corpus.py verificar`` los recalcula para detectar cambios.
+    fuente-corpus/indice/huellas.sha256; ``corpus.py verificar`` los recalcula para detectar cambios.
     Se escribe al final de la construccion, cuando ya no cambia ningun otro archivo."""
     rutas = rutas_publicadas(publicado)
     rutas.indice.mkdir(parents=True, exist_ok=True)
@@ -372,8 +372,8 @@ def escribir_resumen_construccion(path, v, publicados, medidas=()):
     if v.avisos:
         lineas += ["## Avisos", ""] + ["- " + x for x in v.avisos] + [""]
     lineas += ["## Carpetas", "",
-               f"- `copilot/{SKILL_DOCUMENTOS}/`: documentos de área, una carpeta por tipo (DES, PRD, PRO, POL).",
-               f"- `copilot/{SKILL_CONTEXTO}/`: `contexto/` (documentos generales y kpis.csv), `indice/` (índice, "
+               f"- `copilot/{SKILL_CORPUS}/`: el único skill. `{CARPETA_DOCUMENTOS}/` (documentos de área, una carpeta por "
+               "tipo: DES, PRD, PRO, POL), `contexto/` (documentos generales y kpis.csv), `indice/` (índice, "
                f"inventario, equivalencias, `{ARCHIVO_HUELLAS}` y este resumen), `matriz/` y `scripts/`.",
                f"- `control/`: reportes, diccionarios parciales, `{ARCHIVO_REVISION}` y evidencia de QA "
                "(no se publica).", ""]
