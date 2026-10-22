@@ -273,6 +273,16 @@ fuente-corpus/
 
 Código: `comun/tipos.py`, `comun/estructura.py`, `conversion/inventario.py`, `conversion/publicacion.py`, `conversion/skills.py`, `consulta/ubicacion.py`, `consulta/extraccion.py`, `consulta/pertinencia.py`, `consulta/jerarquia.py`, `consulta/matriz.py`, `consulta/comandos/briefing.py` y `normativa.py`. La conversión y la verificación de fidelidad no cambian.
 
+## v4.6: informe HTML de la construcción
+
+- **`salida_corpus/INFORME_CONSTRUCCION.html`.** Cada `construir` genera un informe de un solo archivo (sin internet, se abre con doble clic): tarjetas con las cifras, alertas, cobertura por área, revisión visual pendiente, calidad de lectura (OCR), tiempos por documento, tabla de todos los documentos con enlace al original, y el log completo con color. Las tablas se filtran y ordenan con el navegador.
+- **Log guardado.** Lo que `construir` imprime queda en `control/log_construccion.txt`; los tiempos por documento, en `control/tiempos_conversion.csv`.
+- **Regenerar sin reconvertir:** `python scripts\convertir.py informe --salida salida_corpus`.
+- **Códigos de contexto únicos.** Un código `CTX-GEN-NN` repetido en una base anterior ya no se vuelve a asignar (el log de v4.5 terminaba con «Códigos duplicados»).
+- **Etiqueta `contexto/`** correcta en el original de los materiales de contexto.
+- **OCR:** la prueba de orientación solo se repite si la confianza de la primera lectura es menor de 70 %.
+- Código: `conversion/informe_html.py`, `conversion/cli.py` (`modo_informe`, `registrar_tiempos`), `conversion/inventario.py` (`inventario_contexto`).
+
 ## v4.5: un solo skill
 
 El agente de Copilot admite **un skill por carga**, y las versiones anteriores publicaban dos (`fuente-contexto` y `fuente-documentos`). Ahora `construir` publica **`salida_corpus/copilot/fuente-corpus/`** con todo dentro: `SKILL.md`, `documentos/` (DES, PRD, PRO, POL), `contexto/`, `indice/`, `matriz/` y `scripts/`. Se respetan los límites de Copilot (3 niveles de carpetas contando la del skill: `fuente-corpus/documentos/DES/`, `fuente-corpus/scripts/corpus_org/`; 50 MB y 350 archivos).

@@ -158,11 +158,14 @@ def _trabajo(path, fila, grupo, opciones):
     if opciones.tiempo_agotado():
         return DocumentoConvertido(fila["codigo"], fila["archivo"], "PENDIENTE (tiempo)",
                                    ruta=ruta_original(fila, grupo, opciones, path)), None
+    inicio = time.time()
     try:
-        return convertir_documento(path, fila, grupo, opciones)
+        r, md = convertir_documento(path, fila, grupo, opciones)
+        r.segundos = time.time() - inicio
+        return r, md
     except Exception as e:
         return DocumentoConvertido(fila["codigo"], fila["archivo"], "ERROR", error=f"{type(e).__name__}: {e}",
-                                   traza=traceback.format_exc(limit=3),
+                                   traza=traceback.format_exc(limit=3), segundos=time.time() - inicio,
                                    ruta=ruta_original(fila, grupo, opciones, path)), None
 
 

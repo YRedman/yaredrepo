@@ -111,6 +111,7 @@ class DocumentoConvertido:
     verificacion: Optional[Verificacion] = None
     palabras: int = 0
     ruta: str = ""                     # ubicacion del original: "entrada/<ruta>" o "contexto/<ruta>"
+    segundos: float = 0.0              # lo que tardo en convertirse (en su proceso)
 
     @property
     def ok(self):
