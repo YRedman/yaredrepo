@@ -15,6 +15,7 @@ Requiere numpy (deteccion de lineas); sin numpy se usa solo el OCR de texto corr
 """
 
 import collections
+import difflib
 import time
 import re
 from dataclasses import dataclass, field
@@ -144,6 +145,8 @@ class PaginaOCR:
     mejora: str = ""                                # tratamiento de imagen con que se obtuvo la lectura
     dpi: int = 0
     orientacion: int = 0                            # grados que se giro la pagina (0, 90, 180, 270)
+    espejo: bool = False                            # la pagina estaba reflejada y se leyo ya corregida
+    firmas: int = 0                                 # campos de firma manuscrita ignorados (su OCR es ruido)
     disperso: bool = False                          # texto suelto de un diagrama (etiquetas), no parrafos
     descartadas: int = 0                            # palabras leidas con menos de CONF_PALABRA_MIN: ruido de graficos
     etiquetas: list = field(default_factory=list)   # en un diagrama: texto de cada caja, decision o flecha
@@ -523,6 +526,50 @@ def _giro_por_osd(img, pytesseract):
     return 0
 
 
+ORIENTACIONES = ((0, False), (0, True), (180, False), (180, True), (90, False), (270, False), (90, True), (270, True))
+DPI_PRUEBA = 150               # resolucion de las lecturas de prueba de orientacion
+LADO_PRUEBA = 1200             # px: la imagen de prueba se reduce a este lado mayor
+PROPORCION_RUIDO = 0.8         # en una imagen, descartar tantas palabras como se conservan hace sospechar de la orientacion
+MIN_PALABRAS_SOSPECHA = 20     # con menos palabras leidas (una foto, una hoja casi vacia) no se prueban las orientaciones
+MIN_PALABRAS_PRUEBA = 8        # palabras fiables que debe leer una orientacion para preferirla
+PALABRAS_PRUEBA_SEGURA = 30    # con tantas palabras fiables y el factor de abajo no se siguen probando orientaciones
+FACTOR_PRUEBA = 2.0            # y su puntaje debe superar este multiplo del de la orientacion actual
+
+
+def _puntaje_texto(palabras):
+    """(suma de la confianza, cantidad) de las palabras de 3+ letras con confianza >= 80: una pagina mal orientada da
+    pocas palabras fiables (letras al reves o reflejadas se leen como basura de baja confianza)."""
+    buenas = [p[5] for p in palabras if p[5] >= CONFIANZA_OBJETIVO and len(re.findall(r"[^\W\d_]", p[0])) >= 3]
+    return sum(buenas), len(buenas)
+
+
+def orientacion_por_prueba(gris, idioma, pytesseract):
+    """(giro, espejo) con que se lee mejor una imagen en grises, o (0, False) si la actual ya es la mejor.
+
+    Lee una banda central de la imagen reducida en las 8 orientaciones (4 giros, con y sin reflejo), empezando por las
+    mas probables (reflejada, al reves), y se queda con la de mayor puntaje fiable. Solo cambia de orientacion si da al
+    menos MIN_PALABRAS_PRUEBA palabras fiables y FACTOR_PRUEBA veces el puntaje de la actual: no se cambia por ruido."""
+    escala = min(1.0, LADO_PRUEBA / max(gris.width, gris.height))
+    chica = gris.resize((max(1, int(gris.width * escala)), max(1, int(gris.height * escala)))) if escala < 1.0 else gris
+    resultados = {}
+    for giro, espejo in ORIENTACIONES:
+        img = orientar(chica, giro, espejo)
+        banda = img.crop((0, int(img.height * 0.15), img.width, int(img.height * 0.75)))      # sin margenes ni pie
+        try:
+            resultados[(giro, espejo)] = _puntaje_texto(_ocr(banda, idioma, pytesseract, psm=6))
+        except Exception:
+            resultados[(giro, espejo)] = (0.0, 0)
+        puntaje, palabras = resultados[(giro, espejo)]
+        if (giro, espejo) != (0, False) and palabras >= PALABRAS_PRUEBA_SEGURA and \
+                puntaje >= FACTOR_PRUEBA * max(resultados[(0, False)][0], 1.0):
+            return giro, espejo                  # una orientacion clara: no hace falta probar las demas
+    actual = resultados[(0, False)][0]
+    mejor = max(resultados, key=lambda k: resultados[k][0])
+    if mejor != (0, False) and resultados[mejor][1] >= MIN_PALABRAS_PRUEBA and resultados[mejor][0] >= FACTOR_PRUEBA * max(actual, 1.0):
+        return mejor
+    return 0, False
+
+
 def leer_pagina(page, idioma, pytesseract):
     """OCR de una pagina escaneada con tablas, cajas de organigrama y encabezado separados.
 
@@ -530,33 +577,50 @@ def leer_pagina(page, idioma, pytesseract):
     la pagina girada (si esta de lado), mas contraste, nitidez, brillo, blanco y negro y mayor resolucion, y se
     conserva la mejor lectura. El tratamiento usado queda en ``mejora``.
     """
-    def etiqueta(nombre, dpi, giro):
-        partes = [nombre] + ([f"{dpi} dpi"] if dpi != DPI_OCR else []) + ([f"giro de {giro}°"] if giro else [])
+    def etiqueta(nombre, dpi, giro, espejo=False):
+        partes = ([nombre] + ([f"{dpi} dpi"] if dpi != DPI_OCR else []) + ([f"giro de {giro}°"] if giro else [])
+                  + (["reflejada"] if espejo else []))
         return ", ".join(partes)
 
-    inicio, giro, lecturas = time.monotonic(), 0, []
+    def leer(dpi, nombre, receta, giro, espejo):
+        res = _leer_pagina_con(page, idioma, pytesseract, dpi, receta, giro, espejo)
+        res.mejora, res.dpi, res.orientacion, res.espejo = etiqueta(nombre, dpi, giro, espejo), dpi, giro, espejo
+        lecturas.append((res, nombre, receta))
+        return res
+
+    inicio, giro, espejo, lecturas = time.monotonic(), 0, False, []
     intentos = [(DPI_OCR, nombre, receta) for nombre, receta in RECETAS]
     while intentos:
         dpi, nombre, receta = intentos.pop(0)
-        res = _leer_pagina_con(page, idioma, pytesseract, dpi, receta, giro)
-        res.mejora, res.dpi, res.orientacion = etiqueta(nombre, dpi, giro), dpi, giro
-        lecturas.append((res, nombre, receta))
+        res = leer(dpi, nombre, receta, giro, espejo)
         if len(lecturas) == 1 and res.confianza >= CONFIANZA_OBJETIVO:
             return res                                  # la lectura normal ya llega al objetivo
         if time.monotonic() - inicio > TIEMPO_MAX_MEJORA:
             break
-        if len(lecturas) == 2 and giro == 0 and all(x[0].palabras_utiles < MIN_PALABRAS_TEXTO for x in lecturas):
-            return _elegir(lecturas)[0]     # la lectura normal y la de contraste y nitidez no sacan texto: es una foto
-        if dpi == DPI_OCR and nombre == "original" and giro == 0:
-            giro_osd = _giro_por_osd(_imagen_pagina(page, dpi), pytesseract)      # pagina de lado o al reves
+        if dpi == DPI_OCR and nombre == "original" and giro == 0 and not espejo:
+            # pagina de lado, al reves o reflejada: primero el OSD de Tesseract y, si no basta, una lectura de prueba
+            # de las 8 orientaciones (el OSD no ve los reflejos)
+            candidatas = []
+            giro_osd = _giro_por_osd(_imagen_pagina(page, dpi), pytesseract)
             if giro_osd:
-                girada = _leer_pagina_con(page, idioma, pytesseract, dpi, None, giro_osd)
-                girada.mejora, girada.dpi, girada.orientacion = etiqueta(nombre, dpi, giro_osd), dpi, giro_osd
-                lecturas.append((girada, nombre, None))
+                candidatas.append((giro_osd, False))
+            for g, e in candidatas:
+                girada = leer(dpi, nombre, None, g, e)
                 if girada.confianza >= CONFIANZA_OBJETIVO:
-                    break
+                    return girada
                 if _mejor_lectura(girada, res):
-                    giro = giro_osd
+                    giro, espejo = g, e
+            if len(max((x[0] for x in lecturas), key=lambda r: r.confianza).confianzas) >= MIN_PALABRAS_SOSPECHA:
+                g, e = orientacion_por_prueba(_imagen_pagina(page, DPI_PRUEBA), idioma, pytesseract)
+                if (g, e) != (0, False) and (g, e) not in candidatas:
+                    probada = leer(dpi, nombre, None, g, e)
+                    if probada.confianza >= CONFIANZA_OBJETIVO:
+                        return probada
+                    if _mejor_lectura(probada, max((x[0] for x in lecturas), key=lambda r: r.confianza)):
+                        giro, espejo = g, e
+        if len(lecturas) == 2 and giro == 0 and not espejo and all(
+                x[0].palabras_utiles < MIN_PALABRAS_TEXTO for x in lecturas):
+            return _elegir(lecturas)[0]     # la lectura normal y la de contraste y nitidez no sacan texto: es una foto
         if not intentos and dpi == DPI_OCR and not _elegir(lecturas, solo_buenas=True):
             parcial = _elegir(lecturas)
             if parcial is not None and parcial[0].confianza >= CONFIANZA_SIN_ESPERANZA:     # ultimo recurso: 400 dpi
@@ -715,7 +779,7 @@ def _lectura(palabras, esc, nombre, disperso):
     return res
 
 
-def leer_imagen(imagen, idioma, pytesseract):
+def leer_imagen(imagen, idioma, pytesseract, probar_orientacion=True):
     """OCR de una imagen suelta (la captura de un documento pegada en una hoja de Excel, un diagrama de flujo):
     PIL.Image -> ``PaginaOCR`` con las lineas en pixeles de la imagen original.
 
@@ -723,7 +787,8 @@ def leer_imagen(imagen, idioma, pytesseract):
     mayor de ``LADO_MIN_IMAGEN`` px y leida como pagina (documentos, capturas), y la imagen por teselas ampliadas
     leida como texto disperso con mas nitidez (diagramas de flujo, de texto chico). Las palabras con menos de
     ``CONF_PALABRA_MIN`` de confianza se descartan: son ruido de iconos y flechas, y no bajan la confianza del
-    texto que si se leyo. Si no llega a ``CONFIANZA_OBJETIVO`` se prueban mas contraste, brillo y blanco y negro."""
+    texto que si se leyo. Si no llega a ``CONFIANZA_OBJETIVO`` se prueban mas contraste, brillo y blanco y negro y, si la
+    imagen parece tener texto mal orientado (al reves, de lado o reflejado), las demas orientaciones."""
     from PIL import Image
     if imagen.mode in ("RGBA", "LA", "P"):                  # el fondo transparente se leeria como negro
         rgba = imagen.convert("RGBA")
@@ -752,6 +817,15 @@ def leer_imagen(imagen, idioma, pytesseract):
         lecturas.append((res, nombre, receta))
         if k == 0 and not res.confianzas and not res.descartadas:
             return res                                       # sin texto: una foto, nada que mejorar
+        if k == 0 and probar_orientacion and len(res.confianzas) + res.descartadas >= MIN_PALABRAS_SOSPECHA and (
+                res.confianza < CONFIANZA_OBJETIVO or res.descartadas >= PROPORCION_RUIDO * max(len(res.confianzas), 1)):
+            # confianza baja, o mas palabras descartadas por ruido que conservadas (texto reflejado o al reves)
+            giro, espejo = orientacion_por_prueba(gris, idioma, pytesseract)
+            if (giro, espejo) != (0, False):
+                otra = leer_imagen(orientar(gris, giro, espejo), idioma, pytesseract, probar_orientacion=False)
+                if otra.confianza > res.confianza and len(otra.confianzas) >= len(res.confianzas):
+                    otra.orientacion, otra.espejo = giro, espejo
+                    return otra
         if k >= 1 and _elegir(lecturas, por_cantidad=True)[0].confianza >= CONFIANZA_OBJETIVO:
             break                                            # la lectura con mas texto ya llega a CONFIANZA_OBJETIVO
         if time.monotonic() - inicio > TIEMPO_MAX_MEJORA:
@@ -772,15 +846,23 @@ def _pixmap_a_gris(pix):
     return img if pix.n == 1 else img.convert("L")
 
 
-def _imagen_pagina(page, dpi, giro=0):
-    img = _pixmap_a_gris(page.get_pixmap(dpi=dpi))
-    return img.rotate(-giro, expand=True, fillcolor=255) if giro else img
+def orientar(img, giro=0, espejo=False):
+    """La imagen girada ``giro`` grados (sentido de las agujas del reloj: 0, 90, 180, 270) y, si ``espejo``, reflejada
+    de izquierda a derecha (un escaneo hecho «por detras» o con la camara frontal)."""
+    from PIL import ImageOps
+    if giro:
+        img = img.rotate(-giro, expand=True, fillcolor=255)
+    return ImageOps.mirror(img) if espejo else img
 
 
-def _preparar(page, dpi, receta, giro):
+def _imagen_pagina(page, dpi, giro=0, espejo=False):
+    return orientar(_pixmap_a_gris(page.get_pixmap(dpi=dpi)), giro, espejo)
+
+
+def _preparar(page, dpi, receta, giro, espejo=False):
     """Imagen de la pagina lista para el OCR: girada, con el tratamiento ``receta`` y enderezada."""
     from PIL import Image
-    img = _imagen_pagina(page, dpi, giro)
+    img = _imagen_pagina(page, dpi, giro, espejo)
     if receta is not None:
         try:
             img = receta(img)
@@ -795,9 +877,10 @@ def _preparar(page, dpi, receta, giro):
     return img
 
 
-def _leer_pagina_con(page, idioma, pytesseract, dpi, receta, giro):
-    """Una pasada de OCR de la pagina a ``dpi`` con un tratamiento de imagen (``receta``) y un giro."""
-    img = _preparar(page, dpi, receta, giro)
+def _leer_pagina_con(page, idioma, pytesseract, dpi, receta, giro, espejo=False):
+    """Una pasada de OCR de la pagina a ``dpi`` con un tratamiento de imagen (``receta``), un giro y, si hace falta,
+    reflejada."""
+    img = _preparar(page, dpi, receta, giro, espejo)
     palabras = _ocr(img, idioma, pytesseract)
     tablas = []
     gris = None
@@ -821,8 +904,10 @@ def _leer_pagina_con(page, idioma, pytesseract, dpi, receta, giro):
                             not c.palabras or (_media(nuevas) > _media(c.palabras) and
                                                len(texto_de(nuevas)) >= 0.8 * len(texto_celda(c)))):
                         c.palabras = nuevas
+    firmas = _quitar_firmas(tablas)
+    fuera, firmas_linea = _quitar_firmas_en_lineas(fuera)
     esc = 72.0 / dpi
-    res = PaginaOCR(lineas=_lineas(fuera, esc))
+    res = PaginaOCR(lineas=_lineas(fuera, esc), firmas=firmas + firmas_linea, orientacion=giro, espejo=espejo)
     for t in tablas:
         res.confianzas += [p[5] for f in t.filas for c in f for p in c.palabras]
         if es_encabezado(t, img.height):
@@ -832,12 +917,72 @@ def _leer_pagina_con(page, idioma, pytesseract, dpi, receta, giro):
             if texto:
                 res.cajas.append((t.y0 * esc, t.x0 * esc, texto))
         else:
-            filas = [f for f in t.textos() if any(f)]
+            filas = [[rotulo_de_firma(c) for c in f] for f in t.textos() if any(f)]
             if filas:
                 xs = [c.x0 * esc for c in t.filas[0]]
                 res.tablas.append((t.y0 * esc, t.x0 * esc, t.y1 * esc, t.x1 * esc, _normalizar(filas), xs))
     res.confianzas += [p[5] for p in fuera]
     return res
+
+
+# Etiqueta de un campo de firma: a su lado hay un trazo manuscrito que el OCR lee como letras sueltas sin sentido.
+RE_ETIQUETA_FIRMA = re.compile(r"\b(firma|firmas|firmado|rubrica|sello|(elaborado|revisado|aprobado|autorizado) por|"
+                               r"gerente del area|director\s*/?\s*gerente)\b")
+CONF_FIRMA_MIN = 75            # en un campo de firma solo se conservan las palabras leidas con al menos esta confianza
+
+
+def es_etiqueta_de_firma(texto):
+    return bool(RE_ETIQUETA_FIRMA.search(norm(texto)))
+
+
+ROTULOS_DE_FIRMA = ("Firma de Aprobación", "Firma del Colaborador", "Firmas de Aprobación")
+
+
+def rotulo_de_firma(texto):
+    """El rotulo canonico («Firma de Aprobación») si ``texto`` es ese rotulo leido con ruido del OCR («de Firma de
+    Aprobación», «Firma de Aj»); si no, el mismo texto."""
+    n = norm(texto)
+    if "firma" not in n or len(n) > 40:
+        return texto
+    cerca = difflib.get_close_matches(n, [norm(r) for r in ROTULOS_DE_FIRMA], n=1, cutoff=0.6)
+    return next((r for r in ROTULOS_DE_FIRMA if norm(r) == cerca[0]), texto) if cerca else texto
+
+
+def _quitar_firmas(tablas):
+    """Vacia las celdas que acompanan a una etiqueta de firma («Director / Gerente Sr. / Gerente del area:», «Firma de
+    Aprobacion») cuando solo traen lecturas de baja confianza: son el trazo de la firma, no texto. Un nombre escrito a
+    maquina junto a la firma (confianza alta) se conserva. Devuelve cuantos campos de firma se ignoraron."""
+    ignoradas = 0
+    for t in tablas:
+        for fila in t.filas:
+            etiquetas = [j for j, c in enumerate(fila) if es_etiqueta_de_firma(texto_celda(c))]
+            if not etiquetas:
+                continue
+            for j, c in enumerate(fila):
+                if j in etiquetas or not c.palabras:
+                    continue
+                firmes = [p for p in c.palabras if p[5] >= CONF_FIRMA_MIN]
+                if sum(1 for p in firmes if len(re.findall(r"[^\W\d_]", p[0])) >= 3) < 2:
+                    c.palabras, ignoradas = [], ignoradas + 1
+                elif len(firmes) < len(c.palabras):
+                    c.palabras = firmes
+    return ignoradas
+
+
+def _quitar_firmas_en_lineas(palabras):
+    """(palabras sin el trazo de firma, campos ignorados): en una linea que trae una etiqueta de firma se descartan las
+    palabras de baja confianza (el trazo a su lado)."""
+    lineas = collections.defaultdict(list)
+    for p in palabras:
+        lineas[p[6]].append(p)
+    quitar, ignoradas = set(), 0
+    for ps in lineas.values():
+        if es_etiqueta_de_firma(" ".join(p[0] for p in sorted(ps, key=lambda q: q[1]))):
+            malas = [id(p) for p in ps if p[5] < CONF_FIRMA_MIN]
+            if malas:
+                quitar.update(malas)
+                ignoradas += 1
+    return [p for p in palabras if id(p) not in quitar], ignoradas
 
 
 def _normalizar(filas):

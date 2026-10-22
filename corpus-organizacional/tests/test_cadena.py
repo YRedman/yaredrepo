@@ -208,3 +208,18 @@ class NombresYDuplicadosTest(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in usados), ["Datos.csv", "captura (1).png", "captura (2).png"])
         self.assertTrue(any("a/captura (1).png" in a and "b/captura (1).png" in a for a in avisos), avisos)
         self.assertTrue(any("Datos (1).csv" in a and "es distinto" in a for a in avisos), avisos)
+
+
+class EncabezadoPorVotoTest(unittest.TestCase):
+    def test_el_valor_mal_leido_en_una_pagina_se_corrige_con_el_de_las_demas(self):
+        from corpus_org.conversion.extractores.pdf import consenso_de_encabezados
+        pagina = ["Descripción de Puesto", "Código: GECA-ATTA-FOR-034", "Versión: 05", "Vigente a partir de: 10/09/2025"]
+        malas = ["Descripción de Puesto", "Código: SECA-ATTA-FOR-034", "Versión: p.", "Vigente a partir de: 10J09/2025"]
+        notas = []
+        res = consenso_de_encabezados(malas, [malas, pagina, pagina, pagina, pagina], notas)
+        self.assertEqual(res, pagina)
+        self.assertEqual(len(notas), 3)
+        # con menos de tres paginas, o sin acuerdo entre dos, no se toca
+        self.assertEqual(consenso_de_encabezados(malas, [malas, pagina]), malas)
+        distintas = [["Código: AAA-BBB-001"], ["Código: CCC-DDD-002"], ["Código: EEE-FFF-003"]]
+        self.assertEqual(consenso_de_encabezados(distintas[0], distintas), distintas[0])
