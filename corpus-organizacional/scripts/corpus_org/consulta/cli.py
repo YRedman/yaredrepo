@@ -2,24 +2,15 @@
 
 import argparse
 import sys
-from pathlib import Path
 
 from ..comun.errores import AreaAmbigua, AreaNoEncontrada, CorpusError
 from .comandos import COMANDOS
 from .comandos.base import Contexto
 from .repositorio import cargar_corpus
 from .salida import Salida
-from .ubicacion import incluir_no_vigentes, resolver_ubicacion
+from .ubicacion import incluir_no_vigentes, raiz_del_skill, resolver_ubicacion
 
-def _raiz_skill():
-    """Carpeta que contiene scripts/: el skill fuente-contexto (o el repositorio)."""
-    for p in Path(__file__).resolve().parents:
-        if p.name == "scripts":
-            return p.parent
-    return Path(__file__).resolve().parents[3]
-
-
-RAIZ_SKILL = _raiz_skill()
+RAIZ_SKILL = raiz_del_skill()
 
 
 class _Parser(argparse.ArgumentParser):
@@ -63,6 +54,9 @@ def main(argv=None, uso="", flujo=None):
         return 0 if not argv else 1
     try:
         args = crear_parser().parse_args(argv)
+        if args.comando == "donde":          # no necesita cargar el corpus: sirve justo cuando falta algo
+            COMANDOS["donde"].ejecutar(None, args, s)
+            return 0
         u = resolver_ubicacion(RAIZ_SKILL)
         for aviso in u.avisos:
             s.linea("AVISO: " + aviso)

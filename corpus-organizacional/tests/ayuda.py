@@ -9,7 +9,7 @@ if str(SCRIPTS) not in sys.path:
 
 # Estructura publicada (salida_corpus/copilot/...)
 PUBLICADA = "copilot"
-DOCUMENTOS = Path("fuente-documentos")
-INDICE = Path("fuente-contexto") / "indice"
-CONTEXTO = Path("fuente-contexto") / "contexto"
-MATRIZ = Path("fuente-contexto") / "matriz"
+DOCUMENTOS = Path("fuente-corpus") / "documentos"
+INDICE = Path("fuente-corpus") / "indice"
+CONTEXTO = Path("fuente-corpus") / "contexto"
+MATRIZ = Path("fuente-corpus") / "matriz"

@@ -151,7 +151,7 @@ class HuellasTest(unittest.TestCase):
     def test_detecta_modificaciones(self):
         with tempfile.TemporaryDirectory() as tmp:
             publicado = Path(tmp)
-            contexto = publicado / "fuente-contexto"
+            contexto = publicado / "fuente-corpus"
             datos, docs = publicado / ayuda.INDICE, publicado / ayuda.DOCUMENTOS / "DES"
             datos.mkdir(parents=True)
             docs.mkdir(parents=True)
@@ -163,7 +163,7 @@ class HuellasTest(unittest.TestCase):
             (datos / "indice_corpus.csv").unlink()
             r = verificar_huellas(contexto)
         self.assertEqual((r.modificados, r.faltantes),
-                         (["fuente-documentos/DES/DES_COM.md"], ["fuente-contexto/indice/indice_corpus.csv"]))
+                         (["fuente-corpus/documentos/DES/DES_COM.md"], ["fuente-corpus/indice/indice_corpus.csv"]))
 
 
 def _construir(base, *extra):
@@ -259,7 +259,7 @@ class Fase2IntegracionTest(unittest.TestCase):
     def test_7_huellas_detectan_cambios_y_codigos_estables(self):
         (self.publicado / ayuda.DOCUMENTOS / "DES" / "DES_COM.md").write_text("editado", encoding="utf-8")
         _, out = _consultar(self.publicado, "verificar")
-        self.assertIn("Archivos modificados después de la conversión: fuente-documentos/DES/DES_COM.md", out)
+        self.assertIn("Archivos modificados después de la conversión: fuente-corpus/documentos/DES/DES_COM.md", out)
         # retirar un documento y volver a construir: los demás conservan su código
         antes = self._inventario()
         lista = self.base / "entrada" / "lista.txt"

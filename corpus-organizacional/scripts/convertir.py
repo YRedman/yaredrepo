@@ -24,7 +24,7 @@ Modos (se ejecuta con: python convertir.py <modo> [opciones]):
 
   construir   Ejecuta el flujo completo: inventario, conversion, contexto opcional,
               indice consolidado, publicacion en dos carpetas listas para
-              comprimir (salida_corpus/copilot/fuente-documentos y fuente-contexto),
+              comprimir (salida_corpus/copilot/fuente-corpus: un solo skill),
               matriz maestra (xlsx y un CSV por hoja) y validacion automatica.
               Los SKILL.md los provee el equipo: el script no los escribe.
 

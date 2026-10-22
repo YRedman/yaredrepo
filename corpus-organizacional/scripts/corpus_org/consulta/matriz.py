@@ -309,7 +309,7 @@ def exportar_csv(hojas, raiz, carpeta):
 
 
 def escribir_matriz(raiz, destino=None):
-    """Escribe en <raiz>/copilot/fuente-contexto/matriz/ matriz_organizacional.xlsx (requiere openpyxl) y un CSV
+    """Escribe en <raiz>/copilot/fuente-corpus/matriz/ matriz_organizacional.xlsx (requiere openpyxl) y un CSV
     por hoja (solo biblioteca estandar). ``raiz`` es salida_corpus. Devuelve la ruta del Excel."""
     corpus, hojas = datos_matriz(raiz)
     carpeta = rutas_publicadas(raiz / CARPETA_PUBLICADA).matriz

@@ -71,6 +71,22 @@ class IntegracionTest(unittest.TestCase):
         self.assertEqual(self.codigo, 0, self.salida)
         self.assertIn("LISTO PARA PUBLICAR", self.salida)
 
+    def test_la_nota_de_ubicacion_se_escribe_y_se_avisa_si_el_skill_no_la_tiene(self):
+        nota = self.base / "entrada" / "salida_corpus" / "NOTA_UBICACION_SKILL.md"
+        self.assertIn("appCatalog", nota.read_text(encoding="utf-8"))
+        self.assertIn("find /home/oai/skills", nota.read_text(encoding="utf-8"))
+        self.assertFalse(list(self.publicado.rglob("NOTA_UBICACION_SKILL.md")))     # no se publica: es para el SKILL.md
+        # con un SKILL.md que no nombra appCatalog se avisa; con uno que si, no
+        sin_nota, con_nota = self.base / "SIN_NOTA.md", self.base / "CON_NOTA.md"
+        sin_nota.write_text("# Skill sin nota de ubicación\n", encoding="utf-8")
+        con_nota.write_text("Los skills quedan en /home/oai/skills/appCatalog/<carpeta>/\n", encoding="utf-8")
+        _, salida = construir(self.base, "--skill-md", str(sin_nota))
+        self.assertIn("no explica dónde queda cargado el skill", salida)
+        _, salida = construir(self.base, "--skill-md", str(con_nota))
+        self.assertNotIn("no explica dónde queda cargado el skill", salida)
+        self.assertEqual((self.publicado / "fuente-corpus" / "SKILL.md").read_text(encoding="utf-8"),
+                         con_nota.read_text(encoding="utf-8"))
+
     def test_metadatos_sin_falsos_positivos(self):
         self.assertEqual(self.indice["DES-ALM-01"]["estado_documental"], "")
         self.assertEqual(self.indice["PRD-COM-01"]["estado_documental"], "Vigente")

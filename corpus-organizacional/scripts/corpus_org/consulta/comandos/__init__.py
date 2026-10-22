@@ -7,6 +7,7 @@ from .cadena import Cadena
 from .catalogo import Catalogo
 from .citar import Citar
 from .doc import Documento
+from .donde import Donde
 from .ficha import Ficha
 from .gobierno import Gobierno
 from .kpis import Indicadores
@@ -16,5 +17,5 @@ from .procesos import Procesos
 from .relaciones import Relaciones
 from .verificar import Verificar
 
-COMANDOS = {c.nombre: c for c in (Catalogo(), IndiceArea(), Briefing(), Ficha(), Documento(), Buscar(), Relaciones(),
+COMANDOS = {c.nombre: c for c in (Donde(), Catalogo(), IndiceArea(), Briefing(), Ficha(), Documento(), Buscar(), Relaciones(),
                                    Participacion(), Gobierno(), Procesos(), Indicadores(), Normativa(), Cadena(), Citar(), Verificar())}

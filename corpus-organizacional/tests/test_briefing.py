@@ -120,7 +120,7 @@ class BriefingAceptacionTest(unittest.TestCase):
         with open(cls.copilot / ayuda.INDICE / "indice_corpus.csv", encoding="utf-8-sig") as f:
             cls.codigo_de = {r["archivo_origen"]: r["codigo"] for r in csv.DictReader(f, delimiter=";")}
         cls.mapa = {}
-        for p in (cls.copilot / "fuente-documentos").rglob("*.md"):
+        for p in (cls.copilot / "fuente-corpus" / "documentos").rglob("*.md"):
             cls.mapa[p.name] = p.read_text(encoding="utf-8")
 
     @classmethod
@@ -131,8 +131,7 @@ class BriefingAceptacionTest(unittest.TestCase):
         codigo, out = _consultar(self.copilot, "verificar")
         self.assertEqual(codigo, 0, out)
         self.assertIn("Resultado: sin problemas", out)
-        self.assertIn("Peso y archivos · fuente-contexto:", out)
-        self.assertIn("Peso y archivos · fuente-documentos:", out)
+        self.assertIn("Peso y archivos · fuente-corpus:", out)
         self.assertIn("corpus completo: sí", out)
 
     def test_g2_catalogo(self):

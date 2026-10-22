@@ -1,4 +1,4 @@
-"""Scripts de consulta que se publican en fuente-contexto/scripts/.
+"""Scripts de consulta que se publican en fuente-corpus/scripts/.
 
 Copilot admite como maximo 3 niveles de carpetas por skill, asi que ``corpus_org`` se publica sin
 subcarpetas: cada modulo de ``comun/`` y ``consulta/`` pasa a un archivo con su ruta como nombre
@@ -85,7 +85,7 @@ def aplanar_paquete(origen, destino):
 
 
 def copiar_scripts(carpeta_scripts, origen=None):
-    """Publica corpus.py y el paquete corpus_org plano en ``carpeta_scripts`` (fuente-contexto/scripts)."""
+    """Publica corpus.py y el paquete corpus_org plano en ``carpeta_scripts`` (fuente-corpus/scripts)."""
     origen = Path(origen) if origen else CARPETA_SCRIPTS
     carpeta_scripts = Path(carpeta_scripts)
     if carpeta_scripts.is_dir():

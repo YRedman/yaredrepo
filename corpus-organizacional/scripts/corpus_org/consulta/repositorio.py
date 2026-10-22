@@ -8,7 +8,7 @@ from ..comun.errores import CorpusError
 from ..comun.esquema import (ARCHIVO_AREAS_EXTRA, ARCHIVO_INDICE, ARCHIVO_INVENTARIO, ARCHIVO_KPIS, ARCHIVO_RESUMEN,
                              COLUMNAS_INDICE, PREFIJO_DIC, PREFIJO_REPORTE, RE_TITULO_DOC, area_de,
                              INVENTARIO_RETIRADO, estado_no_publicable, inventario_activo, tipo_desde_texto)
-from ..comun.estructura import SKILL_CONTEXTO, markdown_de_documentos, rutas_de_skill_contexto
+from ..comun.estructura import SKILL_CORPUS, markdown_de_documentos, rutas_de_skill_contexto
 from ..comun.tipos import TIPOS_AREA, es_general, tipo as tipo_documento
 from . import parser
 from .areas import construir_alias
@@ -21,8 +21,8 @@ class Corpus:
 
     def __init__(self, carpeta, meta, docs, archivos_md, inventario, fuente_indice, duplicados, excluidos,
                  extra=(), exclusiones=(), kpis=(), carpeta_documentos=None):
-        self.carpeta = carpeta              # skill fuente-contexto
-        self.carpeta_documentos = carpeta_documentos   # skill fuente-documentos
+        self.carpeta = carpeta              # skill fuente-corpus
+        self.carpeta_documentos = carpeta_documentos   # fuente-corpus/documentos
         self.meta = meta                    # codigo -> fila del indice
         self.docs = docs                    # codigo -> DocumentoCorpus
         self.archivos_md = archivos_md
@@ -189,15 +189,15 @@ def _construir_areas(meta, docs, inventario):
 def cargar_corpus(contexto_skill, incluir_no_vigentes=False, documentos=None):
     """Lee el corpus publicado.
 
-    ``contexto_skill`` es la carpeta fuente-contexto (indice/ con el indice, el inventario y areas_extra;
-    contexto/ con los documentos generales y kpis.csv) y ``documentos`` la carpeta fuente-documentos. Si se
-    omite, se toma la hermana de fuente-contexto. Los documentos con estado no publicable se separan en
+    ``contexto_skill`` es la carpeta del skill fuente-corpus (indice/ con el indice, el inventario y areas_extra;
+    contexto/ con los documentos generales y kpis.csv; documentos/ con los de area) y ``documentos`` la carpeta de
+    documentos si no es ``contexto_skill/documentos`` (estructura anterior: skill fuente-documentos aparte). Los documentos con estado no publicable se separan en
     ``excluidos``: la exclusion se aplica al indice y al texto a la vez; asi un documento obsoleto no aparece
     en busquedas ni se reporta como "documento sin fila en el indice".
     """
     contexto_skill = Path(contexto_skill)
     if not contexto_skill.is_dir():
-        raise CorpusError(f"No existe la carpeta del skill {SKILL_CONTEXTO}: {contexto_skill}")
+        raise CorpusError(f"No existe la carpeta del skill {SKILL_CORPUS}: {contexto_skill}")
     rutas = rutas_de_skill_contexto(contexto_skill)
     documentos = Path(documentos) if documentos else rutas.documentos
     archivos_md = markdown_de_documentos(documentos) \

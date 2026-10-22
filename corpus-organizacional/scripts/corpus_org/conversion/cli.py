@@ -17,7 +17,9 @@ from ..comun.esquema import (AREA_SIN_ASIGNAR, ARCHIVO_AREAS_DOCUMENTOS, ARCHIVO
                              ARCHIVO_EQUIVALENCIAS, ARCHIVO_INDICE, ARCHIVO_INVENTARIO, ARCHIVO_INVENTARIO_CONTEXTO,
                              ARCHIVO_KPIS, ARCHIVO_RESUMEN, COLUMNAS_CATALOGO, COLUMNAS_INVENTARIO, PREFIJO_DIC,
                              inventario_activo, tipo_desde_texto)
-from ..comun.estructura import CARPETA_PUBLICADA, NOMBRE_SKILL_MD, informe_limites, rutas_publicadas
+from ..comun.estructura import (ARCHIVO_NOTA_UBICACION, CARPETA_PUBLICADA, LLAVE_NOTA_UBICACION, NOMBRE_SKILL_MD,
+                                NOTA_UBICACION_SKILL, SKILL_CONTEXTO, SKILL_CORPUS, SKILL_DOCUMENTOS, informe_limites,
+                                rutas_publicadas)
 from ..comun.texto import norm
 from ..comun.tipos import (AREA_GENERAL, NOMBRE_AREA_GENERAL, RE_CODIGO_ANTERIOR, TIPOS_AREA, nombre_archivo,
                            tipo as tipo_documento)
@@ -506,15 +508,35 @@ def _limpiar_publicacion_anterior(raiz_salida, publicado, avisos):
     instrucciones = raiz_salida / "instrucciones_copilot.md"
     if instrucciones.is_file():
         instrucciones.unlink()
+    anteriores = [publicado / n for n in (SKILL_CONTEXTO, SKILL_DOCUMENTOS) if (publicado / n).is_dir()]
+    if anteriores:
+        destino = raiz_salida / "anterior_dos_skills"
+        destino.mkdir(exist_ok=True)
+        for carpeta in anteriores:
+            if (destino / carpeta.name).exists():
+                shutil.rmtree(destino / carpeta.name, ignore_errors=True)
+            shutil.move(str(carpeta), str(destino / carpeta.name))
+        avisos.append(f"Las carpetas {' y '.join(c.name for c in anteriores)} (la publicación anterior en dos skills) se "
+                      f"movieron a salida_corpus/{destino.name}/: Copilot admite un solo skill y ahora se publica "
+                      f"copilot/{SKILL_CORPUS}/. No las suba; puede borrarlas.")
     if (raiz_salida / "publicado").is_dir():
         avisos.append("La carpeta salida_corpus/publicado/ es de una versión anterior y ya no se usa: la "
                       f"publicación está en salida_corpus/{CARPETA_PUBLICADA}/. Puede borrarla.")
 
 
+def _skill_md_de_origen(args):
+    """El SKILL.md que se copia al skill: ``--skill-md`` o el SKILL.md junto a scripts/ en el repositorio; None si no hay."""
+    candidatos = [getattr(args, "skill_md", None), Path(__file__).resolve().parents[3] / NOMBRE_SKILL_MD]
+    for c in candidatos:
+        if c and Path(c).is_file():
+            return Path(c).resolve()
+    return None
+
+
 def modo_construir(args):
     """Inventario, conversion, contexto opcional, publicacion, validacion y huellas en una sola orden.
 
-    Publica en salida_corpus/copilot/fuente-documentos y fuente-contexto (dos carpetas listas para comprimir).
+    Publica en salida_corpus/copilot/fuente-corpus (un solo skill listo para comprimir).
     Termina con 0 (LISTO PARA PUBLICAR), 2 (REQUIERE REVISIÓN) o 3 (PENDIENTE DE REVISIÓN VISUAL).
     """
     entrada = Path(args.entrada).resolve()
@@ -585,21 +607,30 @@ def modo_construir(args):
     except (CorpusError, OSError) as e:
         matriz = None
         validacion.avisos.append(f"No se generó la matriz Excel: {getattr(e, 'mensaje', e)}")
-    for skill in (rutas.skill_contexto, rutas.documentos):
-        if not (skill / NOMBRE_SKILL_MD).is_file():
-            validacion.avisos.append(f"Falta {skill.name}/{NOMBRE_SKILL_MD}: lo provee el equipo; cópielo en esa "
-                                     "carpeta antes de comprimirla (el script no lo escribe).")
-    medidas, avisos_limites = informe_limites([rutas.skill_contexto, rutas.documentos])
+    nota = raiz_salida / ARCHIVO_NOTA_UBICACION          # fuera de lo publicado: es para pegar en el SKILL.md del equipo
+    nota.write_text(NOTA_UBICACION_SKILL, encoding="utf-8")
+    skill_md = _skill_md_de_origen(args)
+    destino_md = rutas.skill / NOMBRE_SKILL_MD
+    if skill_md is not None:
+        shutil.copy2(skill_md, destino_md)
+        print(f"SKILL.md copiado a {destino_md.parent.name}/ desde {skill_md}")
+    if not destino_md.is_file():
+        validacion.avisos.append(f"Falta {rutas.skill.name}/{NOMBRE_SKILL_MD}: póngalo como SKILL.md junto a la carpeta "
+                                 "scripts/ del repositorio (se copia solo) o cópielo en esa carpeta antes de comprimirla.")
+    elif LLAVE_NOTA_UBICACION not in destino_md.read_text(encoding="utf-8", errors="replace"):
+        validacion.avisos.append(f"El {rutas.skill.name}/{NOMBRE_SKILL_MD} no explica dónde queda cargado el skill "
+                                 f"({LLAVE_NOTA_UBICACION}): el agente puede buscarlo en una ruta equivocada. Agregue "
+                                 f"la nota de {nota.name}.")
+    medidas, avisos_limites = informe_limites([rutas.skill])
     validacion.avisos += avisos_limites
     escribir_resumen_construccion(resumen_path, validacion, publicados, medidas)
     shutil.copy2(resumen_path, rutas.indice / ARCHIVO_RESUMEN)
-    # 5) Huellas al final: cubren todo lo publicado en las dos carpetas.
+    # 5) Huellas al final: cubren todo lo publicado en el skill.
     escribir_huellas(publicado)
     print("\nCONSTRUIR CORPUS · convertir.py v" + VERSION)
     print("Resultado: " + validacion.estado)
-    print(f"Carpetas para comprimir y subir como skills (en {publicado}):")
-    print(f"- {rutas.documentos.name}")
-    print(f"- {rutas.skill_contexto.name}")
+    print(f"Carpeta para comprimir y subir como skill (en {publicado}):")
+    print(f"- {rutas.skill.name}")
     for m in medidas:
         print(f"  {m}")
     print(f"Control: {control}")
@@ -685,6 +716,8 @@ def crear_parser():
         if nombre == "construir":
             sp.add_argument("--contexto", default=None,
                             help="Carpeta separada con organigrama, glosario y otros materiales de contexto.")
+            sp.add_argument("--skill-md", default=None,
+                            help="SKILL.md que se copia al skill publicado (por defecto el SKILL.md junto a scripts/).")
             sp.add_argument("--muestra-revision", type=float, default=MUESTRA_REVISION,
                             help="Fracción de documentos sin avisos que se revisan visualmente (0 = ninguno).")
         if nombre in ("convertir", "contexto", "construir"):

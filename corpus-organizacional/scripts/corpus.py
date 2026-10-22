@@ -28,12 +28,14 @@ Uso: python scripts/corpus.py <comando> [argumentos]
   kpis [--gestion "<texto>"] [--sin-medicion] [--relacionar] [--area "<area>"]
                                    Indicadores y documentos que mencionan sus terminos.
   verificar                        Integridad (huellas), inventario, cobertura y corpus completo.
+  donde                            Donde esta el skill fuente-corpus y el comando para ejecutar corpus.py.
 
 Codigos TTT-AAA-NN: tipo (DES, PRD, PRO, POL; ORG, KPI, GLO, MPR... generales), area (GEN = general) y numero.
 
-Datos: este skill (fuente-contexto: indice/, contexto/, matriz/). Documentos: el skill hermano fuente-documentos;
-si no esta, CORPUS_DATOS (la carpeta que contiene ambos skills) y luego una busqueda por nombre en
-/home/oai/skills/appCatalog/<carpeta>/ (en Copilot la <carpeta> cambia).
+Datos: este skill (fuente-corpus: documentos/, indice/, contexto/, matriz/). Con la estructura anterior (dos skills),
+los documentos estan en el skill hermano fuente-documentos.
+Si el skill no esta junto a este archivo: CORPUS_DATOS (la carpeta del skill o la que lo contiene) y luego una busqueda
+por nombre en /home/oai/skills/appCatalog/<carpeta>/ y alrededores (en Copilot la <carpeta> cambia; ver ``donde``).
 Solo usa la biblioteca estandar de Python (sin red ni paquetes). No modifica ningun archivo.
 La logica vive en el paquete ``corpus_org`` (junto a este archivo).
 """
