@@ -105,6 +105,10 @@ def texto_de_imagen(d, bloques, donde, n_unidad, datos, referencia=()):
         d.avisos.append(f"la imagen de {donde} no se pudo leer (OCR {res.confianza:.0f} %): su contenido no está en el "
                         "corpus; use una versión más nítida o transcríbala")
         return
+    if res.orientacion or res.espejo:
+        d.notas.append(f"La imagen de {donde} estaba " + " y ".join(
+            ([f"girada {res.orientacion}°"] if res.orientacion else []) + (["reflejada (espejo)"] if res.espejo else []))
+            + "; se enderezó antes de leerla.")
     d.paginas_ocr.append(n_unidad)
     d.idioma_ocr = idioma
     d.confianzas_ocr += res.confianzas

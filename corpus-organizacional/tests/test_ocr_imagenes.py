@@ -230,3 +230,114 @@ class FotoTest(unittest.TestCase):
         img = O._imagen_pagina(pagina, 72)
         self.assertEqual((img.mode, img.size), ("L", (200, 100)))
         self.assertEqual((img.getpixel((50, 40)), img.getpixel((150, 80))), (0, 255))
+
+
+def _pagina_de_texto(giro=0, espejo=False):
+    """Pagina PyMuPDF con una imagen de texto (como un escaneo) puesta al reves, de lado o reflejada."""
+    import pymupdf
+    base = _imagen_con_texto(["Procedimiento de compras de bienes y servicios", "El area de compras recibe la solicitud aprobada y",
+                              "emite la orden de compra al proveedor seleccionado", "segun la politica vigente de la organizacion."] * 6,
+                             tam=(1700, 2200), px=34)
+    img = O.orientar(base, giro, espejo)
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, "PNG")
+    doc = pymupdf.open()
+    ancho, alto = (612, 792) if img.width < img.height else (792, 612)
+    pagina = doc.new_page(width=ancho, height=alto)
+    pagina.insert_image(pagina.rect, stream=buf.getvalue())
+    return doc, pagina
+
+
+@unittest.skipUnless(OCR, "faltan Tesseract (spa), pytesseract, Pillow o numpy")
+class OrientacionTest(unittest.TestCase):
+    def test_una_pagina_reflejada_se_detecta_y_se_lee_bien(self):
+        from corpus_org.conversion.extractores.ocr import configurar_pytesseract
+        _doc, pagina = _pagina_de_texto(espejo=True)
+        res = O.leer_pagina(pagina, idioma_ocr(), configurar_pytesseract())
+        self.assertTrue(res.espejo)
+        self.assertGreaterEqual(res.confianza, O.CONFIANZA_OBJETIVO)
+        self.assertIn("reflejada", res.mejora)
+        self.assertIn("Procedimiento de compras", " ".join(l["texto"] for l in res.lineas))
+
+    def test_una_pagina_al_reves_se_endereza(self):
+        from corpus_org.conversion.extractores.ocr import configurar_pytesseract
+        _doc, pagina = _pagina_de_texto(giro=180)
+        res = O.leer_pagina(pagina, idioma_ocr(), configurar_pytesseract())
+        self.assertEqual((res.orientacion, res.espejo), (180, False))
+        self.assertGreaterEqual(res.confianza, O.CONFIANZA_OBJETIVO)
+
+    def test_una_pagina_derecha_no_prueba_orientaciones(self):
+        from corpus_org.conversion.extractores.ocr import configurar_pytesseract
+        _doc, pagina = _pagina_de_texto()
+        with unittest.mock.patch.object(O, "orientacion_por_prueba", side_effect=AssertionError("no debia probarse")):
+            res = O.leer_pagina(pagina, idioma_ocr(), configurar_pytesseract())
+        self.assertEqual((res.orientacion, res.espejo), (0, False))
+
+    def test_una_imagen_reflejada_de_un_excel_se_lee_con_su_orientacion(self):
+        from corpus_org.conversion.extractores.ocr import configurar_pytesseract
+        base = _imagen_con_texto(["Procedimiento de compras de bienes y servicios", "El area de compras recibe la solicitud aprobada y",
+                                  "emite la orden de compra al proveedor seleccionado", "segun la politica vigente de la organizacion."] * 4,
+                                 tam=(1500, 1500), px=34)
+        res = O.leer_imagen(O.orientar(base, 0, True), idioma_ocr(), configurar_pytesseract())
+        self.assertTrue(res.espejo)
+        self.assertGreaterEqual(res.confianza, O.CONFIANZA_OBJETIVO)
+
+    def test_orientar_gira_y_refleja(self):
+        img = Image.new("L", (4, 2), 255)
+        img.putpixel((0, 0), 0)
+        self.assertEqual(O.orientar(img, 0, True).getpixel((3, 0)), 0)          # reflejo horizontal
+        self.assertEqual(O.orientar(img, 180).getpixel((3, 1)), 0)              # medio giro
+        self.assertEqual(O.orientar(img, 90).size, (2, 4))
+
+
+@unittest.skipUnless(DEPENDENCIAS, "faltan dependencias de imagen")
+class FirmasTest(unittest.TestCase):
+    def test_el_trazo_de_una_firma_se_ignora_pero_un_nombre_escrito_a_maquina_se_conserva(self):
+        celda = lambda palabras: O.Celda(  # noqa: E731
+            0, 0, 500, 10, [(t, 50 * k, 0, 50 * k + 40, 10, c) for k, (t, c) in enumerate(palabras)])
+
+        class T:
+            def __init__(self, filas):
+                self.filas = filas
+        etiqueta = [("Director", 95), ("Gerente", 95), ("del", 95), ("área:", 95)]
+        trazo = [("a", 40), ("ZZ", 35), ("o", 50)]
+        nombre = [("Carlos", 92), ("Pérez", 94), ("~", 30)]
+        tablas = [T([[celda(etiqueta), celda(trazo)], [celda(etiqueta), celda(nombre)]]),
+                  T([[celda([("Función", 95)]), celda([("Planificar", 90), ("tareas", 41)])]])]
+        self.assertEqual(O._quitar_firmas(tablas), 1)
+        self.assertEqual(tablas[0].filas[0][1].palabras, [])
+        self.assertEqual([p[0] for p in tablas[0].filas[1][1].palabras], ["Carlos", "Pérez"])
+        self.assertEqual(len(tablas[1].filas[0][1].palabras), 2)           # una fila sin etiqueta de firma no se toca
+
+    def test_en_una_linea_con_etiqueta_de_firma_se_descartan_las_palabras_de_baja_confianza(self):
+        clave = (1, 1, 1)
+        palabras = [("Firma:", 0, 0, 5, 5, 96, clave), ("xx", 6, 0, 9, 5, 30, clave), ("Texto", 0, 10, 5, 15, 40, (1, 1, 2))]
+        limpias, n = O._quitar_firmas_en_lineas(palabras)
+        self.assertEqual(([p[0] for p in limpias], n), (["Firma:", "Texto"], 1))
+
+    def test_rotulos_de_firma_leidos_con_ruido_se_normalizan(self):
+        self.assertEqual(O.rotulo_de_firma("de Firma de Aprobación"), "Firma de Aprobación")
+        self.assertEqual(O.rotulo_de_firma("Firma de Aj"), "Firma de Aprobación")
+        self.assertEqual(O.rotulo_de_firma("Firmado por la gerencia de compras en la fecha indicada abajo"),
+                         "Firmado por la gerencia de compras en la fecha indicada abajo")
+
+    def test_una_imagen_junto_a_una_etiqueta_de_firma_en_un_pdf_digital_se_ignora(self):
+        import pymupdf
+        from corpus_org.conversion.extractores import extractor_para
+        firma = Image.new("L", (500, 200), 255)
+        ImageDraw.Draw(firma).line([(20, 150), (120, 40), (220, 160), (320, 50), (480, 140)], fill=0, width=5)
+        buf = io.BytesIO()
+        firma.convert("RGB").save(buf, "PNG")
+        doc = pymupdf.open()
+        pagina = doc.new_page(width=612, height=792)
+        pagina.insert_text((72, 100), "Objetivo del puesto: coordinar las compras de la region.", fontsize=11)
+        pagina.insert_text((72, 300), "Firma del Colaborador", fontsize=11)
+        pagina.insert_image(pymupdf.Rect(72, 310, 320, 410), stream=buf.getvalue())
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "p.pdf"
+            doc.save(str(ruta))
+            d = extractor_para(ruta).extraer(ruta)
+        textos = " ".join(b.get("texto", "") for b in d.bloques)
+        self.assertNotIn("IMAGEN", textos)
+        self.assertEqual(d.diagramas, [])
+        self.assertTrue(any("firma manuscrita" in n for n in d.notas), d.notas)

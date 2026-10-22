@@ -289,7 +289,7 @@ def ejecutar_contexto(args):
     inv_path = salida / ARCHIVO_INVENTARIO_CONTEXTO
     base = leer_csv(inv_path) if inv_path.is_file() else []
     if not getattr(args, "incluir_duplicados", False):
-        entradas, avisos_copias = quitar_copias_contexto(entradas)
+        entradas, avisos_copias = quitar_copias_contexto(entradas, carpeta)
         for a in avisos_copias:
             print(f"AVISO: {a}")
     filas, equivalencias = inventario_contexto(entradas, carpeta, base, getattr(args, "anteriores", None))
@@ -297,10 +297,12 @@ def ejecutar_contexto(args):
     if equivalencias:
         escribir_equivalencias(salida / ARCHIVO_EQUIVALENCIAS, equivalencias)
     print(f"CONTEXTO · convertir.py v{VERSION} · huella {huella()}")
+    opciones = _opciones(args)
+    opciones.raiz_contexto, opciones.raiz_entrada = carpeta, None      # estos archivos se muestran como contexto/..., no entrada/...
     por_tipo = {}
     for f in inventario_activo(filas):
         por_tipo.setdefault(f["codigo"].split("-")[0], []).append(f)
-    grupos, a_convertir, opciones = [], [], _opciones(args)
+    grupos, a_convertir = [], []
     for t, filas_t in por_tipo.items():
         mapa = {f["codigo"]: f["path"] for f in filas_t}
         a_convertir.append(Grupo(t, AREA_GENERAL, NOMBRE_AREA_GENERAL, filas_t, mapa, nombre_archivo(t, AREA_GENERAL)[:-3]))

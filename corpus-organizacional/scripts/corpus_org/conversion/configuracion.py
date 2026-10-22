@@ -10,6 +10,7 @@ EXT_TEXTO = {".md", ".csv", ".txt", ".xlsx", ".xlsm", ".pptx", ".png", ".jpg", "
 # Archivos del sistema o temporales que nunca son documentos (bloqueos de Word, miniaturas...).
 ARCHIVOS_IGNORADOS = r"^(~\$|\.~lock|\._)|^(thumbs\.db|desktop\.ini|\.ds_store)$"
 # Si el mismo documento existe en varios formatos se usa el de menor valor.
+EXT_IMAGEN = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
 PREFERENCIA_EXT = {".docx": 0, ".pdf": 1, ".doc": 2}
 
 # Secciones que no se incluyen en el corpus (titulo normalizado, sin numeracion).

@@ -12,7 +12,7 @@ from ..modelo import DocumentoExtraido
 from .base import Extractor
 from ..secciones import clave_titulo, es_seccion_conocida
 from .ocr import configurar_pytesseract, idioma_ocr
-from .ocr_pagina import CONFIANZA_OBJETIVO, MIN_PALABRAS_TEXTO, leer_pagina, leer_region
+from .ocr_pagina import CONFIANZA_OBJETIVO, MIN_PALABRAS_TEXTO, es_etiqueta_de_firma, leer_pagina, leer_region
 from .maquetacion import agrupar_filas, bloques_desde_items
 
 RE_PATRON_ENC = re.compile(r"(p[aá]gina\s*\d+\s*(de|/)\s*\d+|\bversi[oó]n\s*:|\brevisi[oó]n\s*:|c[oó]digo\s*:|"
@@ -810,6 +810,8 @@ class _ExtraccionPDF:
         self.rects_organigrama = []    # (pagina, rect) de organigramas ya agregados como marca
         self.ocr_idioma = None
         self.imagenes_leidas = 0
+        self.firmas_ignoradas = []
+        self.encabezados_ocr = []      # encabezado de cada pagina leida con OCR: se repite, y el voto corrige sus errores
         self.bandas_pagina = []
         self.paginas_lineas = [_lineas_pagina(p, fitz) for p in doc_pdf]
         self.alturas = [p.rect.height for p in doc_pdf]
@@ -840,6 +842,7 @@ class _ExtraccionPDF:
             else:
                 self._pagina_con_texto(i, page)
         self._aplicar_ocr_pendiente()
+        self.d.encabezado = consenso_de_encabezados(self.d.encabezado, self.encabezados_ocr, self.d.notas)
         d = self.d
         d.crudo = +d.crudo
         d.numeros = +d.numeros
@@ -882,6 +885,13 @@ class _ExtraccionPDF:
         self._marca(i, -1, 0, f"[TEXTO OCR: página {i + 1} escaneada; revisar contra el original]")
         if res is None:
             return
+        if res.orientacion or res.espejo:
+            self.d.notas.append(f"Página {i + 1} (OCR): estaba " + " y ".join(
+                ([f"girada {res.orientacion}°"] if res.orientacion else []) + (["reflejada (espejo)"] if res.espejo else []))
+                + "; se enderezó antes de leerla.")
+        if res.firmas:
+            self.d.notas.append(f"Página {i + 1} (OCR): {res.firmas} campo(s) de firma manuscrita ignorados "
+                                "(su lectura es ruido, no texto).")
         if res.mejora and res.mejora != "original":
             self.d.notas.append(f"Página {i + 1} (OCR): imagen mejorada con {res.mejora}; confianza {res.confianza:.0f} %.")
         if res.confianza < CONFIANZA_OBJETIVO:
@@ -889,6 +899,8 @@ class _ExtraccionPDF:
                                  "aun mejorando la imagen): use una versión digital o un escaneo mejor")
         self.d.crudo_ocr |= palabras_ocr(textos)
         self.d.confianzas_ocr += res.confianzas
+        if res.encabezado:
+            self.encabezados_ocr.append(list(res.encabezado))
         if res.encabezado and not self.encabezado_guardado:
             self.d.encabezado = list(res.encabezado)
             self.encabezado_guardado = True
@@ -1163,6 +1175,12 @@ class _ExtraccionPDF:
             return None
         return res
 
+    def _es_firma(self, i, r):
+        """True si la imagen ``r`` es el trazo de una firma: tiene al lado (a la misma altura) o encima (hasta 50 pt) una
+        etiqueta de firma («Firma del Colaborador», «Director / Gerente Sr. / Gerente del área:»)."""
+        return any(es_etiqueta_de_firma(l["texto"]) and l["y1"] >= r.y0 - 50 and l["y0"] <= r.y1 + 6
+                   for l in self.paginas_lineas[i])
+
     def _imagenes_contenido(self, i, corte_sup, corte_inf, w, h):
         for im in self.info_img[i]:
             r = self.fitz.Rect(im["bbox"])
@@ -1170,6 +1188,12 @@ class _ExtraccionPDF:
                 continue
             cy = (r.y0 + r.y1) / 2
             if cy < corte_sup or cy > corte_inf:
+                continue
+            if abs(r) > 400 and self._es_firma(i, r):
+                # una firma manuscrita no es contenido: ni se lee con OCR ni cuenta como imagen o diagrama
+                if i + 1 not in self.firmas_ignoradas:
+                    self.firmas_ignoradas.append(i + 1)
+                    self.d.notas.append(f"Página {i + 1}: se ignoró una firma manuscrita (imagen junto a una etiqueta de firma).")
                 continue
             if abs(r) > 0.06 * w * h:
                 self.d.diagramas.append(i + 1)
@@ -1193,6 +1217,35 @@ class _ExtraccionPDF:
             elif abs(r) > 400:
                 self.d.imagenes_omitidas += 1
                 self._marca(i, r.y0, r.x0, "[IMAGEN OMITIDA]")
+
+
+RE_CAMPO_ENCABEZADO = re.compile(r"^\s*(C[oó]digo|Versi[oó]n|Vigente a partir de|Pr[oó]xima revisi[oó]n|Sustituye a)\s*:\s*(.+?)\s*$", re.I)
+
+
+def consenso_de_encabezados(encabezado, encabezados_por_pagina, notas=None):
+    """El encabezado del documento con cada campo fijo (Código, Versión, Vigencia, Próxima revisión, Sustituye a)
+    corregido por voto: el formato repite el mismo encabezado en todas las páginas y el OCR se equivoca en cada una de
+    forma distinta («SECA-ATTA» en una de cinco páginas). Gana el valor que se lee igual en al menos dos páginas."""
+    if len(encabezados_por_pagina) < 3:
+        return encabezado
+    votos = collections.defaultdict(collections.Counter)
+    for lineas in encabezados_por_pagina:
+        for t in lineas:
+            m = RE_CAMPO_ENCABEZADO.match(t)
+            if m:
+                votos[norm(m.group(1))][m.group(2)] += 1
+    res = []
+    for t in encabezado:
+        m = RE_CAMPO_ENCABEZADO.match(t)
+        if m and votos.get(norm(m.group(1))):
+            valor, n = votos[norm(m.group(1))].most_common(1)[0]
+            if n >= 2 and valor != m.group(2):
+                if notas is not None:
+                    notas.append(f"Encabezado (OCR): «{m.group(1)}: {m.group(2)}» se corrigió a «{valor}» "
+                                 f"(así se lee en {n} páginas).")
+                t = f"{m.group(1)}: {valor}"
+        res.append(t)
+    return res
 
 
 def _tokens_pdfplumber(path, omitir_paginas):
