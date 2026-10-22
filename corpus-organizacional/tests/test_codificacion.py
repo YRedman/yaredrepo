@@ -241,6 +241,38 @@ class UbicacionTest(unittest.TestCase):
                 u = ubicacion.resolver_ubicacion(ctx, entorno={})
             self.assertEqual((u.contexto, u.documentos), (ctx.resolve(), docs.resolve()))
 
+    def test_el_skill_directamente_en_la_carpeta_de_skills_o_mas_hondo_tambien_se_encuentra(self):
+        """El agente asumio /home/oai/skills/fuente-contexto; la copia real estaba en appCatalog/<carpeta>/. Ambas (y un nivel
+        mas hondo) se encuentran, desde una copia de corpus.py que esta en otro lugar."""
+        for ruta_ctx, ruta_docs in (("skills/fuente-contexto", "skills/fuente-documentos"),
+                                    ("skills/appCatalog/x/fuente-contexto", "skills/appCatalog/y/fuente-documentos"),
+                                    ("skills/appCatalog/x/y/z/fuente-contexto", "skills/appCatalog/q/r/s/fuente-documentos")):
+            with tempfile.TemporaryDirectory() as tmp:
+                raiz = Path(tmp)
+                ctx, docs = raiz / ruta_ctx, raiz / ruta_docs
+                (ctx / "indice").mkdir(parents=True)
+                (docs / "DES").mkdir(parents=True)
+                with mock.patch.object(ubicacion, "RAIZ_SKILLS_COPILOT", raiz / "skills" / "appCatalog"):
+                    u = ubicacion.resolver_ubicacion(raiz / "copia_de_scripts", entorno={})
+                self.assertEqual((u.contexto, u.documentos), (ctx.resolve(), docs.resolve()), ruta_ctx)
+
+    def test_donde_describe_las_carpetas_y_sirve_aunque_falte_el_corpus(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp)
+            ctx, docs = self._skills(raiz, "a1")
+            (ctx / "scripts").mkdir()
+            lineas = ubicacion.describir_ubicacion(ctx, entorno={})
+            self.assertEqual(lineas[0], "UBICACIÓN DEL CORPUS")
+            self.assertIn(f"fuente-contexto: {ctx.resolve()}", lineas)
+            self.assertIn(f"fuente-documentos: {docs.resolve()}", lineas)
+            self.assertTrue(any("corpus.py" in l and "scripts" in l for l in lineas))
+            vacio = raiz / "vacio"
+            vacio.mkdir()
+            with mock.patch.object(ubicacion, "RAIZ_SKILLS_COPILOT", raiz / "no-existe" / "appCatalog"):
+                sin = ubicacion.describir_ubicacion(vacio, entorno={})
+            self.assertTrue(any(l.startswith("ERROR: no encuentro el skill fuente-contexto") for l in sin))
+            self.assertTrue(any("find /home/oai/skills" in l for l in sin))
+
     def test_variable_corpus_datos(self):
         with tempfile.TemporaryDirectory() as tmp:
             raiz = Path(tmp)
@@ -452,7 +484,7 @@ class DosSkillsIntegracionTest(unittest.TestCase):
     def test_todos_los_comandos_desde_los_scripts_publicados(self):
         script = self.publicado / "fuente-contexto" / "scripts" / "corpus.py"
         entorno = {k: v for k, v in os.environ.items() if not k.startswith("CORPUS_")}
-        for comando in (["catalogo"], ["area", "Seguridad"], ["briefing", "Seguridad"], ["ficha", "Seguridad"],
+        for comando in (["donde"], ["catalogo"], ["area", "Seguridad"], ["briefing", "Seguridad"], ["ficha", "Seguridad"],
                         ["doc", "DES-SEG-01"], ["buscar", "ronda"], ["relaciones", "Seguridad"],
                         ["participacion", "Seguridad"], ["gobierno"], ["procesos"], ["kpis"], ["verificar"]):
             r = subprocess.run([sys.executable, "-I", "-S", str(script), *comando], capture_output=True,

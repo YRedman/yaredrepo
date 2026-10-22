@@ -60,14 +60,52 @@ def _expandir(patron):
         return []
 
 
+MAX_CARPETAS_RECORRIDAS = 20000     # tope de la busqueda de ultimo recurso por el disco
+PROFUNDIDAD_BUSQUEDA = 5
+
+
+def _raices_de_busqueda():
+    """Carpetas donde un skill puede estar: la de skills de Copilot (appCatalog), su carpeta madre (alguien puede
+    haberlos copiado directo en /home/oai/skills) y las de adjuntos."""
+    return [RAIZ_SKILLS_COPILOT, RAIZ_SKILLS_COPILOT.parent, Path("/mnt/data"), Path("/mnt/user-data")]
+
+
+def _recorrer(raiz, nombre, comprobar):
+    """Carpetas ``nombre`` hasta PROFUNDIDAD_BUSQUEDA niveles bajo ``raiz`` (ultimo recurso: la carpeta intermedia de
+    appCatalog cambia y a veces hay mas de un nivel)."""
+    halladas, vistas = [], 0
+    if not raiz.is_dir():
+        return halladas
+    base = len(raiz.parts)
+    for actual, dirs, _ in os.walk(raiz):
+        vistas += 1
+        if vistas > MAX_CARPETAS_RECORRIDAS or len(Path(actual).parts) - base >= PROFUNDIDAD_BUSQUEDA:
+            dirs[:] = []
+            if vistas > MAX_CARPETAS_RECORRIDAS:
+                break
+            continue
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "__pycache__", "site-packages")]
+        if nombre in dirs and comprobar(Path(actual) / nombre):
+            halladas.append(Path(actual) / nombre)
+    return halladas
+
+
 def _buscar_por_nombre(nombre, comprobar, raiz_skill, u):
-    """Carpetas ``nombre`` en la carpeta de skills de Copilot y en las superiores al skill actual."""
-    patrones = [RAIZ_SKILLS_COPILOT / "*" / nombre, RAIZ_SKILLS_COPILOT / nombre]
+    """Carpetas ``nombre`` en las carpetas de skills de Copilot y en las superiores al skill actual; si no esta en
+    ninguna ruta conocida, se recorre el disco (acotado) desde esas carpetas."""
+    patrones = []
+    for raiz in _raices_de_busqueda():
+        patrones += [raiz / nombre, raiz / "*" / nombre, raiz / "*" / "*" / nombre]
     for anc in list(Path(raiz_skill).parents)[:NIVELES_ANCESTROS]:
         patrones += [anc / nombre, anc / "*" / nombre]
     for patron in patrones:
         u.buscados.append(str(patron))
         halladas = [q for q in _expandir(patron) if comprobar(q)]
+        if halladas:
+            return halladas
+    for raiz in _raices_de_busqueda():
+        u.buscados.append(f"{raiz}/** (hasta {PROFUNDIDAD_BUSQUEDA} niveles)")
+        halladas = _recorrer(raiz, nombre, comprobar)
         if halladas:
             return halladas
     return []
@@ -134,6 +172,31 @@ def resolver_ubicacion(raiz_skill, entorno=None):
     if len(halladas) > 1:
         u.avisos.append(f"Hay {len(halladas)} carpetas {SKILL_DOCUMENTOS}; se usa la más reciente: {u.documentos}.")
     return u
+
+
+def raiz_del_skill():
+    """Carpeta que contiene scripts/: el skill fuente-contexto (o el repositorio)."""
+    for p in Path(__file__).resolve().parents:
+        if p.name == "scripts":
+            return p.parent
+    return Path(__file__).resolve().parents[3]
+
+
+def describir_ubicacion(raiz_skill, entorno=None):
+    """Lineas con donde estan fuente-contexto y fuente-documentos y como ejecutar corpus.py, aunque falte alguna."""
+    raiz_skill = Path(raiz_skill)
+    script = raiz_skill / "scripts" / "corpus.py"
+    lineas = ["UBICACIÓN DEL CORPUS"]
+    try:
+        u = resolver_ubicacion(raiz_skill, entorno)
+        lineas += [f"fuente-contexto: {u.contexto}", f"fuente-documentos: {u.documentos}"]
+        lineas += ["AVISO: " + a for a in u.avisos]
+        lineas += [f"corpus.py: {script}",
+                   f'Ejecútalo desde cualquier carpeta: python "{script}" <comando>   (por ejemplo: verificar, catalogo)']
+    except CorpusError as e:
+        lineas += [f"fuente-contexto: {raiz_skill}", f"ERROR: {e.mensaje}",
+                   "Para localizar el skill: find /home/oai/skills -type f -path '*fuente-contexto/scripts/corpus.py' 2>/dev/null"]
+    return lineas
 
 
 def incluir_no_vigentes(entorno=None):

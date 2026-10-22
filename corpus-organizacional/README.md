@@ -274,6 +274,15 @@ fuente-contexto/
 
 Código: `comun/tipos.py`, `comun/estructura.py`, `conversion/inventario.py`, `conversion/publicacion.py`, `conversion/skills.py`, `consulta/ubicacion.py`, `consulta/extraccion.py`, `consulta/pertinencia.py`, `consulta/jerarquia.py`, `consulta/matriz.py`, `consulta/comandos/briefing.py` y `normativa.py`. La conversión y la verificación de fidelidad no cambian.
 
+## v4.4: el agente localiza el corpus sin adivinar rutas
+
+Un agente buscó el skill en `/home/oai/skills/fuente-contexto` cuando el corpus estaba en `/home/oai/skills/appCatalog/<carpeta>/fuente-contexto` (la `<carpeta>` cambia en cada carga) y concluyó, erróneamente, que algo faltaba. Cambios:
+
+- **`python corpus.py donde`** muestra dónde están `fuente-contexto` y `fuente-documentos`, la ruta completa de `corpus.py` y el comando listo para copiar. No carga el corpus, así que sirve justo cuando falta algo (con un comando `find` de pista). `verificar` ya informaba las dos rutas.
+- **Búsqueda más amplia.** Si `corpus.py` no está dentro de su skill (alguien copió los scripts), busca `fuente-contexto` y `fuente-documentos` en `/home/oai/skills/<skill>`, `/home/oai/skills/appCatalog/<carpeta>/<skill>` y un nivel más hondo, en `/mnt/data` y `/mnt/user-data`, en las carpetas superiores y, como último recurso, recorre esas carpetas hasta 5 niveles (tope de 20 000 carpetas). El mensaje de error no cambia.
+- **Nota para el SKILL.md.** `construir` escribe `salida_corpus\NOTA_UBICACION_SKILL.md` (fuera de lo publicado): un párrafo listo para pegar en el `SKILL.md` de los dos skills con el `find` y la regla «un “no encuentro” es un problema de localización, no de datos». Si el `SKILL.md` que ya está en `copilot\fuente-contexto` o `fuente-documentos` no nombra `appCatalog`, la construcción lo avisa.
+- Código: `consulta/ubicacion.py` (`describir_ubicacion`, `_recorrer`), `consulta/comandos/donde.py`, `comun/estructura.py` (`NOTA_UBICACION_SKILL`).
+
 ## v4.3: páginas al revés o reflejadas, firmas manuscritas y encabezados por voto
 
 - **Orientación de las páginas escaneadas.** Antes solo se corregían giros de 90/180/270° (OSD de Tesseract), que no ve los **reflejos** (un escaneo hecho «por detrás» o con la cámara frontal). Ahora, si una página no llega a 80 % tras el OSD y tiene texto sospechoso, se lee una banda central reducida en las 8 orientaciones (4 giros, con y sin reflejo), empezando por las más probables, y se adopta la que da al menos 8 palabras fiables (≥ 80 % de confianza) y el doble de puntaje que la actual; con 30 o más palabras fiables y el doble de puntaje no se siguen probando las demás. Una página bien orientada no paga nada (se lee una vez, como antes). La orientación usada queda en las notas del reporte («Página 3 (OCR): estaba girada 180° y reflejada (espejo); se enderezó antes de leerla») y en `mejora`. Lo mismo se aplica a las imágenes de Excel/Word/PowerPoint y a las imágenes sueltas de contexto. Comprobado con páginas sintéticas en las 8 orientaciones (96 % de confianza en todas).

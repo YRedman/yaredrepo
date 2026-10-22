@@ -28,6 +28,7 @@ Uso: python scripts/corpus.py <comando> [argumentos]
   kpis [--gestion "<texto>"] [--sin-medicion] [--relacionar] [--area "<area>"]
                                    Indicadores y documentos que mencionan sus terminos.
   verificar                        Integridad (huellas), inventario, cobertura y corpus completo.
+  donde                            Donde estan fuente-contexto y fuente-documentos y el comando para ejecutar corpus.py.
 
 Codigos TTT-AAA-NN: tipo (DES, PRD, PRO, POL; ORG, KPI, GLO, MPR... generales), area (GEN = general) y numero.
 

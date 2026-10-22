@@ -17,7 +17,8 @@ from ..comun.esquema import (AREA_SIN_ASIGNAR, ARCHIVO_AREAS_DOCUMENTOS, ARCHIVO
                              ARCHIVO_EQUIVALENCIAS, ARCHIVO_INDICE, ARCHIVO_INVENTARIO, ARCHIVO_INVENTARIO_CONTEXTO,
                              ARCHIVO_KPIS, ARCHIVO_RESUMEN, COLUMNAS_CATALOGO, COLUMNAS_INVENTARIO, PREFIJO_DIC,
                              inventario_activo, tipo_desde_texto)
-from ..comun.estructura import CARPETA_PUBLICADA, NOMBRE_SKILL_MD, informe_limites, rutas_publicadas
+from ..comun.estructura import (ARCHIVO_NOTA_UBICACION, CARPETA_PUBLICADA, LLAVE_NOTA_UBICACION, NOMBRE_SKILL_MD,
+                                NOTA_UBICACION_SKILL, informe_limites, rutas_publicadas)
 from ..comun.texto import norm
 from ..comun.tipos import (AREA_GENERAL, NOMBRE_AREA_GENERAL, RE_CODIGO_ANTERIOR, TIPOS_AREA, nombre_archivo,
                            tipo as tipo_documento)
@@ -585,10 +586,16 @@ def modo_construir(args):
     except (CorpusError, OSError) as e:
         matriz = None
         validacion.avisos.append(f"No se generó la matriz Excel: {getattr(e, 'mensaje', e)}")
+    nota = raiz_salida / ARCHIVO_NOTA_UBICACION          # fuera de lo publicado: es para pegar en el SKILL.md del equipo
+    nota.write_text(NOTA_UBICACION_SKILL, encoding="utf-8")
     for skill in (rutas.skill_contexto, rutas.documentos):
         if not (skill / NOMBRE_SKILL_MD).is_file():
             validacion.avisos.append(f"Falta {skill.name}/{NOMBRE_SKILL_MD}: lo provee el equipo; cópielo en esa "
                                      "carpeta antes de comprimirla (el script no lo escribe).")
+        elif LLAVE_NOTA_UBICACION not in (skill / NOMBRE_SKILL_MD).read_text(encoding="utf-8", errors="replace"):
+            validacion.avisos.append(f"El {skill.name}/{NOMBRE_SKILL_MD} no explica dónde quedan cargados los skills "
+                                     f"({LLAVE_NOTA_UBICACION}): el agente puede buscarlos en una ruta equivocada. Agregue "
+                                     f"la nota de {nota.name}.")
     medidas, avisos_limites = informe_limites([rutas.skill_contexto, rutas.documentos])
     validacion.avisos += avisos_limites
     escribir_resumen_construccion(resumen_path, validacion, publicados, medidas)

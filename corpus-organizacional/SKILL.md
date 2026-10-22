@@ -6,7 +6,7 @@ description: >-
 
 # Corpus organizacional
 
-> Compatible con `convertir.py` v4.1 y `corpus.py` v4.1.
+> Compatible con `convertir.py` v4.4 y `corpus.py` v4.4.
 
 Este skill consulta exclusivamente el corpus publicado. Los documentos son la fuente de verdad; el índice sirve para localizar, contar y filtrar, pero los datos sustantivos se confirman en el Markdown original.
 
@@ -32,7 +32,7 @@ El corpus se publica en dos carpetas listas para comprimir (`salida_corpus/copil
 
 El reporte de control (`salida_corpus/control/`) no se publica ni es fuente de respuestas. `convertir.py` construye el corpus; el agente no lo ejecuta.
 
-Los skills cargados quedan en `/home/oai/skills/appCatalog/<carpeta>/<skill>/` y la `<carpeta>` cambia. `corpus.py` busca `fuente-documentos` como carpeta hermana de este skill; si no, en `CORPUS_DATOS` (la carpeta que contiene ambos skills) y luego por nombre. Si no la encuentra imprime `ERROR: no encuentro el skill fuente-documentos. Carga primero fuente-contexto y fuente-documentos (lee su SKILL.md) y vuelve a ejecutar.`: carga los dos skills y repite el comando.
+Los skills cargados **no** están en `/home/oai/skills/fuente-contexto`: quedan en `/home/oai/skills/appCatalog/<carpeta>/<skill>/` y la `<carpeta>` cambia. No adivines la ruta: localízala con `find /home/oai/skills -type f -path '*fuente-contexto/scripts/corpus.py' 2>/dev/null | head -1` y ejecuta `corpus.py` con esa ruta completa; `corpus.py donde` muestra dónde están las dos carpetas. Un «no encuentro» es un problema de localización, no de datos. `corpus.py` busca `fuente-documentos` como carpeta hermana de este skill; si no, en `CORPUS_DATOS` (la carpeta que contiene ambos skills) y luego por nombre. Si no la encuentra imprime `ERROR: no encuentro el skill fuente-documentos. Carga primero fuente-contexto y fuente-documentos (lee su SKILL.md) y vuelve a ejecutar.`: carga los dos skills y repite el comando.
 
 ## 2. Interpretación de documentos
 

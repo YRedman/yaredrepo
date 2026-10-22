@@ -21,6 +21,25 @@ CARPETA_MATRIZ = "matriz"          # matriz_organizacional.xlsx y un CSV por hoj
 CARPETA_SCRIPTS = "scripts"        # corpus.py y corpus_org/ (sin subcarpetas)
 RAIZ_SKILLS_COPILOT = Path("/home/oai/skills/appCatalog")
 NOMBRE_SKILL_MD = "SKILL.md"
+ARCHIVO_NOTA_UBICACION = "NOTA_UBICACION_SKILL.md"
+LLAVE_NOTA_UBICACION = "appCatalog"      # si el SKILL.md no la nombra, no explica donde quedan cargados los skills
+NOTA_UBICACION_SKILL = """## Dónde está el corpus (léelo antes de ejecutar nada)
+
+Los skills cargados **no** están en `/home/oai/skills/fuente-contexto`. Quedan en una carpeta intermedia que cambia en cada
+carga: `/home/oai/skills/appCatalog/<carpeta>/fuente-contexto` (y `.../<otra carpeta>/fuente-documentos`). No adivines la
+ruta; localízala primero:
+
+```bash
+find /home/oai/skills -type f -path '*fuente-contexto/scripts/corpus.py' 2>/dev/null | head -1
+```
+
+Ejecuta `corpus.py` con esa ruta completa (funciona desde cualquier carpeta). `python <ruta>/corpus.py donde` muestra dónde
+están las dos carpetas y el comando listo para copiar; `python <ruta>/corpus.py verificar` también lo informa.
+
+Si `find` no devuelve nada, o `corpus.py` dice «no encuentro el skill…», es un problema de localización, no de datos:
+carga primero los skills `fuente-contexto` y `fuente-documentos` (lee su SKILL.md) y repite. Nunca concluyas que un
+documento o un área «no está en el corpus» sin haber localizado antes las carpetas.
+"""
 
 # Limites de Copilot para los skills de un agente
 MAX_NIVELES = 3                    # niveles de carpetas contando la del skill: fuente-contexto/scripts/corpus_org
