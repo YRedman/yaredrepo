@@ -18,7 +18,8 @@ from corpus_org.consulta.entidades import leer_areas_extra, quitar_exclusiones
 from corpus_org.consulta.integridad import verificar_huellas
 from corpus_org.consulta.roles import verbo
 from corpus_org.conversion import cli as conversion_cli
-from corpus_org.conversion.analisis import analizar, avisos_de_estructura
+from corpus_org.conversion.analisis import analizar
+from corpus_org.conversion.analisis.estructura import avisos_de_estructura
 from corpus_org.conversion.extractores.pdf.continuas import unir_tablas_continuas
 from corpus_org.conversion.inventario import InventarioBase, construir_inventario, leer_base
 from corpus_org.conversion.modelo import DocumentoExtraido, bloque_h

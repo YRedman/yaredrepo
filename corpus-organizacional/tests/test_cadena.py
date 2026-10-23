@@ -112,7 +112,7 @@ class WordTest(unittest.TestCase):
 
 class AvisosRepetidosTest(unittest.TestCase):
     def test_la_misma_funcion_bajo_dos_roles_no_es_un_duplicado_pero_dos_parrafos_seguidos_si(self):
-        from corpus_org.conversion.analisis import avisos_de_estructura
+        from corpus_org.conversion.analisis.estructura import avisos_de_estructura
         frase = "Aprobar la documentación requerida para las licitaciones externas."
         dos_roles = [{"k": "p", "texto": "Director General:"}, {"k": "li", "texto": frase},
                      {"k": "p", "texto": "Director Comercial"}, {"k": "li", "texto": frase}]
@@ -122,7 +122,7 @@ class AvisosRepetidosTest(unittest.TestCase):
         self.assertTrue(any("repetidos" in a for a in avisos_de_estructura(seguidos, 0)))
 
     def test_fin_del_proceso_no_es_una_fila_partida(self):
-        from corpus_org.conversion.analisis import avisos_de_estructura
+        from corpus_org.conversion.analisis.estructura import avisos_de_estructura
         filas = [["N.º", "Actividad"]] + [[str(k), f"Paso {k}"] for k in range(1, 8)] + [["", "Fin del proceso"]]
         self.assertEqual(avisos_de_estructura([{"k": "tabla", "filas": filas}], 0), [])
 
@@ -186,7 +186,7 @@ class ParaleloTest(unittest.TestCase):
 
 class NombresYDuplicadosTest(unittest.TestCase):
     def test_una_sigla_del_archivo_explicada_por_el_puesto_leido_no_es_un_aviso(self):
-        from corpus_org.conversion.analisis import _siglas_explicadas
+        from corpus_org.conversion.analisis.puesto import _siglas_explicadas
         self.assertTrue(_siglas_explicadas("3. ENFERMERO-A TSMO GGH-FOR-040", "Enfermero Terapia de Soporte Multiorgánica"))
         self.assertTrue(_siglas_explicadas("3. Analista GDC GECA-ATTA-FOR-034_DESCRIPCIÓN DE PUESTO",
                                            "Analista de Gestión del Conocimiento"))

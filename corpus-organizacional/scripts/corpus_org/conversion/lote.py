@@ -15,7 +15,8 @@ from ..comun.esquema import (COLUMNAS_INDICE, NO_ESPECIFICADO, PREFIJO_DIC, PREF
                              SEPARADOR_LISTA)
 from ..comun.texto import recortar_palabras, tokens
 from ..comun.tipos import familia, tipo as tipo_documento
-from .analisis import analizar, avisar_nombre_puesto
+from .analisis import analizar
+from .analisis.puesto import avisar_nombre_puesto
 from .extractores import extractor_para
 from .modelo import DocumentoConvertido
 from .render import render_documento

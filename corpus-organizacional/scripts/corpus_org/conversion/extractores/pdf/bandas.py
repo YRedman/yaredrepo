@@ -30,15 +30,15 @@ def formas_con_texto(page, lineas, rect_tablas, w, h):
         formas.append(r)
     if len(formas) < 3:
         return 0
-    dentro, con_texto = 0, set()
+    en_formas, con_texto = 0, set()
     for l in lineas:
         cx, cy = (l["x0"] + l["x1"]) / 2, (l["y0"] + l["y1"]) / 2
         for k, r in enumerate(formas):
             if r.x0 <= cx <= r.x1 and r.y0 <= cy <= r.y1 and (r.x1 - r.x0) < 0.9 * w:
-                dentro += 1
+                en_formas += 1
                 con_texto.add(k)
                 break
-    return dentro if len(con_texto) >= 3 else 0
+    return en_formas if len(con_texto) >= 3 else 0
 
 
 ALTO_BANDA = (18, 45)
@@ -198,10 +198,10 @@ def cajas_con_texto(page, lineas, rect_tablas, w, h):
     resultado = []
     for r in sorted({(c.x0, c.y0, c.x1, c.y1) for c in cajas}, key=lambda c: (c[1], c[0])):
         rect = page.rect.__class__(*r)
-        dentro = [l for l in lineas if rect.x0 - 1 <= (l["x0"] + l["x1"]) / 2 <= rect.x1 + 1
-                  and rect.y0 - 1 <= (l["y0"] + l["y1"]) / 2 <= rect.y1 + 1]
-        if dentro:
-            resultado.append((rect, dentro))
+        contenidas = [l for l in lineas if rect.x0 - 1 <= (l["x0"] + l["x1"]) / 2 <= rect.x1 + 1
+                      and rect.y0 - 1 <= (l["y0"] + l["y1"]) / 2 <= rect.y1 + 1]
+        if contenidas:
+            resultado.append((rect, contenidas))
     return resultado if len(resultado) >= 2 else []
 
 
