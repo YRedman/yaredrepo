@@ -167,6 +167,53 @@ def _imagenes_de_hoja(ws):
     return res
 
 
+class _LectorDeLibro:
+    """Acumula el contenido de las hojas visibles de un libro: bloques de documento, texto de verificacion y notas."""
+
+    def __init__(self, wb, d):
+        self.wb, self.d = wb, d
+        self.bloques, self.textos = [], []
+        self.imagenes_leidas = 0
+        self.referencia = None        # textos del libro, para corregir lo que el OCR lee en sus diagramas
+
+    def leer_hoja(self, n, ws, hoja, imagenes, con_titulo):
+        """Agrega una hoja: su titulo (si el libro tiene varias o la hoja trae imagenes), sus bloques, el texto de sus
+        imagenes y la nota de sus graficos."""
+        if con_titulo:
+            self.bloques.append(bloque_h(1, ws.title))
+            self.textos.append(ws.title)
+        for b in hoja:
+            self._agregar_bloque(ws, b)
+        for datos in imagenes:
+            self._leer_imagen(n, ws, datos)
+        graficos = len(getattr(ws, "_charts", []))
+        if graficos:
+            self.d.notas.append(f"La hoja «{ws.title}» tiene {graficos} gráfico(s): no se leen.")
+            self.bloques.append({"k": "marca", "texto": f"[DIAGRAMA O IMAGEN: gráfico en la hoja «{ws.title}»; "
+                                                        "ver el Excel original]"})
+
+    def _agregar_bloque(self, ws, b):
+        self.bloques.append(b)
+        if b["k"] != "tabla":
+            self.textos.append(b["texto"])
+            return
+        self.d.tablas += 1
+        self.textos += [c for f in b["filas"] for c in f]
+        if len(b["filas"]) > FILAS_HOJA_GRANDE:
+            self.d.notas.append(f"La hoja «{ws.title}» tiene {len(b['filas'])} filas: considere resumirla.")
+
+    def _leer_imagen(self, n, ws, datos):
+        if not es_imagen_de_contenido(datos):
+            return
+        if self.imagenes_leidas >= MAX_IMAGENES_LIBRO:
+            self.d.imagenes_omitidas += 1
+            return
+        self.imagenes_leidas += 1
+        if self.referencia is None:
+            self.referencia = _textos_de_referencia(self.wb)
+        texto_de_imagen(self.d, self.bloques, f"LA HOJA «{ws.title}»", n, datos, self.referencia)
+
+
 class ExtractorExcel(Extractor):
     extensiones = (".xlsx", ".xlsm")
 
@@ -181,53 +228,23 @@ class ExtractorExcel(Extractor):
         d = DocumentoExtraido()
         d.unidad = "hojas"
         d.hoja_de_calculo = True
-        textos, bloques = [], []
         ocultas = [ws.title for ws in wb.worksheets if ws.sheet_state != "visible"]
         visibles = [ws for ws in wb.worksheets if ws.sheet_state == "visible"]
         d.paginas = len(visibles)
-        imagenes_leidas = 0
-        referencia = None
         sin_valor, formulas = self._formulas_sin_valor(path, visibles, wb)
+        lector = _LectorDeLibro(wb, d)
         for n, ws in enumerate(visibles, 1):
             hoja = bloques_de_hoja(ws, formulas.get(ws.title))
             imagenes = _imagenes_de_hoja(ws)
-            if not hoja and not imagenes:
-                continue
-            if len(visibles) > 1 or imagenes:
-                bloques.append(bloque_h(1, ws.title))
-                textos.append(ws.title)
-            for b in hoja:
-                bloques.append(b)
-                if b["k"] == "tabla":
-                    d.tablas += 1
-                    textos += [c for f in b["filas"] for c in f]
-                    if len(b["filas"]) > FILAS_HOJA_GRANDE:
-                        d.notas.append(f"La hoja «{ws.title}» tiene {len(b['filas'])} filas: considere resumirla.")
-                else:
-                    textos.append(b["texto"])
-            for datos in imagenes:
-                if not es_imagen_de_contenido(datos):
-                    continue
-                if imagenes_leidas >= MAX_IMAGENES_LIBRO:
-                    d.imagenes_omitidas += 1
-                    continue
-                imagenes_leidas += 1
-                if referencia is None:
-                    referencia = _textos_de_referencia(wb)
-                texto_de_imagen(d, bloques, f"LA HOJA «{ws.title}»", n, datos, referencia)
-            charts = len(getattr(ws, "_charts", []))
-            if charts:
-                d.notas.append(f"La hoja «{ws.title}» tiene {charts} gráfico(s): no se leen.")
-                bloques.append({"k": "marca", "texto": f"[DIAGRAMA O IMAGEN: gráfico en la hoja «{ws.title}»; "
-                                                        "ver el Excel original]"})
+            if hoja or imagenes:
+                lector.leer_hoja(n, ws, hoja, imagenes, con_titulo=len(visibles) > 1 or bool(imagenes))
         if ocultas:
             d.notas.append("Hojas ocultas que no se leyeron: " + ", ".join(ocultas) + ".")
         if sin_valor:
             d.avisos.append(f"{sin_valor} fórmulas sin valor guardado (se muestran como fórmula, no como resultado): "
                             "abra el archivo en Excel, guárdelo y vuelva a convertir")
-        d.bloques = bloques
-        crudo = " ".join(textos)
-        d.registrar_original(crudo)
+        d.bloques = lector.bloques
+        d.registrar_original(" ".join(lector.textos))
         if path.suffix.lower() not in self.extensiones:
             d.notas.append(f"El archivo se llama «{path.name}» pero es un libro de Excel: se leyó como Excel.")
         return d

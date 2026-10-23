@@ -218,7 +218,7 @@ class AvisosDeHojaTest(unittest.TestCase):
 
     def test_ruta_original_sale_del_archivo_realmente_leido(self):
         from types import SimpleNamespace
-        from corpus_org.conversion.lote import ruta_original
+        from corpus_org.conversion.ruta_original import ruta_original
         with tempfile.TemporaryDirectory() as tmp:
             t = Path(tmp)
             (t / "contexto" / "Plan").mkdir(parents=True)

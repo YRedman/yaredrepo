@@ -133,7 +133,8 @@ if __name__ == "__main__":
 
 class ParaleloTest(unittest.TestCase):
     def test_convertir_en_paralelo_da_lo_mismo_que_uno_a_uno(self):
-        from corpus_org.conversion.lote import Grupo, OpcionesConversion, procesar_grupo
+        from corpus_org.conversion.grupos import Grupo
+        from corpus_org.conversion.lote import OpcionesConversion, procesar_grupo
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             archivos, filas = {}, []
@@ -162,7 +163,8 @@ class ParaleloTest(unittest.TestCase):
         self.assertEqual(resultados[0][1], ["OK"] * 5)
 
     def test_un_error_en_un_documento_no_detiene_a_los_demas(self):
-        from corpus_org.conversion.lote import Grupo, OpcionesConversion, procesar_grupo
+        from corpus_org.conversion.grupos import Grupo
+        from corpus_org.conversion.lote import OpcionesConversion, procesar_grupo
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             archivos, filas = {}, []
@@ -252,7 +254,9 @@ class CodigosDeContextoUnicosTest(unittest.TestCase):
 
 class RutaOriginalDeContextoTest(unittest.TestCase):
     def test_un_documento_de_area_que_vino_del_contexto_se_muestra_como_contexto(self):
-        from corpus_org.conversion.lote import Grupo, OpcionesConversion, ruta_original
+        from corpus_org.conversion.grupos import Grupo
+        from corpus_org.conversion.lote import OpcionesConversion
+        from corpus_org.conversion.ruta_original import ruta_original
         with tempfile.TemporaryDirectory() as tmp:
             raiz = Path(tmp)
             (raiz / "contexto" / "Plan").mkdir(parents=True)

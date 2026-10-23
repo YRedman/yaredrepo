@@ -10,7 +10,7 @@ from ..comun.esquema import tipo_de_fila
 from ..comun.texto import nfc
 from ..comun.tipos import nombre_archivo
 from .entradas import clave_archivo, clave_ruta, partes_ruta
-from .lote import Grupo
+from .grupos import Grupo
 
 RE_COPIA = re.compile(r"\s*\(\d+\)$")
 

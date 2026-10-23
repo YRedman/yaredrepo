@@ -142,6 +142,24 @@ class ExtraccionPDF:
 
     def _contenido(self, i, lineas, enc_lineas, tablas):
         """Reparte las lineas entre tablas y texto. Nunca descarta una linea que no sea encabezado o pie."""
+        contenido, en_tabla = self._repartir_lineas(i, lineas, enc_lineas, tablas)
+        for k, (r, filas, xs) in enumerate(tablas):
+            propias = sorted(en_tabla.get(k, []), key=lambda l: (l["y0"], l["x0"]))
+            sueltas = self._lineas_fuera_de_celdas(i, filas, propias)
+            if sueltas is None:                 # la mayoria del texto quedo fuera de las celdas: no era una tabla
+                contenido.extend(propias)
+                continue
+            contenido.extend(sueltas)
+            self.ctx.d.lineas_diag += [(i + 1, "tabla", l["texto"]) for l in propias]
+            self.ctx.items.append((i, r.y0, r.x0, {"tipo": "tabla", "filas": filas, "xs": xs, "y0": r.y0, "y1": r.y1,
+                                                   "pagina": i, "banda": self._es_caja_con_banda(r, filas),
+                                                   "continuacion": getattr(filas, "continuacion", False)}))
+        for f in agrupar_filas(contenido):
+            f["pagina"] = i
+            self.ctx.items.append((i, f["y0"], f["x0"], f))
+
+    def _repartir_lineas(self, i, lineas, enc_lineas, tablas):
+        """(lineas de texto, {tabla: lineas que cubre}) de la pagina, sin las de encabezado, pie y organigrama."""
         d = self.ctx.d
         ids_enc = {id(l) for l in enc_lineas}
         contenido = []
@@ -159,34 +177,31 @@ class ExtraccionPDF:
             else:
                 contenido.append(l)
                 d.lineas_diag.append((i + 1, "texto", l["texto"]))
-        # cada tabla debe contener el texto de las lineas que cubre; lo que no, se conserva como texto
-        for k, (r, filas, xs) in enumerate(tablas):
-            disponibles = collections.Counter(tokens(" ".join(" ".join(c.replace(MARCA_COMBINADA, "") for c in f)
-                                                              for f in filas)))
-            propias = sorted(en_tabla.get(k, []), key=lambda l: (l["y0"], l["x0"]))
-            sueltas = []
-            for l in propias:
-                tk = collections.Counter(tokens(l["texto"]))
-                if tk - disponibles:
-                    sueltas.append(l)
-                else:
-                    disponibles -= tk
-            total = sum(len(tokens(l["texto"])) for l in propias)
-            perdidas = sum(len(tokens(l["texto"])) for l in sueltas)
-            if total and perdidas > 0.3 * total:
-                contenido.extend(propias)
-                d.lineas_diag += [(i + 1, "posible tabla tratada como texto", l["texto"]) for l in propias]
-                d.avisos.append(f"p.{i + 1}: posible tabla tratada como texto ({perdidas} de {total} palabras "
-                                "fuera de celdas)")
-                continue
-            if sueltas:
-                contenido.extend(sueltas)
-                d.avisos.append(f"p.{i + 1}: {len(sueltas)} líneas de una tabla fuera de sus celdas; se agregaron "
-                                "como texto junto a la tabla")
-            d.lineas_diag += [(i + 1, "tabla", l["texto"]) for l in propias]
-            self.ctx.items.append((i, r.y0, r.x0, {"tipo": "tabla", "filas": filas, "xs": xs, "y0": r.y0, "y1": r.y1,
-                                                   "pagina": i, "banda": self._es_caja_con_banda(r, filas),
-                                                   "continuacion": getattr(filas, "continuacion", False)}))
-        for f in agrupar_filas(contenido):
-            f["pagina"] = i
-            self.ctx.items.append((i, f["y0"], f["x0"], f))
+        return contenido, en_tabla
+
+    def _lineas_fuera_de_celdas(self, i, filas, propias):
+        """Cada tabla debe contener el texto de las lineas que cubre; las que no, se conservan como texto.
+
+        Devuelve esas lineas sueltas, o None si son tantas (mas del 30 % de las palabras) que la tabla se trata como
+        texto."""
+        d = self.ctx.d
+        disponibles = collections.Counter(tokens(" ".join(" ".join(c.replace(MARCA_COMBINADA, "") for c in f)
+                                                          for f in filas)))
+        sueltas = []
+        for l in propias:
+            tk = collections.Counter(tokens(l["texto"]))
+            if tk - disponibles:
+                sueltas.append(l)
+            else:
+                disponibles -= tk
+        total = sum(len(tokens(l["texto"])) for l in propias)
+        perdidas = sum(len(tokens(l["texto"])) for l in sueltas)
+        if total and perdidas > 0.3 * total:
+            d.lineas_diag += [(i + 1, "posible tabla tratada como texto", l["texto"]) for l in propias]
+            d.avisos.append(f"p.{i + 1}: posible tabla tratada como texto ({perdidas} de {total} palabras "
+                            "fuera de celdas)")
+            return None
+        if sueltas:
+            d.avisos.append(f"p.{i + 1}: {len(sueltas)} líneas de una tabla fuera de sus celdas; se agregaron "
+                            "como texto junto a la tabla")
+        return sueltas

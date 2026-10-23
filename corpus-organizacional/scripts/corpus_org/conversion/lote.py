@@ -3,24 +3,22 @@
 import concurrent.futures
 import multiprocessing
 import os
-import re
 import time
 import traceback
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Dict, List
 
 from ..comun.archivos import escribir_csv
-from ..comun.esquema import (COLUMNAS_INDICE, NO_ESPECIFICADO, PREFIJO_DIC, PREFIJO_REPORTE, RE_MARCAS,
-                             SEPARADOR_LISTA)
-from ..comun.texto import recortar_palabras, tokens
-from ..comun.tipos import familia, tipo as tipo_documento
+from ..comun.esquema import COLUMNAS_INDICE, PREFIJO_DIC, PREFIJO_REPORTE, RE_MARCAS
+from ..comun.texto import tokens
 from .analisis import analizar
 from .analisis.puesto import avisar_nombre_puesto
 from .extractores import extractor_para
+from .fila_indice import fila_indice
+from .grupos import ResultadoGrupo
 from .modelo import DocumentoConvertido
 from .render import render_documento
 from .reportes import escribir_reporte
+from .ruta_original import ruta_original
 from .verificacion import verificar
 
 
@@ -98,45 +96,6 @@ def _iniciar_trabajador():
     os.environ.setdefault("OMP_THREAD_LIMIT", "1")
 
 
-@dataclass
-class Grupo:
-    tipo: str                      # codigo de tipo: DES, PRD, PRO, POL u ORG, KPI... (generales)
-    codigo_dep: str
-    departamento: str
-    filas: List[dict]              # filas del inventario a procesar
-    archivos: Dict[str, object]    # codigo -> Path del archivo adjunto
-    nombre_base: str               # PRD_COM, DES_ALM_01-05, ORG_GEN...
-    completo: bool = True
-
-    @property
-    def es_contexto(self):
-        return familia(self.tipo) == "C"
-
-    @property
-    def familia(self):
-        """'D', 'P' o 'C': como se analiza el documento (ver comun/tipos.py)."""
-        return familia(self.tipo)
-
-    @property
-    def titulo(self):
-        td = tipo_documento(self.tipo)
-        plural = td.plural if td else self.tipo
-        if self.es_contexto:
-            return f"{plural} · General ({self.codigo_dep})"
-        return f"{plural} · {self.departamento} ({self.codigo_dep})"
-
-
-@dataclass
-class ResultadoGrupo:
-    grupo: Grupo
-    documentos: List[DocumentoConvertido]
-    archivos_generados: list
-
-    @property
-    def convertidos(self):
-        return [r for r in self.documentos if r.ok]
-
-
 def convertir_documento(path, fila, grupo, opciones):
     """Extrae, analiza, renderiza y verifica un archivo. Devuelve (DocumentoConvertido, lineas_md, cuerpo)."""
     doc = extractor_para(path, opciones.verificacion_cruzada).extraer(path)
@@ -168,65 +127,6 @@ def _trabajo(path, fila, grupo, opciones):
         return DocumentoConvertido(fila["codigo"], fila["archivo"], "ERROR", error=f"{type(e).__name__}: {e}",
                                    traza=traceback.format_exc(limit=3), segundos=time.time() - inicio,
                                    ruta=ruta_original(fila, grupo, opciones, path)), None
-
-
-def ruta_original(fila, grupo, opciones=None, path=None):
-    """Donde esta el archivo para revisarlo: 'entrada/<ruta>' o 'contexto/<ruta>', relativa a esa carpeta.
-
-    Se parte del archivo realmente leido (``path``): un documento de area que vino de la carpeta de contexto
-    (procedimientos, politicas...) se muestra como 'contexto/...' aunque su fila del inventario base traiga otra
-    ruta. Sin archivo (no adjunto) se usa la ruta del inventario; si no cuelga de ninguna carpeta, sus tres
-    ultimas partes (Tipo/Departamento/Archivo)."""
-    raices = ((getattr(opciones, "raiz_contexto", None), "contexto"), (getattr(opciones, "raiz_entrada", None), "entrada"))
-    candidatos = [str(path)] if path is not None else []
-    candidatos.append((fila.get("ruta_original") or fila.get("archivo") or "").strip())
-    for ruta in candidatos:
-        for raiz, etiqueta in raices:
-            if raiz is None:
-                continue
-            try:
-                return f"{etiqueta}/" + Path(ruta).resolve().relative_to(Path(raiz).resolve()).as_posix()
-            except (ValueError, OSError):
-                continue
-    partes = [x for x in re.split(r"[\\/]+", candidatos[-1]) if x]
-    if grupo.es_contexto or fila.get("desde_contexto"):
-        return "contexto/" + "/".join(partes)
-    return "entrada/" + "/".join(partes[-3:] if len(partes) > 3 else partes)
-
-
-def fila_indice(r, grupo, archivo_md, linea_ini, linea_fin):
-    """Fila del indice (DIC_*.csv) de un documento convertido."""
-    a, meta, ctx = r.analisis, r.analisis.metadatos, grupo.es_contexto
-    campos = a.campos
-    proposito = recortar_palabras(campos.get("objetivo") or campos.get("proposito", ""), 40)
-    es_d = grupo.familia == "D"
-    td = tipo_documento(grupo.tipo)
-    return {
-        "codigo": r.codigo, "tipo": td.nombre if td else grupo.tipo, "codigo_departamento": grupo.codigo_dep,
-        "departamento": grupo.departamento, "nombre": os.path.splitext(r.archivo)[0],
-        "archivo_origen": r.archivo, "codigo_interno": meta.codigo_interno, "version": meta.version,
-        "estado_documental": meta.estado_documental, "fecha_vigencia": meta.fecha_vigencia,
-        "propietario": meta.propietario, "responsable": meta.responsable,
-        "macroproceso": recortar_palabras(campos.get("macroproceso", ""), 30),
-        "proceso": recortar_palabras(meta.proceso, 30),
-        "proposito_literal": proposito or ("" if ctx else NO_ESPECIFICADO),
-        "nombre_puesto": campos.get("nombre_puesto", "") if es_d else "",
-        "reporta_a": campos.get("reporta_a", "") if es_d else "",
-        "supervisa_a": campos.get("supervisa_a", "") if es_d else "",
-        "secciones": SEPARADOR_LISTA.join(a.titulos),
-        "actividades": SEPARADOR_LISTA.join(a.actividades),
-        "subprocedimientos": SEPARADOR_LISTA.join(a.subprocedimientos),
-        "codigos_citados": ", ".join(a.codigos_citados),
-        "campos_no_especificados": ", ".join(a.faltantes),
-        "paginas": r.doc.paginas or "", "palabras": r.palabras, "cobertura": f"{r.verificacion.cobertura:.1f} %",
-        "archivo_md": archivo_md, "linea_inicio": linea_ini, "linea_fin": linea_fin,
-        "palabras_agregadas": ", ".join(r.verificacion.agregadas[:20]),
-        "avisos_estructura": len(r.avisos), "detalle_avisos": SEPARADOR_LISTA.join(r.avisos),
-        "paginas_ocr": ", ".join(map(str, r.doc.paginas_ocr)),
-        "confianza_ocr": f"{r.doc.confianza_ocr:.1f}" if r.doc.confianza_ocr is not None else "",
-        "area_propietaria": meta.area_propietaria,
-        "ruta_original": r.ruta,
-    }
 
 
 def _encabezado_md(grupo):

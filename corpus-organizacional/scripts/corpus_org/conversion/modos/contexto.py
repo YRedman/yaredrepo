@@ -15,7 +15,8 @@ from ..configuracion import EXT_RECONOCIDAS, EXT_TEXTO
 from ..entradas import buscar_entradas
 from ..huella import huella
 from ..inventario import escribir_equivalencias, inventario_contexto, quitar_copias_contexto
-from ..lote import Grupo, convertir_grupos
+from ..grupos import Grupo
+from ..lote import convertir_grupos
 from ..materiales_contexto import es_material_de_contexto
 from .base import (Modo, agregar_argumentos_de_conversion, carpeta_salida, imprimir_archivos_generados,
                    opciones_de_conversion)
