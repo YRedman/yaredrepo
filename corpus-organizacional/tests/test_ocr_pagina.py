@@ -11,7 +11,8 @@ from tests import ayuda  # noqa: F401
 
 try:
     import numpy as np
-    from corpus_org.conversion.extractores import ocr_pagina as O
+    from corpus_org.conversion.extractores.ocr_pagina import (geometria as ocr_geometria, modelo as ocr_modelo,
+                                                              texto as ocr_texto)
     NUMPY = True
 except ImportError:
     NUMPY = False
@@ -30,7 +31,7 @@ def _v(g, x, y0, y1, gris=120, grosor=3):
 
 
 def _tablas(g, palabras=()):
-    return O.tablas_imagen(*O.lineas_imagen(g), g, list(palabras))
+    return ocr_geometria.tablas_imagen(*ocr_geometria.lineas_imagen(g), g, list(palabras))
 
 
 @unittest.skipUnless(NUMPY, "falta numpy")
@@ -50,7 +51,7 @@ class LineasImagenTest(unittest.TestCase):
         for x in range(100, 1500):
             y = 400 + (x - 100) * 8 // 1400          # baja 8 px de punta a punta (como el escaneo real)
             g[y:y + 3, x] = 30
-        horizontales, _ = O.lineas_imagen(g)
+        horizontales, _ = ocr_geometria.lineas_imagen(g)
         self.assertTrue(any(h.fin - h.ini > 1300 for h in horizontales))
 
     def test_fila_con_relleno_y_letras_claras(self):
@@ -92,16 +93,16 @@ class LineasImagenTest(unittest.TestCase):
 @unittest.skipUnless(NUMPY, "falta numpy")
 class PalabrasTest(unittest.TestCase):
     def test_fragmentos_repetidos_y_vinetas(self):
-        c = O.Celda(0, 0, 1000, 100)
+        c = ocr_modelo.Celda(0, 0, 1000, 100)
         c.palabras = [("Educación", 100, 10, 300, 40, 90.0, 1), ("ión", 240, 12, 300, 40, 50.0, 1),
                       ("e", 320, 10, 330, 40, 70.0, 1), ("100%", 340, 10, 420, 40, 95.0, 1)]
-        self.assertEqual(O.texto_celda(c), "Educación • 100%")
+        self.assertEqual(ocr_texto.texto_celda(c), "Educación • 100%")
 
     def test_bordes_y_manchas_no_son_palabras(self):
         datos = {"text": ["|", "Hola", "p", "5"], "conf": [90, 95, 30, 40], "left": [0, 10, 50, 60],
                  "top": [0] * 4, "width": [5] * 4, "height": [10] * 4, "block_num": [1] * 4,
                  "par_num": [1] * 4, "line_num": [1] * 4}
-        self.assertEqual([p[0] for p in O.palabras_tesseract(datos)], ["Hola", "5"])
+        self.assertEqual([p[0] for p in ocr_texto.palabras_tesseract(datos)], ["Hola", "5"])
 
 
 def _ocr_disponible():

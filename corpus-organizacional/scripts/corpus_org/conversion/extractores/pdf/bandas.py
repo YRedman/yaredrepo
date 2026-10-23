@@ -42,17 +42,9 @@ def formas_con_texto(page, lineas, rect_tablas, w, h):
 
 
 ALTO_BANDA = (18, 45)
-
-
 ALTO_BANDA_DELGADA = 10      # la plantilla GECA-ATTA-FOR-034 usa bandas de ~13 pt: solo cuentan con un titulo centrado en negrita
-
-
 MAX_SEPARACION_PRIMERA_FILA = 30   # puntos entre el encabezado de la pagina y la fila de continuacion de una caja
-
-
 MAX_SEPARACION_FILAS = 10
-
-
 MARGEN_SEPARADOR = 8
 
 

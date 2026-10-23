@@ -18,7 +18,7 @@ try:
     from reportlab.lib.utils import ImageReader
     import pymupdf  # noqa: F401
     from corpus_org.conversion.extractores import extractor_para
-    from corpus_org.conversion.extractores import ocr_pagina as O
+    from corpus_org.conversion.extractores.ocr_pagina import constantes as ocr_constantes, firmas as ocr_firmas, imagen as ocr_imagen, modelo as ocr_modelo, orientacion as ocr_orientacion, pagina as ocr_pagina, recetas as ocr_recetas
     from corpus_org.conversion.extractores.ocr import idioma_ocr
     DEPENDENCIAS = True
 except ImportError:
@@ -60,7 +60,7 @@ class EtiquetasDeDiagramaTest(unittest.TestCase):
         palabras = [pal("Recibir", 100, 100, 190, 130), pal("pedido", 200, 100, 280, 130),            # una linea
                     pal("Enviar", 100, 300, 175, 330), pal("notificacion", 100, 336, 240, 366),       # dos lineas
                     pal("Cobro", 600, 100, 670, 130)]
-        self.assertEqual([e[0] for e in O.agrupar_etiquetas(palabras)],
+        self.assertEqual([e[0] for e in ocr_imagen.agrupar_etiquetas(palabras)],
                          ["Recibir pedido", "Cobro", "Enviar notificacion"])
 
     def test_las_etiquetas_se_corrigen_con_el_texto_del_libro_y_se_quitan_los_fragmentos(self):
@@ -120,10 +120,10 @@ class MejoraDeLecturaTest(unittest.TestCase):
         pagina = doc.new_page(width=612, height=792)
         pagina.insert_image(pagina.rect, stream=buf.getvalue())
         from corpus_org.conversion.extractores.ocr import configurar_pytesseract
-        normal = O._leer_pagina_con(pagina, idioma_ocr(), configurar_pytesseract(), O.DPI_OCR, None, 0)
-        mejor = O.leer_pagina(pagina, idioma_ocr(), configurar_pytesseract())
-        self.assertLess(normal.confianza, O.CONFIANZA_OBJETIVO)
-        self.assertGreaterEqual(mejor.confianza, O.CONFIANZA_OBJETIVO)
+        normal = ocr_pagina._leer_pagina_con(pagina, idioma_ocr(), configurar_pytesseract(), ocr_pagina.DPI_OCR, None, 0)
+        mejor = ocr_pagina.leer_pagina(pagina, idioma_ocr(), configurar_pytesseract())
+        self.assertLess(normal.confianza, ocr_constantes.CONFIANZA_OBJETIVO)
+        self.assertGreaterEqual(mejor.confianza, ocr_constantes.CONFIANZA_OBJETIVO)
         self.assertGreater(len(mejor.confianzas), 3 * len(normal.confianzas))
         self.assertNotEqual(mejor.mejora, "original")
 
@@ -147,7 +147,7 @@ class ImagenSueltaTest(unittest.TestCase):
         from unittest import mock
         from corpus_org.conversion.extractores.imagenes import texto_de_imagen
         from corpus_org.conversion.modelo import DocumentoExtraido
-        ruido = O.PaginaOCR(lineas=[{"texto": "xqzv wklp rtmn bhjc vfgd ssdd", "x0": 0, "y0": 0, "x1": 10, "y1": 5,
+        ruido = ocr_modelo.PaginaOCR(lineas=[{"texto": "xqzv wklp rtmn bhjc vfgd ssdd", "x0": 0, "y0": 0, "x1": 10, "y1": 5,
                                      "tam": 0.0, "bold": False, "font": "ocr", "spans": [], "chars": 20, "ocr": True}],
                             confianzas=[26.0] * 6)
         d, bloques = DocumentoExtraido(), []
@@ -170,28 +170,28 @@ def _png_bytes():
 class RecetasTest(unittest.TestCase):
     def test_las_recetas_conservan_el_tamano_de_la_pagina(self):
         img = _imagen_con_texto(["Prueba de recetas"], tam=(400, 200))
-        for nombre, receta in O.RECETAS:
+        for nombre, receta in ocr_recetas.RECETAS:
             if receta is not None:
                 self.assertEqual(receta(img).size, img.size, nombre)
 
     def test_blanco_y_negro_solo_tiene_dos_valores(self):
         img = _imagen_con_texto(["Prueba"], tam=(300, 150))
-        valores = set(np.asarray(O._receta_binarizada(img)).ravel().tolist())
+        valores = set(np.asarray(ocr_recetas._receta_binarizada(img)).ravel().tolist())
         self.assertLessEqual(valores, {0, 255})
 
     def test_elegir_prefiere_la_lectura_buena_que_recupera_mas_texto(self):
-        poca = (O.PaginaOCR(lineas=[], confianzas=[92.0] * 20), "blanco y negro", None)
-        mucha = (O.PaginaOCR(lineas=[], confianzas=[85.0] * 130), "contraste y nitidez", None)
-        mala = (O.PaginaOCR(lineas=[], confianzas=[50.0] * 15), "original", None)
-        self.assertIs(O._elegir([mala, poca, mucha]), mucha)
-        self.assertIsNone(O._elegir([mala], solo_buenas=True))
-        self.assertIs(O._elegir([mala]), mala)
+        poca = (ocr_modelo.PaginaOCR(lineas=[], confianzas=[92.0] * 20), "blanco y negro", None)
+        mucha = (ocr_modelo.PaginaOCR(lineas=[], confianzas=[85.0] * 130), "contraste y nitidez", None)
+        mala = (ocr_modelo.PaginaOCR(lineas=[], confianzas=[50.0] * 15), "original", None)
+        self.assertIs(ocr_pagina.elegir_lectura([mala, poca, mucha]), mucha)
+        self.assertIsNone(ocr_pagina.elegir_lectura([mala], solo_buenas=True))
+        self.assertIs(ocr_pagina.elegir_lectura([mala]), mala)
 
     def test_mejor_lectura_exige_mas_confianza_sin_perder_texto(self):
-        base = O.PaginaOCR(lineas=[], confianzas=[60.0] * 100)
-        self.assertTrue(O._mejor_lectura(O.PaginaOCR(lineas=[], confianzas=[85.0] * 100), base))
-        self.assertFalse(O._mejor_lectura(O.PaginaOCR(lineas=[], confianzas=[95.0] * 40), base))   # perdio texto
-        self.assertFalse(O._mejor_lectura(O.PaginaOCR(lineas=[], confianzas=[60.2] * 100), base))   # mejora trivial
+        base = ocr_modelo.PaginaOCR(lineas=[], confianzas=[60.0] * 100)
+        self.assertTrue(ocr_pagina._mejor_lectura(ocr_modelo.PaginaOCR(lineas=[], confianzas=[85.0] * 100), base))
+        self.assertFalse(ocr_pagina._mejor_lectura(ocr_modelo.PaginaOCR(lineas=[], confianzas=[95.0] * 40), base))   # perdio texto
+        self.assertFalse(ocr_pagina._mejor_lectura(ocr_modelo.PaginaOCR(lineas=[], confianzas=[60.2] * 100), base))   # mejora trivial
 
 
 if __name__ == "__main__":
@@ -212,14 +212,14 @@ class FotoTest(unittest.TestCase):
         pagina = doc.new_page(width=612, height=792)
         pagina.insert_image(pagina.rect, stream=buf.getvalue())
         llamadas = []
-        original = O._leer_pagina_con
+        original = ocr_pagina._leer_pagina_con
 
         def contar(*a, **k):
             llamadas.append(1)
             return original(*a, **k)
-        with unittest.mock.patch.object(O, "_leer_pagina_con", contar):
-            res = O.leer_pagina(pagina, idioma_ocr(), configurar_pytesseract())
-        self.assertLess(res.palabras_utiles, O.MIN_PALABRAS_TEXTO)
+        with unittest.mock.patch.object(ocr_pagina, "_leer_pagina_con", contar):
+            res = ocr_pagina.leer_pagina(pagina, idioma_ocr(), configurar_pytesseract())
+        self.assertLess(res.palabras_utiles, ocr_pagina.MIN_PALABRAS_TEXTO)
         self.assertEqual(len(llamadas), 2)          # antes eran 5 o 6 lecturas completas por foto
 
     def test_pixmap_a_gris_conserva_la_imagen_sin_pasar_por_png(self):
@@ -227,7 +227,7 @@ class FotoTest(unittest.TestCase):
         doc = pymupdf.open()
         pagina = doc.new_page(width=200, height=100)
         pagina.draw_rect(pymupdf.Rect(20, 20, 100, 60), fill=(0, 0, 0))
-        img = O._imagen_pagina(pagina, 72)
+        img = ocr_pagina._imagen_pagina(pagina, 72)
         self.assertEqual((img.mode, img.size), ("L", (200, 100)))
         self.assertEqual((img.getpixel((50, 40)), img.getpixel((150, 80))), (0, 255))
 
@@ -238,7 +238,7 @@ def _pagina_de_texto(giro=0, espejo=False):
     base = _imagen_con_texto(["Procedimiento de compras de bienes y servicios", "El area de compras recibe la solicitud aprobada y",
                               "emite la orden de compra al proveedor seleccionado", "segun la politica vigente de la organizacion."] * 6,
                              tam=(1700, 2200), px=34)
-    img = O.orientar(base, giro, espejo)
+    img = ocr_orientacion.orientar(base, giro, espejo)
     buf = io.BytesIO()
     img.convert("RGB").save(buf, "PNG")
     doc = pymupdf.open()
@@ -253,24 +253,24 @@ class OrientacionTest(unittest.TestCase):
     def test_una_pagina_reflejada_se_detecta_y_se_lee_bien(self):
         from corpus_org.conversion.extractores.ocr import configurar_pytesseract
         _doc, pagina = _pagina_de_texto(espejo=True)
-        res = O.leer_pagina(pagina, idioma_ocr(), configurar_pytesseract())
+        res = ocr_pagina.leer_pagina(pagina, idioma_ocr(), configurar_pytesseract())
         self.assertTrue(res.espejo)
-        self.assertGreaterEqual(res.confianza, O.CONFIANZA_OBJETIVO)
+        self.assertGreaterEqual(res.confianza, ocr_constantes.CONFIANZA_OBJETIVO)
         self.assertIn("reflejada", res.mejora)
         self.assertIn("Procedimiento de compras", " ".join(l["texto"] for l in res.lineas))
 
     def test_una_pagina_al_reves_se_endereza(self):
         from corpus_org.conversion.extractores.ocr import configurar_pytesseract
         _doc, pagina = _pagina_de_texto(giro=180)
-        res = O.leer_pagina(pagina, idioma_ocr(), configurar_pytesseract())
+        res = ocr_pagina.leer_pagina(pagina, idioma_ocr(), configurar_pytesseract())
         self.assertEqual((res.orientacion, res.espejo), (180, False))
-        self.assertGreaterEqual(res.confianza, O.CONFIANZA_OBJETIVO)
+        self.assertGreaterEqual(res.confianza, ocr_constantes.CONFIANZA_OBJETIVO)
 
     def test_una_pagina_derecha_no_prueba_orientaciones(self):
         from corpus_org.conversion.extractores.ocr import configurar_pytesseract
         _doc, pagina = _pagina_de_texto()
-        with unittest.mock.patch.object(O, "orientacion_por_prueba", side_effect=AssertionError("no debia probarse")):
-            res = O.leer_pagina(pagina, idioma_ocr(), configurar_pytesseract())
+        with unittest.mock.patch.object(ocr_orientacion, "orientacion_por_prueba", side_effect=AssertionError("no debia probarse")):
+            res = ocr_pagina.leer_pagina(pagina, idioma_ocr(), configurar_pytesseract())
         self.assertEqual((res.orientacion, res.espejo), (0, False))
 
     def test_una_imagen_reflejada_de_un_excel_se_lee_con_su_orientacion(self):
@@ -278,22 +278,22 @@ class OrientacionTest(unittest.TestCase):
         base = _imagen_con_texto(["Procedimiento de compras de bienes y servicios", "El area de compras recibe la solicitud aprobada y",
                                   "emite la orden de compra al proveedor seleccionado", "segun la politica vigente de la organizacion."] * 4,
                                  tam=(1500, 1500), px=34)
-        res = O.leer_imagen(O.orientar(base, 0, True), idioma_ocr(), configurar_pytesseract())
+        res = ocr_imagen.leer_imagen(ocr_orientacion.orientar(base, 0, True), idioma_ocr(), configurar_pytesseract())
         self.assertTrue(res.espejo)
-        self.assertGreaterEqual(res.confianza, O.CONFIANZA_OBJETIVO)
+        self.assertGreaterEqual(res.confianza, ocr_constantes.CONFIANZA_OBJETIVO)
 
     def test_orientar_gira_y_refleja(self):
         img = Image.new("L", (4, 2), 255)
         img.putpixel((0, 0), 0)
-        self.assertEqual(O.orientar(img, 0, True).getpixel((3, 0)), 0)          # reflejo horizontal
-        self.assertEqual(O.orientar(img, 180).getpixel((3, 1)), 0)              # medio giro
-        self.assertEqual(O.orientar(img, 90).size, (2, 4))
+        self.assertEqual(ocr_orientacion.orientar(img, 0, True).getpixel((3, 0)), 0)          # reflejo horizontal
+        self.assertEqual(ocr_orientacion.orientar(img, 180).getpixel((3, 1)), 0)              # medio giro
+        self.assertEqual(ocr_orientacion.orientar(img, 90).size, (2, 4))
 
 
 @unittest.skipUnless(DEPENDENCIAS, "faltan dependencias de imagen")
 class FirmasTest(unittest.TestCase):
     def test_el_trazo_de_una_firma_se_ignora_pero_un_nombre_escrito_a_maquina_se_conserva(self):
-        celda = lambda palabras: O.Celda(  # noqa: E731
+        celda = lambda palabras: ocr_modelo.Celda(  # noqa: E731
             0, 0, 500, 10, [(t, 50 * k, 0, 50 * k + 40, 10, c) for k, (t, c) in enumerate(palabras)])
 
         class T:
@@ -304,7 +304,7 @@ class FirmasTest(unittest.TestCase):
         nombre = [("Carlos", 92), ("Pérez", 94), ("~", 30)]
         tablas = [T([[celda(etiqueta), celda(trazo)], [celda(etiqueta), celda(nombre)]]),
                   T([[celda([("Función", 95)]), celda([("Planificar", 90), ("tareas", 41)])]])]
-        self.assertEqual(O._quitar_firmas(tablas), 1)
+        self.assertEqual(ocr_firmas.quitar_firmas(tablas), 1)
         self.assertEqual(tablas[0].filas[0][1].palabras, [])
         self.assertEqual([p[0] for p in tablas[0].filas[1][1].palabras], ["Carlos", "Pérez"])
         self.assertEqual(len(tablas[1].filas[0][1].palabras), 2)           # una fila sin etiqueta de firma no se toca
@@ -312,13 +312,13 @@ class FirmasTest(unittest.TestCase):
     def test_en_una_linea_con_etiqueta_de_firma_se_descartan_las_palabras_de_baja_confianza(self):
         clave = (1, 1, 1)
         palabras = [("Firma:", 0, 0, 5, 5, 96, clave), ("xx", 6, 0, 9, 5, 30, clave), ("Texto", 0, 10, 5, 15, 40, (1, 1, 2))]
-        limpias, n = O._quitar_firmas_en_lineas(palabras)
+        limpias, n = ocr_firmas.quitar_firmas_en_lineas(palabras)
         self.assertEqual(([p[0] for p in limpias], n), (["Firma:", "Texto"], 1))
 
     def test_rotulos_de_firma_leidos_con_ruido_se_normalizan(self):
-        self.assertEqual(O.rotulo_de_firma("de Firma de Aprobación"), "Firma de Aprobación")
-        self.assertEqual(O.rotulo_de_firma("Firma de Aj"), "Firma de Aprobación")
-        self.assertEqual(O.rotulo_de_firma("Firmado por la gerencia de compras en la fecha indicada abajo"),
+        self.assertEqual(ocr_firmas.rotulo_de_firma("de Firma de Aprobación"), "Firma de Aprobación")
+        self.assertEqual(ocr_firmas.rotulo_de_firma("Firma de Aj"), "Firma de Aprobación")
+        self.assertEqual(ocr_firmas.rotulo_de_firma("Firmado por la gerencia de compras en la fecha indicada abajo"),
                          "Firmado por la gerencia de compras en la fecha indicada abajo")
 
     def test_una_imagen_junto_a_una_etiqueta_de_firma_en_un_pdf_digital_se_ignora(self):

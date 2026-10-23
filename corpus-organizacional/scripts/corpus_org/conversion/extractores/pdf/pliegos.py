@@ -4,17 +4,9 @@ from .lineas import lineas_pagina
 
 
 RAZON_PLIEGO = (1.38, 1.75)     # ancho/alto de dos paginas de libro lado a lado (A4: 1.41, carta: 1.55)
-
-
 ANCHO_CANAL = 4.0               # puntos a cada lado del centro donde no debe cruzar texto
-
-
 MAX_CRUZAN_CANAL = 0.03         # fraccion de lineas que pueden cruzar el centro
-
-
 MIN_PLIEGOS = 0.6               # fraccion de las paginas apaisadas que deben ser pliegos
-
-
 MIN_PLIEGOS_CON_AMBOS = 3       # pliegos con texto en las dos mitades para tratar el PDF como folleto
 
 

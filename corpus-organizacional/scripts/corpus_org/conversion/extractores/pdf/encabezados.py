@@ -9,26 +9,12 @@ from ....comun.texto import norm
 
 RE_PATRON_ENC = re.compile(r"(p[aá]gina\s*\d+\s*(de|/)\s*\d+|\bversi[oó]n\s*:|\brevisi[oó]n\s*:|c[oó]digo\s*:|"
                            r"fecha de (emisi[oó]n|vigencia|elaboraci[oó]n)\s*:)", re.I)
-
-
 RE_PATRON_PIE = re.compile(r"(p[aá]gina\s*\d+|confidencial|uso interno|documento controlado|copia no controlada)", re.I)
-
-
 ZONA_SUPERIOR = 0.22      # fraccion de la altura donde se buscan encabezados repetidos
-
-
 ZONA_INFERIOR = 0.84      # fraccion de la altura a partir de la cual se buscan pies repetidos
-
-
 MIN_REPETICION_SIN_REF = 0.75   # fraccion de paginas con texto que basta aunque la pagina de referencia no lo tenga
-
-
 MIN_REPETICION = 0.6      # fraccion de paginas en que debe repetirse un encabezado, pie o logo
-
-
 TOLERANCIA_ALTURA = 4.0   # puntos: un encabezado o pie repetido esta siempre a la misma altura
-
-
 SEPARACION_VALOR_ENCABEZADO = 6.0   # puntos entre una etiqueta del encabezado y su valor en la linea de abajo
 
 
