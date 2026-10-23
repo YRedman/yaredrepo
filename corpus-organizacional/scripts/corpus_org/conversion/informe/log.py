@@ -2,6 +2,7 @@
 
 import re
 
+from ...comun.markdown import celdas
 from .elementos import alerta, esc
 
 RE_SEPARADOR_MARKDOWN = re.compile(r"^\|[\s\-|:]+\|$")
@@ -12,7 +13,7 @@ INICIOS_DE_AVISO = ("AVISO", "REVISIÓN VISUAL", "Revisar en", "AVISOS")
 
 def _tabla_markdown(lineas):
     """Tabla HTML de las lineas de una tabla markdown; vacia si solo tenian el separador."""
-    filas = [[c.strip() for c in l.strip().strip("|").split("|")] for l in lineas if not RE_SEPARADOR_MARKDOWN.match(l.strip())]
+    filas = [celdas(l) for l in lineas if not RE_SEPARADOR_MARKDOWN.match(l.strip())]
     if not filas:
         return ""
     cabecera = "".join(f"<th>{esc(c)}</th>" for c in filas[0])

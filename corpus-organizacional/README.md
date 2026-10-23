@@ -43,17 +43,26 @@ scripts/
       texto.py, archivos.py, markdown.py, errores.py
     conversion/
       configuracion.py           Títulos de sección, etiquetas y campos clave (editable)
-      extractores/               Un extractor por formato (pdf.py, word.py, texto.py) + maquetacion.py
-      analisis.py                Secciones, campos, actividades y códigos citados
+      extractores/               Un extractor por formato: pdf/ (paquete), word.py, pptx.py, excel.py, texto.py, imagenes.py
+        pdf/                     lineas, pliegos, encabezados, tablas, bandas, continuas, escaneadas, imagenes_pagina, extraccion
+        ocr_pagina/              modelo, geometria, texto, orientacion, firmas, recetas, pagina, imagen
+        maquetacion.py, ooxml.py Bloques desde líneas con posición; utilidades de Word y PowerPoint
+      analisis/                  Secciones, campos, actividades, códigos citados y avisos de estructura (un módulo por tarea)
       metadatos.py               Versión, estado, vigencia, propietario... (solo con etiqueta explícita)
+      inventario/                modelo, claves, departamentos, lista, equivalencias, construccion, contexto
       render.py, verificacion.py, reportes.py
-      inventario.py, entradas.py, asignacion.py, lote.py, publicacion.py, skills.py (aplana corpus_org al publicar)
-      cli.py                     Argumentos y orquestación de los modos
+      entradas.py, asignacion.py, grupos.py, lote.py (conversión en paralelo), ruta_original.py, fila_indice.py
+      publicacion.py, validacion.py, resumen.py, skills.py (aplana corpus_org al publicar)
+      informe/                   Informe HTML por secciones (datos, secciones, tablas, log)
+      materiales_contexto.py, bitacora.py
+      modos/                     Un archivo por modo (inventariar, convertir, contexto, construir, utilidades)
+      cli.py                     Parser y despacho: cada modo declara sus argumentos
     consulta/
       repositorio.py             Carga del corpus publicado y exclusión de no vigentes
       parser.py                  Recorrido único del Markdown de un documento
       ubicacion.py               Localiza el skill fuente-corpus (en Copilot, por su nombre)
       areas.py, entidades.py, puestos.py, roles.py, relaciones.py, participacion.py, indicadores.py, integridad.py
+      matriz/                    Matriz organizacional: hojas (una función por hoja), esquema, exportacion (CSV), excel
       comandos/                  Un archivo por comando (catalogo, area, briefing, ficha, doc, kpis, ...)
       cli.py
 tests/                           Pruebas unitarias y de integración
@@ -203,7 +212,7 @@ Las páginas escaneadas se leen con Tesseract. `python scripts/convertir.py diag
 | Indicadores | KPIs del contexto |
 | Revisión | Documentos para comparar con el original, con una columna para las observaciones del auditor |
 
-Todo es literal del corpus; los cruces por nombre de puesto indican si la coincidencia es exacta o probable. Código: `consulta/matriz.py`.
+Todo es literal del corpus; los cruces por nombre de puesto indican si la coincidencia es exacta o probable. Código: `consulta/matriz/` (`hojas.py` calcula las filas; `esquema.py`, `exportacion.py` y `excel.py` las escriben).
 
 ## v3.5: lectura de PDF escaneados (OCR con estructura)
 
@@ -273,6 +282,17 @@ fuente-corpus/
 
 Código: `comun/tipos.py`, `comun/estructura.py`, `conversion/inventario.py`, `conversion/publicacion.py`, `conversion/skills.py`, `consulta/ubicacion.py`, `consulta/extraccion.py`, `consulta/pertinencia.py`, `consulta/jerarquia.py`, `consulta/matriz.py`, `consulta/comandos/briefing.py` y `normativa.py`. La conversión y la verificación de fidelidad no cambian.
 
+## v4.7: código reorganizado (sin cambios de comportamiento)
+
+Se revisó todo el código buscando duplicados y módulos que hacían demasiado. El resultado de la conversión, las consultas, la matriz y el informe es **idéntico** (se comparó contra la versión anterior con 40 PDF reales —con y sin OCR—, corpus de prueba completos, 80 consultas de `corpus.py`, la matriz y el informe HTML).
+
+- **Responsabilidad única.** `conversion/cli.py` (823 líneas: inventario, conversión, contexto, construcción, informes y parser) quedó en 31; cada modo es una subclase de `Modo` en `conversion/modos/`, con sus propios argumentos. Lo mismo con `pdf.py` (1 293 líneas → paquete `pdf/`, donde la clase que extraía todo se repartió en encabezado y pie, páginas escaneadas, imágenes y texto), `ocr_pagina.py` (1 013 → paquete), `inventario.py`, `analisis.py`, `publicacion.py` (→ publicación, validación y resumen), `matriz.py` y `informe_html.py`.
+- **Abierto/cerrado.** Agregar un modo, una hoja de la matriz o una sección del informe es una función o clase más y una línea en su registro (`modos/__init__.py`, `matriz/hojas.HOJAS`, `informe.SECCIONES`); ya no hay `if nombre in (...)` repartidos por el parser.
+- **Duplicados eliminados.** `leer_csv_opcional` (11 sitios), `unir_csv`, `convertir_grupos` (el `try/lanzar/cerrar` repetido), `DocumentoExtraido.registrar_original` (4 extractores), `ooxml.nombre_local` (Word y PowerPoint), `tipo_de_fila`, `porcentaje`, `Salida.seccion`, `localizar_areas`, la tabla markdown del log, y los títulos de fase del informe.
+- **Funciones largas partidas en pasos con nombre**: `_construir` (120 líneas → 6 pasos sobre una `Construccion`), `generar_informe` (171 → una función por sección), `validar_publicacion`, `datos_matriz` (una función por hoja), `construir_inventario`, `inventario_contexto`, `verificar`, `catalogo`, `area`, `buscar`, `ficha`, `reportes._detalle`, `excel.extraer` y `pdf._contenido`.
+- **Código muerto fuera**: `RE_ARCHIVO_DOCUMENTOS`, `COBERTURA_LITERAL`, `DocumentoCorpus.archivo_ruta`, `_con_nombre`, `Validacion.listo`, la importación de `openpyxl` que solo comprobaba su existencia (ahora `importlib.util.find_spec`) y variables locales que ocultaban funciones del módulo.
+- **Pruebas.** Siguen las 240; solo cambiaron las rutas de importación de los módulos que se partieron. El skill publicado sigue siendo plano (`consulta_matriz_hojas.py`...): `skills.aplanar_paquete` ya soportaba subpaquetes.
+
 ## v4.6: informe HTML de la construcción
 
 - **`salida_corpus/INFORME_CONSTRUCCION.html`.** Cada `construir` genera un informe de un solo archivo (sin internet, se abre con doble clic): tarjetas con las cifras, alertas, cobertura por área, revisión visual pendiente, calidad de lectura (OCR), tiempos por documento, tabla de todos los documentos con enlace al original, y el log completo con color. Las tablas se filtran y ordenan con el navegador.
@@ -281,7 +301,7 @@ Código: `comun/tipos.py`, `comun/estructura.py`, `conversion/inventario.py`, `c
 - **Códigos de contexto únicos.** Un código `CTX-GEN-NN` repetido en una base anterior ya no se vuelve a asignar (el log de v4.5 terminaba con «Códigos duplicados»).
 - **Etiqueta `contexto/`** correcta en el original de los materiales de contexto.
 - **OCR:** la prueba de orientación solo se repite si la confianza de la primera lectura es menor de 70 %.
-- Código: `conversion/informe_html.py`, `conversion/cli.py` (`modo_informe`, `registrar_tiempos`), `conversion/inventario.py` (`inventario_contexto`).
+- Código: `conversion/informe/`, `conversion/modos/utilidades.py` (`Informe`), `conversion/bitacora.py` (`registrar_tiempos`), `conversion/inventario/contexto.py` (`inventario_contexto`).
 
 ## v4.5: un solo skill
 
@@ -291,7 +311,7 @@ El agente de Copilot admite **un skill por carga**, y las versiones anteriores p
 - **Comprimir y subir una sola carpeta:** `fuente-corpus`. Si en `copilot/` había `fuente-contexto` y `fuente-documentos`, se mueven a `salida_corpus/anterior_dos_skills/` con un aviso.
 - **Ubicación.** `corpus.py` sigue localizando el skill desde su propio lugar y, si hace falta, por nombre (`fuente-corpus`, y también la estructura anterior de dos skills). El `find` de la nota y de `donde` ahora busca `fuente-corpus/scripts/corpus.py`.
 - **Huellas.** `huellas.sha256` guarda rutas `fuente-corpus/<ruta>`; los corpus construidos con la estructura anterior se siguen verificando.
-- Código: `comun/estructura.py` (`SKILL_CORPUS`, `rutas_de_skill`), `consulta/ubicacion.py`, `consulta/integridad.py`, `conversion/cli.py` (`_skill_md_de_origen`, `_limpiar_publicacion_anterior`), `conversion/publicacion.py`.
+- Código: `comun/estructura.py` (`SKILL_CORPUS`, `rutas_de_skill`), `consulta/ubicacion.py`, `consulta/integridad.py`, `conversion/modos/construir.py` (`_skill_md_de_origen`, `_limpiar_publicacion_anterior`), `conversion/publicacion.py`.
 
 ## v4.4: el agente localiza el corpus sin adivinar rutas
 
@@ -308,7 +328,7 @@ Un agente buscó el skill en `/home/oai/skills/fuente-contexto` cuando el corpus
 - **Firmas manuscritas.** En una celda o línea que acompaña a una etiqueta de firma («Firma de Aprobación», «Director / Gerente Sr. / Gerente del área:», «Aprobado por»…) se descartan las lecturas de baja confianza (< 75 %): son el trazo, no texto; un nombre escrito a máquina junto a la firma (confianza alta) se conserva. Los rótulos leídos con ruido («de Firma de Aprobación», «Firma de Aj») se normalizan. En un PDF digital, la imagen de una firma junto a una etiqueta de firma ya no se lee con OCR ni aparece como `[IMAGEN OMITIDA]` ni cuenta como diagrama; queda una nota por página. Las firmas ignoradas no bajan la confianza media del documento.
 - **Encabezado por voto.** El formato repite el encabezado en cada página y el OCR se equivoca distinto en cada una («Código: SECA-ATTA-FOR-034» en una página de cinco). Código, Versión, Vigencia, Próxima revisión y Sustituye a se corrigen con el valor que se lee igual en al menos dos páginas (con tres o más páginas OCR); cada corrección queda en las notas.
 - **Excel.** No hace falta convertir los `.xlsx` a `.csv`: se leen directamente (hojas, celdas combinadas, fechas, porcentajes, fórmulas, imágenes con OCR). Guardar como `.csv` desde Excel sí distorsiona (fechas y decimales según la configuración regional, pierde hojas, celdas combinadas, fórmulas e imágenes).
-- Código: `extractores/ocr_pagina.py` (`orientar`, `orientacion_por_prueba`, `_quitar_firmas`, `rotulo_de_firma`), `extractores/pdf.py` (`consenso_de_encabezados`, `_es_firma`), `extractores/imagenes.py`.
+- Código: `extractores/ocr_pagina/` (`orientacion.py`, `firmas.py`), `extractores/pdf/` (`encabezados.py`: `consenso_de_encabezados`; `imagenes_pagina.py`: `_es_firma`), `extractores/imagenes.py`.
 
 ## v4.2: carpeta de políticas y procedimientos, cadena documental y más velocidad
 
