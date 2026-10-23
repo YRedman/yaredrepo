@@ -16,8 +16,6 @@ class DocumentoCorpus:
     titulo: str
     lineas: List[str] = field(default_factory=list)
 
-    archivo_ruta: object = None   # Path del Markdown (archivo es la ruta relativa al skill)
-
     @property
     def tipo(self):
         return tipo_de_codigo(self.codigo)

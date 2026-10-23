@@ -13,10 +13,9 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from ...comun.esquema import RE_MARCAS
-from ...comun.texto import numeros, tokens
 from ..modelo import DocumentoExtraido, bloque_h
 from .base import Extractor
+from .ooxml import nombre_local
 from .imagenes import es_imagen_de_contenido, hash_imagen, texto_de_imagen
 
 NS = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main",
@@ -31,14 +30,10 @@ MIN_REPETICION_LOGO = 3        # una imagen que sale en 3 o mas diapositivas es 
 BUCKET_Y = 300000              # EMU (~0.33 in): formas a esta altura se leen de izquierda a derecha
 
 
-def _local(el):
-    return el.tag.rsplit("}", 1)[-1]
-
-
 def _texto_parrafo(p):
     partes = []
     for el in p.iter():
-        n = _local(el)
+        n = nombre_local(el)
         if n == "t" and el.text:
             partes.append(el.text)
         elif n == "br":
@@ -171,8 +166,7 @@ class ExtractorPptx(Extractor):
         d.bloques = bloques
         d.tablas = sum(1 for b in bloques if b["k"] == "tabla")
         todo = " ".join(textos)
-        d.crudo = collections.Counter(tokens(RE_MARCAS.sub(" ", todo)))
-        d.numeros = numeros(todo)
+        d.registrar_original(todo)
         if path.suffix.lower() != ".pptx":
             d.notas.append(f"El archivo se llama «{path.name}» pero es una presentación de PowerPoint: se leyó como tal.")
         return d
@@ -187,7 +181,7 @@ class ExtractorPptx(Extractor):
         self._recorrer(arbol, formas)
         titulo, items, imagenes = "", [], []
         for sp in formas:
-            n = _local(sp)
+            n = nombre_local(sp)
             ph = _tipo_placeholder(sp) if n == "sp" else None
             if ph in PLACEHOLDERS_DE_PIE:
                 continue
@@ -217,7 +211,7 @@ class ExtractorPptx(Extractor):
     def _recorrer(self, nodo, salida):
         """Formas de un arbol en orden de documento, entrando a los grupos."""
         for hijo in nodo:
-            n = _local(hijo)
+            n = nombre_local(hijo)
             if n == "grpSp":
                 self._recorrer(hijo, salida)
             elif n in ("sp", "graphicFrame", "pic"):

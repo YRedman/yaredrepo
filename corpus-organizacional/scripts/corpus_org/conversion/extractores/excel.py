@@ -6,7 +6,6 @@ valor en cada fila. Se leen los valores guardados, no las formulas. Las imagenes
 documento, un organigrama) se leen con OCR y quedan bajo una marca, igual que en un PDF.
 """
 
-import collections
 import datetime
 import importlib.util
 import io
@@ -14,8 +13,6 @@ import warnings
 import zipfile
 from pathlib import Path
 
-from ...comun.esquema import RE_MARCAS
-from ...comun.texto import numeros, tokens
 from ..modelo import DocumentoExtraido, bloque_h
 from .base import Extractor
 from .imagenes import es_imagen_de_contenido, texto_de_imagen
@@ -230,8 +227,7 @@ class ExtractorExcel(Extractor):
                             "abra el archivo en Excel, guárdelo y vuelva a convertir")
         d.bloques = bloques
         crudo = " ".join(textos)
-        d.crudo = collections.Counter(tokens(RE_MARCAS.sub(" ", crudo)))
-        d.numeros = numeros(crudo)
+        d.registrar_original(crudo)
         if path.suffix.lower() not in self.extensiones:
             d.notas.append(f"El archivo se llama «{path.name}» pero es un libro de Excel: se leyó como Excel.")
         return d

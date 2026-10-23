@@ -5,15 +5,12 @@ escaneadas) y se transcribio a mano. Reconoce Markdown simple: titulos (#), list
 tablas (|). Un CSV se convierte en una tabla.
 """
 
-import collections
 import csv
 import io
 import re
 from pathlib import Path
 
 from ...comun.archivos import detectar_delimitador, leer_texto
-from ...comun.esquema import RE_MARCAS
-from ...comun.texto import numeros, tokens
 from ..modelo import DocumentoExtraido, bloque_h
 from .base import Extractor
 
@@ -78,9 +75,7 @@ class ExtractorTexto(Extractor):
     def extraer(self, path):
         txt = leer_texto(path)
         d = DocumentoExtraido()
-        # las marcas ([NO ESPECIFICADO], [D-XXX-01]...) se descuentan igual que en el Markdown generado
-        d.crudo = collections.Counter(tokens(RE_MARCAS.sub(" ", txt)))
-        d.numeros = numeros(txt)
+        d.registrar_original(txt)
         if Path(path).suffix.lower() == ".csv":
             filas = _filas_csv(txt)
             d.bloques = [{"k": "tabla", "filas": filas}] if filas else []

@@ -160,7 +160,7 @@ def _leer_markdown(archivos, carpeta_documentos=None):
             ls = lineas[i:fin]
             while ls and ls[-1].strip() in ("", "---"):
                 ls.pop()
-            docs[c] = DocumentoCorpus(c, nombre, i, fin, m.group(2).strip(), ls, p)
+            docs[c] = DocumentoCorpus(c, nombre, i, fin, m.group(2).strip(), ls)
     return docs, duplicados
 
 
