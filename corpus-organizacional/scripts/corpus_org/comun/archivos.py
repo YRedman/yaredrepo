@@ -39,6 +39,11 @@ def leer_csv(path, columnas_si_no_hay_encabezado=None):
     return list(csv.DictReader(io.StringIO(txt), delimiter=delim))
 
 
+def leer_csv_opcional(path):
+    """Filas del CSV, o una lista vacia si el archivo no existe."""
+    return leer_csv(path) if Path(path).is_file() else []
+
+
 def campo_csv(s):
     """Valor en una sola linea; ';' se cambia por ',' para que el CSV se lea bien en Excel."""
     s = (s or "").replace(";", ",").replace("\r", " ").replace("\n", " ")
@@ -57,6 +62,18 @@ def escribir_csv_filas(path, cabecera, filas):
         w.writerow([campo_csv(str(c)) for c in cabecera])
         for fila in filas:
             w.writerow([campo_csv("" if x is None else str(x)) for x in fila])
+
+
+def unir_csv(rutas, destino):
+    """Une varios CSV con las mismas columnas (la primera fila de cada uno es el encabezado)."""
+    cabecera, filas = None, []
+    for p in rutas:
+        r = leer_csv(p)
+        if r:
+            cabecera = cabecera or list(r[0].keys())
+            filas += r
+    if cabecera:
+        escribir_csv(destino, cabecera, filas)
 
 
 def huella_codigo(raiz):

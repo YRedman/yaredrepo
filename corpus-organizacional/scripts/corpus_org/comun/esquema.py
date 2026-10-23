@@ -55,6 +55,11 @@ ARCHIVO_KPIS = "kpis.csv"
 ARCHIVO_AREAS_EXTRA = "areas_extra.csv"
 ARCHIVO_REVISADOS = "revision_visual_ok.txt"
 ARCHIVO_REVISION = "revision_visual.csv"
+# informe de la construccion (HTML) y lo que lo alimenta
+ARCHIVO_INFORME = "INFORME_CONSTRUCCION.html"
+ARCHIVO_LOG = "log_construccion.txt"
+ARCHIVO_DATOS = "construccion.json"
+ARCHIVO_TIEMPOS = "tiempos_conversion.csv"
 # Area de cada documento que no esta en una carpeta de area (entrada\Descriptivos\archivo.pdf).
 ARCHIVO_AREAS_DOCUMENTOS = "areas.csv"
 AREA_SIN_ASIGNAR = "Sin Área"

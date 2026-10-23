@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List
 
 from .. import VERSION
-from ..comun.archivos import escribir_csv, leer_csv, leer_texto
+from ..comun.archivos import escribir_csv, leer_csv, leer_csv_opcional, leer_texto
 from ..comun.esquema import (AREA_SIN_ASIGNAR, AVISO_ESCANEADO, ARCHIVO_AREAS_DOCUMENTOS, ARCHIVO_AREAS_EXTRA,
                              ARCHIVO_EQUIVALENCIAS, ARCHIVO_HUELLAS, ARCHIVO_INDICE, ARCHIVO_INVENTARIO,
                              ARCHIVO_KPIS, ARCHIVO_REVISADOS, ARCHIVO_REVISION, COLUMNAS_INDICE, PATRON_CODIGO,
@@ -266,8 +266,8 @@ def validar_publicacion(publicado, duplicados=(), revisados=frozenset(), muestra
     v = Validacion(duplicados=list(duplicados))
     rutas = rutas_publicadas(publicado)
     indice_p, inv_p = rutas.indice / ARCHIVO_INDICE, rutas.indice / ARCHIVO_INVENTARIO
-    filas = leer_csv(indice_p) if indice_p.is_file() else []
-    inventario = inventario_activo(leer_csv(inv_p)) if inv_p.is_file() else []
+    filas = leer_csv_opcional(indice_p)
+    inventario = inventario_activo(leer_csv_opcional(inv_p))
     cod_indice = {(f.get("codigo") or "").upper() for f in filas if f.get("codigo")}
     cod_inv = {(f.get("codigo") or "").upper() for f in inventario if f.get("codigo")}
     if not filas:

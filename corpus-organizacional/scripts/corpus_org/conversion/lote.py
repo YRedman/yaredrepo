@@ -269,3 +269,12 @@ def procesar_grupo(grupo, salida, opciones):
     resultado.archivos_generados.append(
         escribir_reporte(salida / f"{PREFIJO_REPORTE}{grupo.nombre_base}.md", grupo, documentos))
     return resultado
+
+
+def convertir_grupos(grupos, salida, opciones):
+    """Convierte los grupos (en paralelo si ``opciones`` lo permite) y devuelve un ``ResultadoGrupo`` por grupo."""
+    try:
+        opciones.lanzar(grupos)
+        return [procesar_grupo(g, salida, opciones) for g in grupos]
+    finally:
+        opciones.cerrar()

@@ -10,9 +10,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List
 
-from ..comun.archivos import escribir_csv, leer_csv, leer_texto
+from ..comun.archivos import escribir_csv, leer_csv, leer_csv_opcional, leer_texto
 from ..comun.errores import CorpusError
-from ..comun.esquema import AREA_SIN_ASIGNAR, COLUMNAS_EQUIVALENCIAS, INVENTARIO_ACTIVO, INVENTARIO_RETIRADO
+from ..comun.esquema import (ARCHIVO_AREAS_DOCUMENTOS, AREA_SIN_ASIGNAR, COLUMNAS_EQUIVALENCIAS, INVENTARIO_ACTIVO,
+                             INVENTARIO_RETIRADO)
 from ..comun.texto import nfc, norm, sin_acentos
 from ..comun.tipos import (AREA_GENERAL, NOMBRE_AREA_GENERAL, TIPO_CONTEXTO_POR_DEFECTO, TIPOS_AREA,
                            TIPOS_DOCUMENTO, TIPOS_GENERALES, codigo_nuevo_desde_anterior, es_area_general,
@@ -20,7 +21,7 @@ from ..comun.tipos import (AREA_GENERAL, NOMBRE_AREA_GENERAL, TIPO_CONTEXTO_POR_
                            tipos_candidatos, RE_CODIGO_ANTERIOR)
 from ..comun.tipos import tipo as tipo_documento
 from .configuracion import EXT_IMAGEN, EXT_RECONOCIDAS, PALABRAS_VACIAS_DEP, PREFERENCIA_EXT
-from .entradas import es_archivo_ignorado, partes_ruta
+from .entradas import es_archivo_ignorado, localizar, partes_ruta
 
 RE_CODIGO_DEP = re.compile(r"^[A-Z0-9]{3}$")
 RE_SUFIJO_COPIA = re.compile(r"\s*\(\d+\)$|\s*-\s*copia(\s*\(\d+\))?$|\s*copy$", re.I)
@@ -151,13 +152,19 @@ def leer_areas(path):
     return areas
 
 
+def localizar_areas(entrada):
+    """(ruta de areas.csv, areas leidas o None si el archivo no existe) de la carpeta de entrada."""
+    ruta = localizar(ARCHIVO_AREAS_DOCUMENTOS, entrada) or Path(entrada) / ARCHIVO_AREAS_DOCUMENTOS
+    return ruta, (leer_areas(ruta) if Path(ruta).is_file() else None)
+
+
 def actualizar_plantilla_areas(path, filas):
     """Agrega a areas.csv los archivos sin carpeta de area que todavia no estan, con el area vacia.
 
     Un documento y sus copias ("archivo (1).pdf") ocupan una sola fila: la del original, o la que ya
     tiene el area escrita. Conserva las areas ya escritas. Devuelve cuantos archivos se agregaron.
     """
-    existentes = leer_csv(path) if path.is_file() else []
+    existentes = leer_csv_opcional(path)
     por_clave = collections.OrderedDict()
     for r in existentes:
         fila = {"archivo": (r.get("archivo") or "").strip(), "area": (r.get("area") or r.get("área") or "").strip()}
@@ -574,7 +581,7 @@ def inventario_contexto(archivos, carpeta_contexto=None, base=(), anteriores=Non
 
 def escribir_equivalencias(path, nuevas):
     """Agrega a equivalencias_codigos.csv (codigo_anterior;codigo_nuevo) las equivalencias nuevas, sin repetir."""
-    existentes = leer_csv(path) if path.is_file() else []
+    existentes = leer_csv_opcional(path)
     vistos = {(r.get("codigo_anterior", ""), r.get("codigo_nuevo", "")) for r in existentes}
     filas = [{"codigo_anterior": r.get("codigo_anterior", ""), "codigo_nuevo": r.get("codigo_nuevo", "")}
              for r in existentes]
@@ -590,4 +597,4 @@ def escribir_equivalencias(path, nuevas):
 def leer_equivalencias(path):
     """{codigo_anterior: codigo_nuevo} de equivalencias_codigos.csv."""
     return {(r.get("codigo_anterior") or "").strip().upper(): (r.get("codigo_nuevo") or "").strip().upper()
-            for r in (leer_csv(path) if path.is_file() else []) if r.get("codigo_anterior")}
+            for r in leer_csv_opcional(path) if r.get("codigo_anterior")}

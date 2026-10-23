@@ -16,14 +16,11 @@ from pathlib import Path
 from urllib.parse import quote
 
 from ..comun.archivos import leer_csv
-from ..comun.esquema import ARCHIVO_REVISION, ARCHIVO_RESUMEN
+from ..comun.esquema import (ARCHIVO_DATOS, ARCHIVO_INFORME, ARCHIVO_LOG, ARCHIVO_RESUMEN, ARCHIVO_REVISION,
+                             ARCHIVO_TIEMPOS)
 from ..comun.estructura import CARPETA_PUBLICADA, rutas_publicadas
 from ..comun.tipos import POR_CODIGO, TIPOS_AREA
 
-ARCHIVO_INFORME = "INFORME_CONSTRUCCION.html"
-ARCHIVO_LOG = "log_construccion.txt"
-ARCHIVO_DATOS = "construccion.json"
-ARCHIVO_TIEMPOS = "tiempos_conversion.csv"
 CONFIANZA_OBJETIVO = 80.0
 
 ESTADOS = {

@@ -3,7 +3,7 @@
 import collections
 from pathlib import Path
 
-from ..comun.archivos import leer_csv
+from ..comun.archivos import leer_csv, leer_csv_opcional
 from ..comun.errores import CorpusError
 from ..comun.esquema import (ARCHIVO_AREAS_EXTRA, ARCHIVO_INDICE, ARCHIVO_INVENTARIO, ARCHIVO_KPIS, ARCHIVO_RESUMEN,
                              COLUMNAS_INDICE, PREFIJO_DIC, PREFIJO_REPORTE, RE_TITULO_DOC, area_de,
@@ -212,10 +212,8 @@ def cargar_corpus(contexto_skill, incluir_no_vigentes=False, documentos=None):
                      if estado_no_publicable(f.get("estado_documental", ""))}
         meta = {c: f for c, f in meta.items() if c not in excluidos}
         docs = {c: d for c, d in docs.items() if c not in excluidos}
-    inv = rutas.indice / ARCHIVO_INVENTARIO
-    inventario = leer_csv(inv) if inv.is_file() else []
+    inventario = leer_csv_opcional(rutas.indice / ARCHIVO_INVENTARIO)
     extra, exclusiones = leer_areas_extra(rutas.indice / ARCHIVO_AREAS_EXTRA)
-    kp = rutas.contexto / ARCHIVO_KPIS
-    kpis = leer_csv(kp) if kp.is_file() else []
+    kpis = leer_csv_opcional(rutas.contexto / ARCHIVO_KPIS)
     return Corpus(contexto_skill, meta, docs, archivos_md, inventario, fuente, dup_indice + dup_md, excluidos,
                   extra, exclusiones, kpis, documentos)
