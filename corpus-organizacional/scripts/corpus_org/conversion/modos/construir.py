@@ -20,12 +20,12 @@ from ...comun.esquema import ARCHIVO_CATALOGO, ARCHIVO_EQUIVALENCIAS, ARCHIVO_IN
 from ...comun.estructura import (ARCHIVO_NOTA_UBICACION, CARPETA_PUBLICADA, LLAVE_NOTA_UBICACION, NOMBRE_SKILL_MD,
                                  NOTA_UBICACION_SKILL, SKILL_CONTEXTO, SKILL_CORPUS, SKILL_DOCUMENTOS, informe_limites,
                                  rutas_publicadas)
-from ...comun.tipos import TIPOS_AREA, tipo as tipo_documento
+from ...comun.tipos import TIPOS_AREA, tipo as tipo_documento, tipo_de_carpeta
 from ...consulta.matriz import ARCHIVO_MATRIZ, escribir_matriz
 from ..bitacora import Tee, guardar_bitacora
 from ..entradas import buscar_entradas, localizar, partes_ruta
 from ..informe import generar_informe
-from ..inventario import escribir_equivalencias, leer_equivalencias, migrar_fila, tipo_de_carpeta
+from ..inventario import escribir_equivalencias, leer_equivalencias, migrar_fila
 from ..materiales_contexto import (archivos_no_leidos, contexto_anterior, copiar_datos_de_contexto,
                                    documentos_de_area_del_contexto, equivalencias_de_contexto)
 from ..publicacion import escribir_huellas, limpiar_generados, publicar_corpus
