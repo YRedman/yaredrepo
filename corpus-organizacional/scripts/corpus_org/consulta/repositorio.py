@@ -7,7 +7,7 @@ from ..comun.archivos import leer_csv, leer_csv_opcional
 from ..comun.errores import CorpusError
 from ..comun.esquema import (ARCHIVO_AREAS_EXTRA, ARCHIVO_INDICE, ARCHIVO_INVENTARIO, ARCHIVO_KPIS, ARCHIVO_RESUMEN,
                              COLUMNAS_INDICE, PREFIJO_DIC, PREFIJO_REPORTE, RE_TITULO_DOC, area_de,
-                             INVENTARIO_RETIRADO, estado_no_publicable, inventario_activo, tipo_desde_texto)
+                             INVENTARIO_RETIRADO, estado_no_publicable, inventario_activo, tipo_de_fila)
 from ..comun.estructura import SKILL_CORPUS, markdown_de_documentos, rutas_de_skill_contexto
 from ..comun.tipos import TIPOS_AREA, es_general, tipo as tipo_documento
 from . import parser
@@ -82,7 +82,7 @@ class Corpus:
         for tipo in TIPOS_AREA:
             nombre = tipo_documento(tipo).plural.lower()
             esperados = [f for f in (self.inventario_de_area(cod) if cod else self.inventario)
-                         if _tipo_inventario(f) == tipo]
+                         if tipo_de_fila(f, "") == tipo]
             presentes = [c for c in (self.areas[cod].codigos(tipo) if cod else self.docs)
                          if c in self.docs and c.split("-")[0] == tipo]
             if not esperados and not presentes and tipo not in ("DES", "PRD"):
@@ -104,7 +104,7 @@ class Corpus:
             if not self.inventario:
                 res[tipo] = (presentes, None)
                 continue
-            esperados = [f for f in self.inventario_de_area(cod) if _tipo_inventario(f) == tipo
+            esperados = [f for f in self.inventario_de_area(cod) if tipo_de_fila(f, "") == tipo
                          and (f.get("codigo") or "").upper() not in self.excluidos]
             res[tipo] = (presentes, len(esperados))
         return res
@@ -119,10 +119,6 @@ class Corpus:
 # ---------------------------------------------------------------------------
 # Carga
 # ---------------------------------------------------------------------------
-
-def _tipo_inventario(fila):
-    return tipo_desde_texto(fila.get("tipo")) or (fila.get("codigo") or "").split("-")[0].upper()
-
 
 def _es_markdown_de_datos(p):
     return not p.name.upper().startswith((PREFIJO_REPORTE, ARCHIVO_RESUMEN.rsplit(".", 1)[0]))

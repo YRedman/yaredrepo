@@ -11,6 +11,7 @@ from ..comun.esquema import (ARCHIVO_AREAS_DOCUMENTOS, ARCHIVO_INDICE, ARCHIVO_I
                              ARCHIVO_REVISION, AREA_SIN_ASIGNAR, AVISO_ESCANEADO, RE_DOC_MD, estado_no_publicable,
                              inventario_activo)
 from ..comun.estructura import markdown_de_documentos, rutas_publicadas
+from ..comun.texto import porcentaje
 from ..comun.tipos import es_general
 
 MUESTRA_REVISION = 0.10
@@ -61,10 +62,6 @@ def leer_revisados(*carpetas):
                 if c:
                     codigos.add(c)
     return codigos
-
-
-def _cobertura(valor):
-    return float((valor or "").replace("%", "").strip().replace(",", "."))
 
 
 def muestra_reproducible(codigos, fraccion):
@@ -137,7 +134,7 @@ class _RevisionDeFilas:
 
     def _cobertura(self, codigo, f):
         try:
-            if f.get("cobertura") and _cobertura(f["cobertura"]) < 100.0:
+            if f.get("cobertura") and porcentaje(f["cobertura"]) < 100.0:
                 self.bajos.append(f"{codigo} ({f['cobertura']})")
                 self._con_problema(codigo, f"texto del original ausente (cobertura {f['cobertura']})")
         except ValueError:

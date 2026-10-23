@@ -13,11 +13,11 @@ from typing import Dict, List
 from ..comun.archivos import escribir_csv, leer_csv, leer_csv_opcional, leer_texto
 from ..comun.errores import CorpusError
 from ..comun.esquema import (ARCHIVO_AREAS_DOCUMENTOS, AREA_SIN_ASIGNAR, COLUMNAS_EQUIVALENCIAS, INVENTARIO_ACTIVO,
-                             INVENTARIO_RETIRADO)
+                             INVENTARIO_RETIRADO, tipo_de_fila)
 from ..comun.texto import nfc, norm, sin_acentos
 from ..comun.tipos import (AREA_GENERAL, NOMBRE_AREA_GENERAL, TIPO_CONTEXTO_POR_DEFECTO, TIPOS_AREA,
                            TIPOS_DOCUMENTO, TIPOS_GENERALES, codigo_nuevo_desde_anterior, es_area_general,
-                           tipo_de_carpeta, tipo_de_material, tipo_desde_texto, tipo_general_de,
+                           tipo_de_carpeta, tipo_de_material, tipo_general_de,
                            tipos_candidatos, RE_CODIGO_ANTERIOR)
 from ..comun.tipos import tipo as tipo_documento
 from .configuracion import EXT_IMAGEN, EXT_RECONOCIDAS, PALABRAS_VACIAS_DEP, PREFERENCIA_EXT
@@ -250,14 +250,6 @@ class InventarioBase:
     departamentos: Dict[str, str] = field(default_factory=dict)   # depto normalizado -> codigo
     maximos: collections.Counter = field(default_factory=collections.Counter)   # (tipo, codigo_dep) -> mayor numero
     equivalencias: List[tuple] = field(default_factory=list)       # (codigo_anterior, codigo_nuevo) migrados
-
-
-def tipo_de_fila(fila):
-    """Codigo de tipo de una fila de inventario o indice: 'DES', o desde 'Descriptivo'/'D' (formato anterior)."""
-    t = tipo_desde_texto(fila.get("tipo"))
-    if t:
-        return t
-    return (fila.get("codigo") or "").split("-")[0].upper() or "PRD"
 
 
 def migrar_fila(f, equivalencias=None):

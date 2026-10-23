@@ -4,6 +4,8 @@ import html
 from pathlib import Path
 from urllib.parse import quote
 
+from ...comun.texto import porcentaje
+
 ORIGENES = ("entrada", "contexto")
 CARACTERES_CARPETA, CARACTERES_NOMBRE = 28, 60
 
@@ -15,7 +17,7 @@ def esc(x):
 def numero(x, defecto=0.0):
     """Numero de un texto de CSV (admite '%' y coma decimal); ``defecto`` si no se puede leer."""
     try:
-        return float(str(x).replace("%", "").replace(",", ".").strip())
+        return porcentaje(x)
     except ValueError:
         return defecto
 

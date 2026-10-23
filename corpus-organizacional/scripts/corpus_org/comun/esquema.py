@@ -93,6 +93,12 @@ def estado_no_publicable(estado):
     return any(n == e or n.startswith(e + " ") for e in ESTADOS_NO_PUBLICABLES)
 
 
+def tipo_de_fila(fila, defecto="PRD"):
+    """Codigo de tipo de una fila de inventario o indice: 'DES', o desde 'Descriptivo'/'D' (formato anterior).
+    Sin columna de tipo se usa el prefijo del codigo; sin codigo, ``defecto``."""
+    return tipo_desde_texto(fila.get("tipo")) or (fila.get("codigo") or "").split("-")[0].upper() or defecto
+
+
 def inventario_activo(filas):
     """Filas del inventario que deben existir: las RETIRADAS solo reservan su codigo."""
     return [f for f in filas if (f.get("estado_inventario") or INVENTARIO_ACTIVO).upper() != INVENTARIO_RETIRADO]

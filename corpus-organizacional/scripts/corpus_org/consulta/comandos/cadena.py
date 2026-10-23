@@ -33,21 +33,18 @@ class Cadena(Comando):
         por_area = collections.Counter((area_de(e.origen), area_de(e.destino)) for e in resueltos
                                        if area_de(e.origen) != area_de(e.destino))
         if por_area:
-            s.linea()
-            s.linea("## Citas entre áreas")
+            s.seccion("Citas entre áreas")
             s.tabla(["Área que cita", "Área citada", "Citas"],
                     [[cp.areas[a].nombre if a in cp.areas else a, cp.areas[b].nombre if b in cp.areas else b, n]
                      for (a, b), n in por_area.most_common()])
         entradas = collections.Counter(e.destino for e in resueltos)
         if entradas:
-            s.linea()
-            s.linea("## Documentos más citados")
+            s.seccion("Documentos más citados")
             s.tabla(["Código", "Documento", "Citado por"],
                     [[c, cp.nombre(c), n] for c, n in entradas.most_common(15)])
         falta = faltantes(enlaces)
         if falta:
-            s.linea()
-            s.linea(f"## Documentos citados que faltan en el corpus ({len(falta)})")
+            s.seccion(f"Documentos citados que faltan en el corpus ({len(falta)})")
             s.linea("Son oportunidades: documentos que otros mencionan y todavía no se han entregado.")
             s.tabla(["Código citado", "Tipo", "Citado por"],
                     [[c, tipo_de_codigo_cliente(c), resumir_lista(sorted(o), 6)]
@@ -62,12 +59,10 @@ class Cadena(Comando):
         s.linea(f"CADENA DE {codigo} · {cp.nombre(codigo)}")
         for titulo, sentido in (("Cita a (hacia delante)", "sale"), ("Citado por (hacia atrás)", "entra")):
             v = vecinos(enlaces, codigo, sentido, profundidad)
-            s.linea()
-            s.linea(f"## {titulo}: {len(v)} documentos")
+            s.seccion(f"{titulo}: {len(v)} documentos")
             if v:
                 s.tabla(["Código", "Documento", "Saltos"], [[c, cp.nombre(c), d] for c, d in sorted(v.items(), key=lambda kv: (kv[1], kv[0]))])
         propios = [e for e in enlaces if e.origen == codigo and not e.resuelto]
         if propios:
-            s.linea()
-            s.linea(f"## Citados que no están en el corpus ({len(propios)})")
+            s.seccion(f"Citados que no están en el corpus ({len(propios)})")
             s.tabla(["Código citado", "Tipo"], [[e.citado, tipo_de_codigo_cliente(e.citado)] for e in propios])

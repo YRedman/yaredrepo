@@ -70,25 +70,30 @@ class Ficha(Comando):
         s.linea(f"FICHA · {len(cods)} documentos · campos clave en texto literal (lo largo se recorta con '…'; "
                 "el texto completo se lee con: doc <CÓDIGO>)")
         for c in cods:
-            f = cp.meta.get(c, {})
-            s.linea()
-            s.linea(f"## {c} · {cp.nombre(c)}")
-            if f.get("campos_no_especificados"):
-                s.linea(f"No especificado en el original: {f['campos_no_especificados']}")
-            claves = SECCIONES_FICHA.get(familia(c.split("-")[0]), [])
-            otras = []
-            for titulo, lineas in cp.secciones(c):
-                if es_seccion_encabezado_pie(titulo):
-                    continue
-                t = norm(RE_NUMERACION.sub("", titulo))
-                contenido = [l for l in lineas if l.strip() and not l.startswith("|---")]
-                if any(empieza_palabra(k, t) for k in claves):
-                    s.linea(f"### {titulo}")
-                    if any(empieza_palabra(k, t) for k in SECCIONES_DESARROLLO):
-                        s.linea(resumen_desarrollo(contenido))
-                    else:
-                        s.linea(limitar_lineas("\n".join(contenido), PALABRAS_FICHA))
-                else:
-                    otras.append(f"{titulo} ({len(' '.join(contenido).split())} palabras)")
+            s.seccion(f"{c} · {cp.nombre(c)}")
+            no_especificado = cp.meta.get(c, {}).get("campos_no_especificados")
+            if no_especificado:
+                s.linea(f"No especificado en el original: {no_especificado}")
+            otras = self._secciones(s, cp, c)
             if otras:
                 s.linea("Otras secciones (leer con doc si hacen falta): " + "; ".join(otras))
+
+    @staticmethod
+    def _secciones(s, cp, c):
+        """Escribe las secciones clave del documento y devuelve las demas (con su numero de palabras)."""
+        claves = SECCIONES_FICHA.get(familia(c.split("-")[0]), [])
+        otras = []
+        for titulo, lineas in cp.secciones(c):
+            if es_seccion_encabezado_pie(titulo):
+                continue
+            t = norm(RE_NUMERACION.sub("", titulo))
+            contenido = [l for l in lineas if l.strip() and not l.startswith("|---")]
+            if not any(empieza_palabra(k, t) for k in claves):
+                otras.append(f"{titulo} ({len(' '.join(contenido).split())} palabras)")
+                continue
+            s.linea(f"### {titulo}")
+            if any(empieza_palabra(k, t) for k in SECCIONES_DESARROLLO):
+                s.linea(resumen_desarrollo(contenido))
+            else:
+                s.linea(limitar_lineas("\n".join(contenido), PALABRAS_FICHA))
+        return otras

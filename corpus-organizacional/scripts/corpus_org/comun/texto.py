@@ -25,6 +25,11 @@ def tokens(s):
     return re.findall(r"\w+", s)
 
 
+def porcentaje(texto):
+    """Numero de un texto de CSV ('99,5 %', '100', '87.3%'). Lanza ValueError si no es un numero."""
+    return float(str(texto if texto is not None else "").replace("%", "").replace(",", ".").strip())
+
+
 RE_NUMERO = re.compile(r"(?<![\w.,])\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?(?!\w)|(?<![\w.,])\d+[.,]\d+(?!\w)")
 
 

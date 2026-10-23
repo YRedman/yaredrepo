@@ -53,7 +53,6 @@ class Normativa(Comando):
             s.linea("Sin citas de normativa en los documentos revisados.")
             return
         for tipo, lista in grupos.items():
-            s.linea()
-            s.linea(f"## {tipo} ({len(lista)} citas en {len({c[0] for c in lista})} documentos)")
+            s.seccion(f"{tipo} ({len(lista)} citas en {len({c[0] for c in lista})} documentos)")
             s.tabla(["Código", "Documento", "Tipo de referencia", "Cita literal", "Sección"],
                     [[c, d, t, recortar_palabras(m, PALABRAS_CITA), sec] for c, d, t, m, sec in lista])
