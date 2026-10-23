@@ -87,6 +87,24 @@ class IntegracionTest(unittest.TestCase):
         self.assertEqual((self.publicado / "fuente-corpus" / "SKILL.md").read_text(encoding="utf-8"),
                          con_nota.read_text(encoding="utf-8"))
 
+    def test_el_informe_html_y_el_log_se_guardan_y_se_regeneran(self):
+        salida = self.base / "entrada" / "salida_corpus"
+        informe = salida / "INFORME_CONSTRUCCION.html"
+        log = salida / "control" / "log_construccion.txt"
+        self.assertTrue(informe.is_file() and log.is_file())
+        self.assertIn("CONSTRUIR CORPUS", log.read_text(encoding="utf-8"))
+        texto = informe.read_text(encoding="utf-8")
+        for esperado in ("<!doctype html>", "Informe de construcción del corpus", "Cobertura por área",
+                         "Revisión visual", "Documentos (", "DES-ALM-01", "function filtra"):
+            self.assertIn(esperado, texto)
+        self.assertNotIn("http://", texto.replace("http://www.w3.org", ""))          # autocontenido: sin recursos externos
+        self.assertIn("Informe HTML", self.salida)
+        # regenerar desde los archivos (modo informe) da el mismo documento
+        informe.unlink()
+        with redirect_stdout(io.StringIO()):
+            conversion_cli.main(["informe", "--salida", str(salida)])
+        self.assertIn("DES-ALM-01", informe.read_text(encoding="utf-8"))
+
     def test_metadatos_sin_falsos_positivos(self):
         self.assertEqual(self.indice["DES-ALM-01"]["estado_documental"], "")
         self.assertEqual(self.indice["PRD-COM-01"]["estado_documental"], "Vigente")

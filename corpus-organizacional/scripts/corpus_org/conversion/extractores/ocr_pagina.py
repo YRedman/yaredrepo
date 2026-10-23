@@ -530,6 +530,7 @@ ORIENTACIONES = ((0, False), (0, True), (180, False), (180, True), (90, False), 
 DPI_PRUEBA = 150               # resolucion de las lecturas de prueba de orientacion
 LADO_PRUEBA = 1200             # px: la imagen de prueba se reduce a este lado mayor
 PROPORCION_RUIDO = 0.8         # en una imagen, descartar tantas palabras como se conservan hace sospechar de la orientacion
+CONFIANZA_SOSPECHA = 70        # una pagina mal orientada se lee con basura (alrededor de 55 %); entre 70 y 80 es una mala copia, no una orientacion
 MIN_PALABRAS_SOSPECHA = 20     # con menos palabras leidas (una foto, una hoja casi vacia) no se prueban las orientaciones
 MIN_PALABRAS_PRUEBA = 8        # palabras fiables que debe leer una orientacion para preferirla
 PALABRAS_PRUEBA_SEGURA = 30    # con tantas palabras fiables y el factor de abajo no se siguen probando orientaciones
@@ -610,7 +611,8 @@ def leer_pagina(page, idioma, pytesseract):
                     return girada
                 if _mejor_lectura(girada, res):
                     giro, espejo = g, e
-            if len(max((x[0] for x in lecturas), key=lambda r: r.confianza).confianzas) >= MIN_PALABRAS_SOSPECHA:
+            mejor_hasta_ahora = max((x[0] for x in lecturas), key=lambda r: r.confianza)
+            if len(mejor_hasta_ahora.confianzas) >= MIN_PALABRAS_SOSPECHA and mejor_hasta_ahora.confianza < CONFIANZA_SOSPECHA:
                 g, e = orientacion_por_prueba(_imagen_pagina(page, DPI_PRUEBA), idioma, pytesseract)
                 if (g, e) != (0, False) and (g, e) not in candidatas:
                     probada = leer(dpi, nombre, None, g, e)

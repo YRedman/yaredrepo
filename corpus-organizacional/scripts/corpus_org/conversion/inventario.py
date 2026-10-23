@@ -507,18 +507,24 @@ def inventario_contexto(archivos, carpeta_contexto=None, base=(), anteriores=Non
     esos materiales se numeran primero, en su orden anterior. Devuelve (filas, [(anterior, nuevo)]).
     """
     anteriores = anteriores or {}
-    previos, maximos = {}, collections.Counter()
+    maximos = collections.Counter()
+    por_clave, por_nombre, por_codigo, vistos_en_base = collections.defaultdict(list), {}, {}, set()
     for f in base:
         t = tipo_de_fila(f)
         try:
             maximos[t] = max(maximos[t], int(f["codigo"].rsplit("-", 1)[1]))
         except (KeyError, ValueError, IndexError):
             continue
-        previos[(t, clave_documento(f.get("archivo", "")))] = f
+        if f["codigo"] in vistos_en_base:
+            continue                    # un codigo repetido en el inventario anterior (error de una corrida): solo cuenta el primero
+        vistos_en_base.add(f["codigo"])
+        por_codigo[f["codigo"]] = f
+        por_clave[(t, clave_documento(f.get("archivo", "")))].append(f)
+        por_nombre.setdefault((t, norm(f.get("archivo", ""))), f)
     por_tipo = collections.defaultdict(list)
     for p in archivos:
         por_tipo[tipo_de_contexto(p, carpeta_contexto)].append(p)
-    filas, equivalencias, vistos = [], [], set()
+    filas, equivalencias, asignados = [], [], set()
     for t in sorted(por_tipo, key=_orden_tipo):
         def orden(p):
             ant = anteriores.get(clave_documento(p.name), "")
@@ -526,26 +532,41 @@ def inventario_contexto(archivos, carpeta_contexto=None, base=(), anteriores=Non
         lista_p = sorted(por_tipo[t], key=orden)
         siguiente = maximos[t]
         ancho = ancho_numeracion(max(len(lista_p), siguiente))
+        codigos = {}                    # ruta -> codigo
+        # 1) el mismo nombre de archivo conserva su codigo; 2) el mismo documento con otro sufijo de copia («x (2).png»
+        # frente a «x (1).png»); 3) lo demas es nuevo. Dos archivos nunca comparten codigo.
         for p in lista_p:
-            clave = (t, clave_documento(p.name))
-            ruta = str(p.relative_to(carpeta_contexto)) if carpeta_contexto is not None else p.name
-            if clave in previos:
-                codigo = previos[clave]["codigo"]
-                vistos.add(clave)
-            else:
+            f = por_nombre.get((t, norm(p.name)))
+            if f is not None and f["codigo"] not in asignados:
+                codigos[p] = f["codigo"]
+                asignados.add(f["codigo"])
+        for p in lista_p:
+            if p in codigos:
+                continue
+            for f in por_clave.get((t, clave_documento(p.name)), ()):
+                if f["codigo"] not in asignados:
+                    codigos[p] = f["codigo"]
+                    asignados.add(f["codigo"])
+                    break
+        for p in lista_p:
+            if p not in codigos:
                 siguiente += 1
-                codigo = f"{t}-{AREA_GENERAL}-{siguiente:0{ancho}d}"
+                codigos[p] = f"{t}-{AREA_GENERAL}-{siguiente:0{ancho}d}"
+                asignados.add(codigos[p])
+            ruta = str(p.relative_to(carpeta_contexto)) if carpeta_contexto is not None else p.name
             ant = anteriores.get(clave_documento(p.name))
             if ant:
-                equivalencias.append((ant, codigo))
-            filas.append({"codigo": codigo, "tipo": _nombre(t), "codigo_departamento": AREA_GENERAL,
+                equivalencias.append((ant, codigos[p]))
+            filas.append({"codigo": codigos[p], "tipo": _nombre(t), "codigo_departamento": AREA_GENERAL,
                           "departamento": NOMBRE_AREA_GENERAL, "archivo": p.name, "ruta_original": ruta,
                           "observaciones": "", "estado_inventario": INVENTARIO_ACTIVO, "path": p})
-    for clave, f in previos.items():
-        if clave not in vistos and (f.get("estado_inventario") or INVENTARIO_ACTIVO) != INVENTARIO_RETIRADO:
+    for codigo, f in por_codigo.items():
+        if codigo in asignados:
+            continue
+        if (f.get("estado_inventario") or INVENTARIO_ACTIVO) != INVENTARIO_RETIRADO:
             filas.append(dict(f, estado_inventario=INVENTARIO_RETIRADO,
                               observaciones="RETIRADO: ya no es un documento general del contexto; el código queda reservado"))
-        elif clave not in vistos:
+        else:
             filas.append(f)
     filas.sort(key=lambda f: (_orden_tipo(f["codigo"].split("-")[0]), f["codigo"]))
     return filas, equivalencias

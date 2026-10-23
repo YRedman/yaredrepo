@@ -223,3 +223,47 @@ class EncabezadoPorVotoTest(unittest.TestCase):
         self.assertEqual(consenso_de_encabezados(malas, [malas, pagina]), malas)
         distintas = [["Código: AAA-BBB-001"], ["Código: CCC-DDD-002"], ["Código: EEE-FFF-003"]]
         self.assertEqual(consenso_de_encabezados(distintas[0], distintas), distintas[0])
+
+
+class CodigosDeContextoUnicosTest(unittest.TestCase):
+    def test_archivos_con_el_mismo_nombre_base_nunca_comparten_codigo(self):
+        from corpus_org.conversion.inventario import inventario_contexto
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp)
+            (raiz / "a").mkdir()
+            (raiz / "b").mkdir()
+            archivos = [raiz / "a" / "captura (1).png", raiz / "a" / "captura (2).png", raiz / "b" / "captura (3).png",
+                        raiz / "Plan.xlsx"]
+            # inventario anterior con un codigo repetido (el error de una corrida previa) y otro material
+            base = [{"codigo": "CTX-GEN-01", "tipo": "Contexto general", "archivo": "captura (1).png", "estado_inventario": "ACTIVO"},
+                    {"codigo": "CTX-GEN-01", "tipo": "Contexto general", "archivo": "captura (3).png", "estado_inventario": "ACTIVO"},
+                    {"codigo": "CTX-GEN-02", "tipo": "Contexto general", "archivo": "Plan.csv", "estado_inventario": "ACTIVO"},
+                    {"codigo": "CTX-GEN-03", "tipo": "Contexto general", "archivo": "Viejo.csv", "estado_inventario": "ACTIVO"}]
+            filas, _ = inventario_contexto(archivos, raiz, base)
+        activos = {f["archivo"]: f["codigo"] for f in filas if f["estado_inventario"] == "ACTIVO"}
+        self.assertEqual(len(set(activos.values())), len(activos), activos)
+        self.assertEqual(activos["captura (1).png"], "CTX-GEN-01")          # el mismo nombre conserva su codigo
+        self.assertEqual(activos["Plan.xlsx"], "CTX-GEN-02")                # el mismo documento con otra extension
+        codigos = [f["codigo"] for f in filas]
+        self.assertEqual(len(codigos), len(set(codigos)), codigos)           # ni siquiera entre activos y retirados
+        retirados = {f["codigo"] for f in filas if f["estado_inventario"] == "RETIRADO"}
+        self.assertIn("CTX-GEN-03", retirados)
+
+
+class RutaOriginalDeContextoTest(unittest.TestCase):
+    def test_un_documento_de_area_que_vino_del_contexto_se_muestra_como_contexto(self):
+        from corpus_org.conversion.lote import Grupo, OpcionesConversion, ruta_original
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp)
+            (raiz / "contexto" / "Plan").mkdir(parents=True)
+            (raiz / "entrada").mkdir()
+            archivo = raiz / "contexto" / "Plan" / "Proc.pdf"
+            archivo.write_bytes(b"x")
+            grupo = Grupo("PRD", "PES", "Planificación", [], {}, "PRD_PES")
+            opciones = OpcionesConversion(raiz_entrada=raiz / "entrada", raiz_contexto=raiz / "contexto")
+            self.assertEqual(ruta_original({"archivo": "Proc.pdf", "desde_contexto": True}, grupo, opciones, archivo),
+                             "contexto/Plan/Proc.pdf")
+            otro = raiz / "entrada" / "Descriptivos" / "A.pdf"
+            otro.parent.mkdir()
+            otro.write_bytes(b"x")
+            self.assertEqual(ruta_original({"archivo": "A.pdf"}, grupo, opciones, otro), "entrada/Descriptivos/A.pdf")

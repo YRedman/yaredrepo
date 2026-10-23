@@ -2,6 +2,9 @@
 
 import argparse
 import collections
+import contextlib
+import io
+import json
 import os
 import re
 import shutil
@@ -29,6 +32,7 @@ from .extractores.ocr import diagnostico
 from ..consulta.matriz import ARCHIVO_MATRIZ, escribir_matriz
 from .entradas import buscar_entradas, entrada_por_defecto, es_archivo_ignorado, localizar, partes_ruta
 from .huella import huella
+from .informe_html import ARCHIVO_DATOS, ARCHIVO_LOG, ARCHIVO_TIEMPOS, generar_informe
 from .inventario import (RE_CODIGO_DEP, actualizar_plantilla_areas, candidatos_codigo, clave_documento,
                          construir_inventario, documentos_de_area_en_contexto, escribir_equivalencias,
                          inventario_contexto, inventario_provisional, quitar_copias_contexto,
@@ -175,6 +179,30 @@ def _inventario_para_convertir(args, entradas):
     return inventario, tipo_filtro, dep_filtro
 
 
+COLUMNAS_TIEMPOS = ["codigo", "archivo", "ruta_original", "segundos", "paginas", "paginas_ocr", "confianza_ocr", "estado"]
+
+
+def registrar_tiempos(salida, documentos, anexar=False):
+    """Escribe control/tiempos_conversion.csv (lo que tardo cada documento) y muestra los 5 mas lentos."""
+    filas = []
+    for r in documentos:
+        d = r.doc
+        filas.append({"codigo": r.codigo, "archivo": r.archivo, "ruta_original": r.ruta, "segundos": f"{r.segundos:.1f}",
+                      "paginas": (d.paginas if d else "") or "", "paginas_ocr": len(d.paginas_ocr) if d else "",
+                      "confianza_ocr": f"{d.confianza_ocr:.1f}" if d and d.confianza_ocr is not None else "",
+                      "estado": r.estado})
+    ruta = Path(salida) / ARCHIVO_TIEMPOS
+    previas = leer_csv(ruta) if anexar and ruta.is_file() else []
+    escribir_csv(ruta, COLUMNAS_TIEMPOS, previas + filas)
+    lentos = sorted((r for r in documentos if r.segundos), key=lambda r: -r.segundos)[:5]
+    if lentos:
+        print()
+        print("Documentos más lentos (segundos): " + " · ".join(f"{r.codigo} {r.segundos:.0f} s" for r in lentos))
+        total = sum(r.segundos for r in documentos)
+        print(f"Tiempo de conversión sumado de los documentos: {total:.0f} s en {len(documentos)} documentos "
+              f"({total / max(len(documentos), 1):.1f} s en promedio).")
+
+
 def _imprimir_resumen_conversion(resultados, asignacion):
     print()
     print("| Grupo | Departamento | En inventario | Convertidos | Texto presente (mín.) | No adjuntos | Errores |")
@@ -230,6 +258,7 @@ def ejecutar_conversion(args):
     finally:
         opciones.cerrar()
     _imprimir_resumen_conversion(resultados, asignacion)
+    registrar_tiempos(salida, [r for res in resultados for r in res.documentos])
     usados = asignacion.usados
     sobrantes = [p for p in entradas if str(p) not in usados]
     if sobrantes:
@@ -314,6 +343,7 @@ def ejecutar_contexto(args):
     finally:
         opciones.cerrar()
     res = ResultadoContexto(grupos, equivalencias)
+    registrar_tiempos(salida, res.documentos, anexar=True)
     print(f"Materiales: {sum(len(v) for v in por_tipo.values())} · convertidos: {len(res.convertidos)} · "
           f"errores: {sum(1 for r in res.documentos if r.estado == 'ERROR')}")
     for r in res.documentos:
@@ -533,7 +563,7 @@ def _skill_md_de_origen(args):
     return None
 
 
-def modo_construir(args):
+def _construir(args):
     """Inventario, conversion, contexto opcional, publicacion, validacion y huellas en una sola orden.
 
     Publica en salida_corpus/copilot/fuente-corpus (un solo skill listo para comprimir).
@@ -567,7 +597,7 @@ def modo_construir(args):
     comunes = dict(salida=str(control), sin_verificacion_cruzada=args.sin_verificacion_cruzada,
                    tiempo_max=args.tiempo_max, trabajadores=getattr(args, "trabajadores", 0))
     ejecutar_conversion(argparse.Namespace(entrada=str(entrada), inventario=str(control / ARCHIVO_INVENTARIO),
-                                           tipo=None, dep=None, departamento=None,
+                                           tipo=None, dep=None, departamento=None, contexto=str(contexto) if contexto else None,
                                            extra_entradas=[Path(f["ruta"]) for f in de_area], **comunes))
 
     # 3) Contexto opcional (documentos generales ORG-GEN, GLO-GEN...), en carpeta separada para no
@@ -655,6 +685,59 @@ def modo_construir(args):
         sys.exit(validacion.codigo_salida)
 
 
+class _Tee:
+    """Escribe en la consola y guarda una copia del texto (el log que luego se publica como informe HTML)."""
+
+    def __init__(self, flujo):
+        self.flujo, self.copia = flujo, io.StringIO()
+
+    def write(self, texto):
+        self.copia.write(texto)
+        return self.flujo.write(texto)
+
+    def flush(self):
+        self.flujo.flush()
+
+    def __getattr__(self, nombre):
+        return getattr(self.flujo, nombre)
+
+
+def modo_construir(args):
+    """``_construir`` mas el log guardado (control/log_construccion.txt) y el informe HTML (INFORME_CONSTRUCCION.html)."""
+    inicio = time.time()
+    tee, codigo = _Tee(sys.stdout), 0
+    try:
+        with contextlib.redirect_stdout(tee):
+            _construir(args)
+    except SystemExit as e:                 # 2 = REQUIERE REVISION, 3 = PENDIENTE DE REVISION VISUAL
+        codigo = e.code or 0
+    entrada = Path(args.entrada).resolve()
+    raiz_salida = Path(args.salida).resolve() if args.salida else entrada / "salida_corpus"
+    control = raiz_salida / "control"
+    try:
+        contexto = Path(args.contexto).resolve() if args.contexto else None
+        control.mkdir(parents=True, exist_ok=True)
+        (control / ARCHIVO_LOG).write_text(tee.copia.getvalue(), encoding="utf-8")
+        (control / ARCHIVO_DATOS).write_text(json.dumps({
+            "version": VERSION, "fecha": time.strftime("%Y-%m-%d %H:%M"), "entrada": str(entrada),
+            "contexto": str(contexto) if contexto else "", "segundos_total": round(time.time() - inicio, 1)},
+            ensure_ascii=False, indent=1), encoding="utf-8")
+        informe = generar_informe(raiz_salida, tee.copia.getvalue())
+        print(f"Informe HTML (ábralo con doble clic): {informe}")
+    except OSError as e:                    # un informe que no se puede escribir no debe tumbar la construccion
+        print(f"AVISO: no se pudo escribir el informe HTML: {e}")
+    if codigo:
+        sys.exit(codigo)
+
+
+def modo_informe(args):
+    """Regenera INFORME_CONSTRUCCION.html de la ultima construccion (sin volver a convertir)."""
+    raiz = Path(args.salida) if args.salida else Path(args.entrada) / "salida_corpus"
+    if not (raiz / "control").is_dir():
+        raise CorpusError(f"No hay una construcción en {raiz}: ejecute antes «construir».")
+    print(f"Informe HTML: {generar_informe(raiz)}")
+
+
 def modo_matriz(args):
     """Regenera la matriz Excel y sus CSV desde una construccion existente."""
     raiz = Path(args.salida or "salida_corpus").resolve()
@@ -684,7 +767,7 @@ def modo_diagnostico(args):
 # ---------------------------------------------------------------------------
 
 MODOS = {"inventario": modo_inventario, "convertir": modo_convertir, "contexto": modo_contexto,
-         "construir": modo_construir,
+         "construir": modo_construir, "informe": modo_informe,
          "diagnostico": modo_diagnostico, "matriz": modo_matriz}
 
 
