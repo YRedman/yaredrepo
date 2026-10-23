@@ -87,7 +87,7 @@ def texto_de_imagen(d, bloques, donde, n_unidad, datos, referencia=()):
     try:
         from PIL import Image
         from .ocr_pagina import leer_imagen
-        from .pdf import palabras_ocr
+        from .pdf.lineas import palabras_ocr
         res = leer_imagen(Image.open(io.BytesIO(datos)), idioma, configurar_pytesseract())
     except Exception as e:
         d.notas.append(f"OCR de una imagen falló en {donde}: {e}")

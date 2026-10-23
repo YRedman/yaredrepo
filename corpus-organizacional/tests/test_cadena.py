@@ -212,7 +212,7 @@ class NombresYDuplicadosTest(unittest.TestCase):
 
 class EncabezadoPorVotoTest(unittest.TestCase):
     def test_el_valor_mal_leido_en_una_pagina_se_corrige_con_el_de_las_demas(self):
-        from corpus_org.conversion.extractores.pdf import consenso_de_encabezados
+        from corpus_org.conversion.extractores.pdf.encabezados import consenso_de_encabezados
         pagina = ["Descripción de Puesto", "Código: GECA-ATTA-FOR-034", "Versión: 05", "Vigente a partir de: 10/09/2025"]
         malas = ["Descripción de Puesto", "Código: SECA-ATTA-FOR-034", "Versión: p.", "Vigente a partir de: 10J09/2025"]
         notas = []
