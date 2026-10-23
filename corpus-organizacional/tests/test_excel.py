@@ -210,7 +210,7 @@ class FormatoRealTest(unittest.TestCase):
 @unittest.skipUnless(DEPENDENCIAS, "faltan openpyxl o Pillow")
 class AvisosDeHojaTest(unittest.TestCase):
     def test_celda_inicial_vacia_es_un_dato_en_una_hoja_y_una_fila_partida_en_un_pdf(self):
-        from corpus_org.conversion.analisis import avisos_de_estructura
+        from corpus_org.conversion.analisis.estructura import avisos_de_estructura
         filas = [["Área", "Meta"]] + [[f"Área {k}", str(k)] for k in range(1, 8)] + [["", "20"]]
         tabla = {"k": "tabla", "filas": filas}
         self.assertTrue(any("sin primera celda" in a for a in avisos_de_estructura([tabla], 0)))
@@ -218,7 +218,7 @@ class AvisosDeHojaTest(unittest.TestCase):
 
     def test_ruta_original_sale_del_archivo_realmente_leido(self):
         from types import SimpleNamespace
-        from corpus_org.conversion.lote import ruta_original
+        from corpus_org.conversion.ruta_original import ruta_original
         with tempfile.TemporaryDirectory() as tmp:
             t = Path(tmp)
             (t / "contexto" / "Plan").mkdir(parents=True)

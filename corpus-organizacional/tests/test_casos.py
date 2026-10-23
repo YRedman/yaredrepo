@@ -18,7 +18,7 @@ from corpus_org.conversion import cli as conversion_cli
 from corpus_org.conversion.analisis import analizar
 from corpus_org.conversion.asignacion import asignar_archivos
 from corpus_org.conversion.entradas import es_archivo_ignorado
-from corpus_org.conversion.extractores.pdf import _repetidas
+from corpus_org.conversion.extractores.pdf.encabezados import _repetidas
 from corpus_org.conversion.extractores.texto import ExtractorTexto
 from corpus_org.conversion.inventario import parsear_lista, quitar_duplicados
 from corpus_org.conversion.modelo import DocumentoExtraido, bloque_h

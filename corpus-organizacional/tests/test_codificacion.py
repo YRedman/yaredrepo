@@ -471,8 +471,8 @@ class UnSoloSkillIntegracionTest(unittest.TestCase):
         self.assertNotIn("no explica dónde queda cargado", salida)
         # sin SKILL.md de origen ni en el skill: se avisa
         destino.unlink()
-        from corpus_org.conversion import cli as conversion_cli
-        with mock.patch.object(conversion_cli, "_skill_md_de_origen", return_value=None):
+        from corpus_org.conversion.modos import construir as modo_construir
+        with mock.patch.object(modo_construir, "_skill_md_de_origen", return_value=None):
             _, salida = _construir(self.base)
         self.assertIn("Falta fuente-corpus/SKILL.md", salida)
         _construir(self.base)                       # deja el estado normal (con el SKILL.md del repositorio) a las demas pruebas

@@ -12,6 +12,11 @@ class Salida:
     def linea(self, texto=""):
         self.flujo.write(f"{texto}\n")
 
+    def seccion(self, titulo):
+        """Linea en blanco y titulo de seccion markdown (## ...)."""
+        self.linea()
+        self.linea(f"## {titulo}")
+
     def tabla(self, cabecera, filas):
         self.linea(tabla(cabecera, filas))
 

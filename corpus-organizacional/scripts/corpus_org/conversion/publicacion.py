@@ -1,28 +1,20 @@
-"""Publicacion del corpus: indice consolidado, copia limpia a publicado/ y validacion."""
+"""Publicacion del corpus: indice consolidado, copia limpia al skill y huellas."""
 
 import collections
 import datetime
 import hashlib
-import math
 import re
 import shutil
-from dataclasses import dataclass, field
-from typing import Dict, List
 
 from .. import VERSION
-from ..comun.archivos import escribir_csv, leer_csv, leer_texto
-from ..comun.esquema import (AREA_SIN_ASIGNAR, AVISO_ESCANEADO, ARCHIVO_AREAS_DOCUMENTOS, ARCHIVO_AREAS_EXTRA,
-                             ARCHIVO_EQUIVALENCIAS, ARCHIVO_HUELLAS, ARCHIVO_INDICE, ARCHIVO_INVENTARIO,
-                             ARCHIVO_KPIS, ARCHIVO_REVISADOS, ARCHIVO_REVISION, COLUMNAS_INDICE, PATRON_CODIGO,
-                             PREFIJO_DIC, PREFIJO_REPORTE, estado_no_publicable, inventario_activo)
-from ..comun.estructura import (BYTES_DIVIDIR_MD, CARPETA_DOCUMENTOS, NOMBRE_SKILL_MD, SKILL_CORPUS,
-                                archivos_de_huellas, markdown_de_documentos, rutas_publicadas)
-from ..comun.markdown import esc_celda
-from ..comun.tipos import POR_CODIGO, TIPOS_DOCUMENTO, es_general
+from ..comun.archivos import escribir_csv, leer_csv
+from ..comun.esquema import (ARCHIVO_AREAS_EXTRA, ARCHIVO_EQUIVALENCIAS, ARCHIVO_HUELLAS, ARCHIVO_INDICE, ARCHIVO_INVENTARIO,
+                             ARCHIVO_KPIS, COLUMNAS_INDICE, PREFIJO_DIC, PREFIJO_REPORTE, RE_DOC_MD)
+from ..comun.estructura import BYTES_DIVIDIR_MD, NOMBRE_SKILL_MD, archivos_de_huellas, rutas_publicadas
+from ..comun.tipos import POR_CODIGO, TIPOS_DOCUMENTO
 from .huella import huella
 from .skills import copiar_scripts
 
-RE_DOC_MD = re.compile(rf"^## \[({PATRON_CODIGO})\]", re.M)
 # Archivos que genera la conversion en control/ y que se regeneran en cada construccion
 # (incluye los nombres de la codificacion anterior: P_*.md, D_*.md, contexto.md).
 PATRONES_GENERADOS = tuple(f"{t.codigo}_*.md" for t in TIPOS_DOCUMENTO) + (
@@ -31,38 +23,6 @@ PATRONES_GENERADOS = tuple(f"{t.codigo}_*.md" for t in TIPOS_DOCUMENTO) + (
 # Archivos de control/ que se publican tal cual (si existen) en fuente-corpus/indice/. El catalogo y el
 # inventario del contexto son de la construccion: se quedan en control/.
 PUBLICADOS_EN_INDICE = (ARCHIVO_INVENTARIO, ARCHIVO_EQUIVALENCIAS, ARCHIVO_AREAS_EXTRA)
-MUESTRA_REVISION = 0.10
-
-LISTO, PENDIENTE, REQUIERE = "LISTO PARA PUBLICAR", "PENDIENTE DE REVISIÓN VISUAL", "REQUIERE REVISIÓN"
-CODIGO_SALIDA = {LISTO: 0, REQUIERE: 2, PENDIENTE: 3}
-
-
-@dataclass
-class Validacion:
-    documentos_inventariados: int = 0
-    documentos_indexados: int = 0
-    documentos_con_texto: int = 0
-    duplicados: List[str] = field(default_factory=list)
-    problemas: List[str] = field(default_factory=list)
-    avisos: List[str] = field(default_factory=list)
-    revision_visual: Dict[str, str] = field(default_factory=dict)   # codigo -> motivo (pendientes)
-    ubicacion: Dict[str, tuple] = field(default_factory=dict)       # codigo -> (archivo, ruta del original)
-    con_problemas: Dict[str, List[str]] = field(default_factory=dict)  # codigo -> problemas de su texto
-
-    @property
-    def listo(self):
-        return not self.problemas and not self.duplicados and not self.revision_visual
-
-    @property
-    def estado(self):
-        """REQUIERE REVISIÓN (hay errores) > PENDIENTE DE REVISIÓN VISUAL > LISTO PARA PUBLICAR."""
-        if self.problemas or self.duplicados:
-            return REQUIERE
-        return PENDIENTE if self.revision_visual else LISTO
-
-    @property
-    def codigo_salida(self):
-        return CODIGO_SALIDA[self.estado]
 
 
 def limpiar_generados(control):
@@ -229,152 +189,3 @@ def escribir_huellas(publicado):
             print(f"AVISO: no pude leer {p.name} para la huella; cierra el programa que lo usa y ejecuta "
                   f"'convertir.py matriz'.")
     (rutas.indice / ARCHIVO_HUELLAS).write_text("\n".join(lineas) + "\n", encoding="utf-8")
-
-
-def leer_revisados(*carpetas):
-    """Codigos ya revisados visualmente: uno por linea en revision_visual_ok.txt ('#' inicia un comentario)."""
-    codigos = set()
-    for carpeta in carpetas:
-        p = carpeta / ARCHIVO_REVISADOS
-        if p.is_file():
-            for linea in leer_texto(p).splitlines():
-                c = linea.split("#", 1)[0].strip().upper()
-                if c:
-                    codigos.add(c)
-    return codigos
-
-
-def _cobertura(valor):
-    return float((valor or "").replace("%", "").strip().replace(",", "."))
-
-
-def _muestra(codigos, fraccion):
-    """Muestra reproducible (siempre la misma para los mismos codigos) de una fraccion de los documentos."""
-    n = math.ceil(fraccion * len(codigos)) if codigos and fraccion else 0
-    return sorted(codigos, key=lambda c: hashlib.sha256(c.encode()).hexdigest())[:n]
-
-
-def validar_publicacion(publicado, duplicados=(), revisados=frozenset(), muestra=MUESTRA_REVISION,
-                        errores_contexto=(), control=None):
-    """Valida inventario, indice, textos, cobertura y estructura del corpus publicado.
-
-    - Problemas (REQUIERE REVISIÓN): codigos duplicados, documentos sin convertir o sin texto, texto
-      del original que falta (cobertura < 100 %), palabras que no estan en el original y errores del contexto.
-    - Revision visual (PENDIENTE DE REVISIÓN VISUAL): documentos con avisos de estructura y una muestra
-      del ``muestra`` de los demas, hasta que su codigo este en revision_visual_ok.txt.
-    """
-    v = Validacion(duplicados=list(duplicados))
-    rutas = rutas_publicadas(publicado)
-    indice_p, inv_p = rutas.indice / ARCHIVO_INDICE, rutas.indice / ARCHIVO_INVENTARIO
-    filas = leer_csv(indice_p) if indice_p.is_file() else []
-    inventario = inventario_activo(leer_csv(inv_p)) if inv_p.is_file() else []
-    cod_indice = {(f.get("codigo") or "").upper() for f in filas if f.get("codigo")}
-    cod_inv = {(f.get("codigo") or "").upper() for f in inventario if f.get("codigo")}
-    if not filas:
-        v.problemas.append("El índice consolidado está vacío.")
-    if duplicados:
-        v.problemas.append("Códigos duplicados: " + ", ".join(duplicados))
-    if errores_contexto:
-        v.problemas.append("Materiales de contexto que no se pudieron convertir: " + "; ".join(errores_contexto))
-    faltan = sorted(cod_inv - cod_indice)
-    sobran = sorted(c for c in cod_indice - cod_inv if not es_general(c))
-    if faltan:
-        v.problemas.append("Documentos inventariados sin convertir: " + ", ".join(faltan))
-    sin_area = sorted((f.get("codigo") or "") for f in inventario if (f.get("departamento") or "") == AREA_SIN_ASIGNAR)
-    if sin_area:
-        v.problemas.append(f"Documentos sin área ({len(sin_area)}; códigos provisionales): escriba su área en "
-                           f"{ARCHIVO_AREAS_DOCUMENTOS} y vuelva a construir. " + ", ".join(sin_area[:20])
-                           + (" …" if len(sin_area) > 20 else ""))
-    if sobran:
-        v.avisos.append("Documentos fuera del inventario: " + ", ".join(sobran))
-    cod_md = set()
-    for p in markdown_de_documentos(rutas.documentos) + sorted(rutas.contexto.glob("*.md")):
-        cod_md.update(RE_DOC_MD.findall(p.read_text(encoding="utf-8", errors="replace")))
-    sin_texto = sorted(cod_indice - cod_md)
-    if sin_texto:
-        v.problemas.append("Filas del índice sin texto Markdown: " + ", ".join(sin_texto))
-    bajos, agregadas, no_publicables, escaneados = [], [], [], []
-    revision = collections.OrderedDict()
-    for f in filas:
-        c = (f.get("codigo") or "").upper()
-        v.ubicacion[c] = (f.get("archivo_origen") or "", f.get("ruta_original") or "")
-        try:
-            if f.get("cobertura") and _cobertura(f["cobertura"]) < 100.0:
-                bajos.append(f"{c} ({f['cobertura']})")
-                v.con_problemas.setdefault(c, []).append(f"texto del original ausente (cobertura {f['cobertura']})")
-        except ValueError:
-            v.problemas.append(f"Cobertura no interpretable: {c} = {f.get('cobertura')}")
-        if (f.get("palabras_agregadas") or "").strip():
-            agregadas.append(f"{c} ({f['palabras_agregadas'][:60]})")
-            v.con_problemas.setdefault(c, []).append("palabras que no están en el original: "
-                                                     + f["palabras_agregadas"][:60])
-        if AVISO_ESCANEADO in (f.get("detalle_avisos") or ""):
-            escaneados.append(c)
-            v.con_problemas.setdefault(c, []).append("páginas escaneadas sin leer")
-        if (f.get("avisos_estructura") or "0").strip() not in ("", "0"):
-            revision[c] = (f.get("detalle_avisos") or "")[:200]
-        if estado_no_publicable(f.get("estado_documental", "")):
-            no_publicables.append(f"{c} ({f.get('estado_documental')})")
-    if bajos:
-        v.problemas.append("Texto del original que no aparece en el Markdown (cobertura < 100 %): " + ", ".join(bajos))
-    if agregadas:
-        v.problemas.append("Palabras que no están en el original (posible texto corrupto): " + "; ".join(agregadas))
-    if escaneados:
-        v.problemas.append(f"Documentos con páginas escaneadas que no se pudieron leer ({len(escaneados)}; su texto no "
-                           "está en el corpus): instale Tesseract con el idioma español y pytesseract, o use la "
-                           "versión digital. " + ", ".join(escaneados))
-    if no_publicables:
-        v.avisos.append("Excluidos de las consultas por su estado documental: " + ", ".join(no_publicables))
-    resto = sorted(c for c in cod_indice if c not in revision and not es_general(c))
-    for c in _muestra(resto, muestra):
-        revision[c] = f"muestra aleatoria ({muestra:.0%})"
-    v.revision_visual = collections.OrderedDict((c, m) for c, m in revision.items() if c not in revisados)
-    if control is not None:
-        escribir_csv(control / ARCHIVO_REVISION, ["codigo", "motivo", "revisado", "archivo", "ruta_original"],
-                     [{"codigo": c, "motivo": m, "revisado": "sí" if c in revisados else "",
-                       "archivo": v.ubicacion.get(c, ("", ""))[0], "ruta_original": v.ubicacion.get(c, ("", ""))[1]}
-                      for c, m in revision.items()])
-    v.documentos_inventariados = len(cod_inv)
-    v.documentos_indexados = len(cod_indice)
-    v.documentos_con_texto = len(cod_md & cod_indice)
-    return v
-
-
-def escribir_resumen_construccion(path, v, publicados, medidas=()):
-    lineas = [
-        "# Resumen de construcción del corpus", "",
-        f"- Fecha: {datetime.datetime.now():%Y-%m-%d %H:%M}",
-        f"- convertir.py: v{VERSION} · huella {huella()}",
-        f"- Resultado: **{v.estado}**", "",
-        f"- Documentos inventariados: {v.documentos_inventariados}",
-        f"- Documentos indexados: {v.documentos_indexados}",
-        f"- Documentos con texto: {v.documentos_con_texto}",
-        f"- Archivos publicados: {len(publicados)}", "",
-    ]
-    if medidas:
-        lineas += ["## Peso y número de archivos por carpeta", ""] + ["- " + x for x in medidas] + [""]
-    if v.problemas:
-        lineas += ["## Problemas", ""] + ["- " + x for x in v.problemas] + [""]
-    if v.con_problemas:
-        lineas += ["## Documentos con problemas y dónde está su original", "",
-                   "| Código | Archivo | Ubicación del original | Problema |", "|---|---|---|---|"]
-        lineas += [f"| {c} | {esc_celda(v.ubicacion.get(c, ('', ''))[0])} | "
-                   f"`{esc_celda(v.ubicacion.get(c, ('', ''))[1])}` | {esc_celda('; '.join(m))} |"
-                   for c, m in v.con_problemas.items()] + [""]
-    if v.revision_visual:
-        lineas += ["## Revisión visual pendiente", "",
-                   "Abra cada documento original junto a su Markdown. Cuando esté correcto, agregue su código a "
-                   f"`{ARCHIVO_REVISADOS}` (uno por línea) y vuelva a ejecutar `construir`.", "",
-                   "| Código | Archivo | Ubicación del original | Motivo |", "|---|---|---|---|"]
-        lineas += [f"| {c} | {esc_celda(v.ubicacion.get(c, ('', ''))[0])} | "
-                   f"`{esc_celda(v.ubicacion.get(c, ('', ''))[1])}` | {esc_celda(m)} |"
-                   for c, m in v.revision_visual.items()] + [""]
-    if v.avisos:
-        lineas += ["## Avisos", ""] + ["- " + x for x in v.avisos] + [""]
-    lineas += ["## Carpetas", "",
-               f"- `copilot/{SKILL_CORPUS}/`: el único skill. `{CARPETA_DOCUMENTOS}/` (documentos de área, una carpeta por "
-               "tipo: DES, PRD, PRO, POL), `contexto/` (documentos generales y kpis.csv), `indice/` (índice, "
-               f"inventario, equivalencias, `{ARCHIVO_HUELLAS}` y este resumen), `matriz/` y `scripts/`.",
-               f"- `control/`: reportes, diccionarios parciales, `{ARCHIVO_REVISION}` y evidencia de QA "
-               "(no se publica).", ""]
-    path.write_text("\n".join(lineas), encoding="utf-8")

@@ -60,18 +60,9 @@ def _construccion(r):
     return "- Construcción frente al original: " + " · ".join(partes)
 
 
-def _detalle(r):
-    l = ["", f"### {r.codigo} · {r.archivo}"]
-    if r.ruta:
-        l.append(f"- Ubicación del original: `{r.ruta}`")
-    if not r.ok:
-        l.append(f"- Estado: {r.estado}")
-        if r.error:
-            l += [f"- Error: {r.error}", "```", r.traza.strip(), "```"]
-        return l
-    d, v, a = r.doc, r.verificacion, r.analisis
-    l.append(f"- Texto del original presente en el Markdown: {v.cobertura:.2f} % "
-             f"({v.total - v.palabras_faltantes} de {v.total} palabras)")
+def _lineas_de_texto_faltante(v):
+    """Lo que el segundo vistazo (verificacion) encontro distinto entre el original y el Markdown."""
+    l = []
     if v.faltan:
         muestra = ", ".join(f"{t} (×{n})" if n > 1 else t for t, n in v.faltan.most_common(25))
         l.append(f"- Palabras del original que no aparecen: {muestra}")
@@ -84,11 +75,16 @@ def _detalle(r):
         l.append(f"- Palabras que no están en el original: {', '.join(v.agregadas[:25])}")
     if v.numeros_faltan:
         l.append(f"- Números del original que no aparecen completos: {', '.join(list(v.numeros_faltan)[:15])}")
+    return l
+
+
+def _lineas_de_estructura(r, a):
+    l = []
     if r.avisos:
         l.append(f"- AVISOS DE ESTRUCTURA (revisar visualmente): {len(r.avisos)}")
         l += [f"  - {x}" for x in r.avisos]
-    if v.cruz:
-        l.append(f"- Palabras que solo detectó el segundo motor (pdfplumber): {', '.join(v.cruz[:25])}")
+    if r.verificacion.cruz:
+        l.append(f"- Palabras que solo detectó el segundo motor (pdfplumber): {', '.join(r.verificacion.cruz[:25])}")
     l.append(f"- Títulos de sección detectados: {' | '.join(a.titulos) or '(ninguno)'}")
     if a.subprocedimientos:
         l.append(f"- Subsecciones del desarrollo: {' | '.join(a.subprocedimientos)}")
@@ -97,10 +93,14 @@ def _detalle(r):
                  f"({sum(a.excluidos.values())} palabras)")
     if a.secciones_diagrama:
         l.append(f"- Secciones de diagrama no transcritas: {', '.join(a.secciones_diagrama)}")
-    l.append(f"- Tablas: {d.tablas} · diagramas o imágenes grandes: {len(d.diagramas)} · "
-             f"imágenes pequeñas omitidas: {d.imagenes_omitidas}")
-    l.append(_construccion(r))
-    l.append(f"- Legibilidad: {_legibilidad(d)}")
+    return l
+
+
+def _lineas_de_lectura(r, d):
+    l = [f"- Tablas: {d.tablas} · diagramas o imágenes grandes: {len(d.diagramas)} · "
+         f"imágenes pequeñas omitidas: {d.imagenes_omitidas}",
+         _construccion(r),
+         f"- Legibilidad: {_legibilidad(d)}"]
     if d.paginas_ocr:
         conf = f"; confianza media {d.confianza_ocr:.1f} %" if d.confianza_ocr is not None else ""
         l.append(f"- OCR aplicado en {d.unidad}: {', '.join(map(str, d.paginas_ocr))} (idioma: {d.idioma_ocr}{conf}); "
@@ -109,11 +109,35 @@ def _detalle(r):
         l.append(f"- Páginas escaneadas sin texto y sin OCR: {', '.join(map(str, d.paginas_escaneadas_sin_ocr))}")
     if d.encabezado:
         l.append(f"- Encabezado y pie (se dejan una sola vez al final): {' · '.join(d.encabezado)[:300]}")
+    return l
+
+
+def _lineas_de_campos(a):
+    l = []
     campos = {k: x for k, x in a.campos.items() if k in ("nombre_puesto", "reporta_a", "supervisa_a", "area")}
     if campos:
         l.append("- Datos del puesto: " + " · ".join(f"{k}: {x}" for k, x in campos.items()))
     if a.faltantes:
         l.append(f"- Campos clave no especificados: {', '.join(a.faltantes)}")
+    return l
+
+
+def _detalle(r):
+    l = ["", f"### {r.codigo} · {r.archivo}"]
+    if r.ruta:
+        l.append(f"- Ubicación del original: `{r.ruta}`")
+    if not r.ok:
+        l.append(f"- Estado: {r.estado}")
+        if r.error:
+            l += [f"- Error: {r.error}", "```", r.traza.strip(), "```"]
+        return l
+    d, v, a = r.doc, r.verificacion, r.analisis
+    l.append(f"- Texto del original presente en el Markdown: {v.cobertura:.2f} % "
+             f"({v.total - v.palabras_faltantes} de {v.total} palabras)")
+    l += _lineas_de_texto_faltante(v)
+    l += _lineas_de_estructura(r, a)
+    l += _lineas_de_lectura(r, d)
+    l += _lineas_de_campos(a)
     l += [f"- Nota: {n}" for n in d.notas + a.notas]
     return l
 

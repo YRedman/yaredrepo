@@ -9,7 +9,8 @@ import collections
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
-from ..comun.esquema import AVISO_ESCANEADO, CONFIANZA_OCR_REVISION
+from ..comun.esquema import AVISO_ESCANEADO, CONFIANZA_OCR_REVISION, RE_MARCAS
+from ..comun.texto import numeros, tokens
 
 
 def bloque_h(nivel, texto):
@@ -38,6 +39,7 @@ class DocumentoExtraido:
     confianzas_ocr: List[float] = field(default_factory=list)   # confianza de cada palabra leida por OCR
     unidad: str = "páginas"                                 # "hojas" (Excel) o "diapositivas" (PowerPoint) si no es un PDF/Word
     hoja_de_calculo: bool = False                           # Excel o CSV: una celda vacia es un dato, no una fila partida
+    lineas_diag: List[tuple] = field(default_factory=list)  # (pagina, zona, texto) para ubicar faltantes
 
     @property
     def confianza_ocr(self):
@@ -49,7 +51,13 @@ class DocumentoExtraido:
         """True si el OCR del documento necesita revision visual (confianza baja o desconocida)."""
         c = self.confianza_ocr
         return bool(self.paginas_ocr) and (c is None or c < CONFIANZA_OCR_REVISION)
-    lineas_diag: List[tuple] = field(default_factory=list)  # (pagina, zona, texto) para ubicar faltantes
+
+    def registrar_original(self, texto, descontar_marcas=True):
+        """Guarda las palabras y los numeros del texto del original, con los que se verifica el Markdown.
+
+        Las marcas ([NO ESPECIFICADO], [D-XXX-01]...) se descuentan igual que en el Markdown generado."""
+        self.crudo = collections.Counter(tokens(RE_MARCAS.sub(" ", texto) if descontar_marcas else texto))
+        self.numeros = numeros(texto)
 
 
 @dataclass

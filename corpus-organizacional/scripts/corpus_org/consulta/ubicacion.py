@@ -41,11 +41,6 @@ def _es_documentos(q):
     return q.is_dir() and any((q / t).is_dir() for t in TIPOS_AREA)
 
 
-def _con_nombre(q, nombre):
-    """``q`` si se llama ``nombre``, o su subcarpeta de ese nombre."""
-    return q if q.name == nombre else q / nombre
-
-
 def _expandir(patron):
     """Carpetas que cumplen un patron con un '*' (una carpeta <carpeta> desconocida)."""
     partes = patron.parts

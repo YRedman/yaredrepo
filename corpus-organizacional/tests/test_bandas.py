@@ -236,7 +236,7 @@ class IndiceTest(unittest.TestCase):
 
 class CeldasRepetidasTest(unittest.TestCase):
     def test_la_celda_interior_que_repite_a_la_grande_se_vacia_y_las_columnas_se_unen(self):
-        from corpus_org.conversion.extractores.pdf import _quitar_celdas_repetidas, _quitar_vacias
+        from corpus_org.conversion.extractores.pdf.tablas import _quitar_celdas_repetidas, _quitar_vacias
         largo = "Administrar el control estadistico del proceso de levantamiento"
         filas = [["FUNCIONES", "", "EVIDENCIA"], [largo, largo, "Informe"], ["", "Coordinar la evaluacion de puestos", "Escala"],
                  ]
@@ -248,12 +248,12 @@ class CeldasRepetidasTest(unittest.TestCase):
 
 class CeldaSinBordeTest(unittest.TestCase):
     def test_celda_sin_borde_toma_el_ancho_de_su_columna_y_el_alto_de_su_fila(self):
-        from corpus_org.conversion.extractores.pdf import _celda_sin_borde
+        from corpus_org.conversion.extractores.pdf.tablas import _celda_sin_borde
         filas = [[(75, 0, 332, 20), (337, 0, 554, 20)], [None, (337, 20, 554, 60)]]
         self.assertEqual(_celda_sin_borde(filas, 1, 0), (75, 20, 332, 60))
 
     def test_celda_combinada_no_se_inventa(self):
-        from corpus_org.conversion.extractores.pdf import _celda_sin_borde
+        from corpus_org.conversion.extractores.pdf.tablas import _celda_sin_borde
         horizontal = [[(75, 0, 332, 20), (337, 0, 554, 20)], [(75, 20, 554, 40), None]]
         self.assertIsNone(_celda_sin_borde(horizontal, 1, 1))
         vertical = [[(75, 0, 332, 20), (337, 0, 554, 80)], [(75, 20, 332, 40), None]]

@@ -5,7 +5,7 @@ import re
 
 from ..comun.esquema import RE_MARCAS
 from ..comun.texto import numeros, tokens
-from .analisis import texto_bloque
+from .analisis.bloques import texto_bloque
 from .modelo import Verificacion
 
 

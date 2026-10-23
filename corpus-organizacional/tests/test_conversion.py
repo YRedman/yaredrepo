@@ -6,7 +6,8 @@ from pathlib import Path
 
 from tests import ayuda  # noqa: F401
 from corpus_org.comun.esquema import estado_no_publicable
-from corpus_org.conversion.analisis import RE_CODIGO_DOC, analizar
+from corpus_org.conversion.analisis import analizar
+from corpus_org.conversion.analisis.citas import RE_CODIGO_DOC
 from corpus_org.conversion.metadatos import extraer_metadatos
 from corpus_org.conversion.modelo import DocumentoExtraido, bloque_h
 
@@ -136,7 +137,7 @@ class CopiasDelContextoTest(unittest.TestCase):
 
 class RepetidosTest(unittest.TestCase):
     def test_un_parrafo_que_vuelve_en_otra_pagina_no_es_un_duplicado_de_conversion(self):
-        from corpus_org.conversion.analisis import avisos_de_estructura
+        from corpus_org.conversion.analisis.estructura import avisos_de_estructura
         frase = "Este documento es confidencial y no puede reproducirse sin autorizacion."
         otras = [{"k": "p", "texto": f"Contenido distinto de la diapositiva numero {k} del documento.", "pagina": k}
                  for k in range(1, 6)]

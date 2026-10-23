@@ -114,8 +114,7 @@ class Briefing(Comando):
 
     def _puestos(self, ctx, ds):
         cp, s = ctx.corpus, ctx.salida
-        s.linea()
-        s.linea("## Puestos (DES)")
+        s.seccion("Puestos (DES)")
         if not ds:
             s.linea("(ninguno en esta parte)")
             return
@@ -131,8 +130,7 @@ class Briefing(Comando):
 
     def _procedimientos(self, ctx, analizador, cod, ps, puestos_por_doc):
         cp, s = ctx.corpus, ctx.salida
-        s.linea()
-        s.linea("## Procedimientos (PRD)")
+        s.seccion("Procedimientos (PRD)")
         if not ps:
             s.linea("(ninguno en esta parte)")
             return
@@ -153,8 +151,7 @@ class Briefing(Comando):
     def _normativos(self, ctx, tipo, codigos, motivos):
         """Protocolos (PRO) o politicas (POL) del area y los GEN pertinentes, con el motivo de cada uno."""
         cp, s = ctx.corpus, ctx.salida
-        s.linea()
-        s.linea(f"## {TITULOS_NORMATIVOS[tipo]}")
+        s.seccion(f"{TITULOS_NORMATIVOS[tipo]}")
         if not codigos:
             s.linea("(ninguno en esta parte)")
             return
@@ -188,8 +185,7 @@ class Briefing(Comando):
 
     @staticmethod
     def _jerarquia(s, cp, prd):
-        s.linea()
-        s.linea("## Jerarquía de procesos")
+        s.seccion("Jerarquía de procesos")
         if prd:
             s.tabla(CABECERA_PROCESOS, filas_procesos(cp, prd))
         else:
@@ -197,8 +193,7 @@ class Briefing(Comando):
 
     @staticmethod
     def _relaciones(s, cp, analizador, cod):
-        s.linea()
-        s.linea("## Relaciones")
+        s.seccion("Relaciones")
         _, _, resumen, no_resueltas = relaciones_de_area(analizador, cod)
         if resumen:
             tabla_resumen(s, cp, cod, resumen)
@@ -208,8 +203,7 @@ class Briefing(Comando):
 
     @staticmethod
     def _participacion(s, part, propios):
-        s.linea()
-        s.linea("## Participación — Resumen por puesto")
+        s.seccion("Participación — Resumen por puesto")
         n = len(propios["PRD"]) + len(propios["PRO"])
         if part and part.filas:
             s.linea(f"Toda el área: {n} procedimientos y protocolos, {len(part.filas)} relaciones puesto–documento.")
@@ -219,8 +213,7 @@ class Briefing(Comando):
 
     @staticmethod
     def _un_solo_puesto(s, cp, part):
-        s.linea()
-        s.linea("## Procedimientos con un solo puesto participante")
+        s.seccion("Procedimientos con un solo puesto participante")
         por_doc = collections.defaultdict(set)
         for f in (part.filas if part else []):
             por_doc[f.procedimiento].add(f.puesto)
@@ -233,8 +226,7 @@ class Briefing(Comando):
 
     @staticmethod
     def _ejecuta_y_aprueba(s, cp, part):
-        s.linea()
-        s.linea("## Mismo puesto con roles Ejecuta y Aprueba en un procedimiento")
+        s.seccion("Mismo puesto con roles Ejecuta y Aprueba en un procedimiento")
         evidencias = collections.defaultdict(dict)
         for f in (part.filas if part else []):
             if f.rol in (ROL_EJECUTA, ROL_APRUEBA):
@@ -249,8 +241,7 @@ class Briefing(Comando):
 
     @staticmethod
     def _estructura(s, cp, cod, detector):
-        s.linea()
-        s.linea("## Estructura")
+        s.seccion("Estructura")
         filas = [[c, cp.nombre(c), cp.meta[c].get("reporta_a") or NO_ESPECIFICADO, jefe or "—", len(subs),
                   ", ".join(subs) or "—", nivel]
                  for c, jefe, subs, nivel in estructura_area(cp, cod, detector)]
@@ -264,8 +255,7 @@ class Briefing(Comando):
 
     @staticmethod
     def _indicadores(s, cp, propios, todos):
-        s.linea()
-        s.linea("## Indicadores relacionados")
+        s.seccion("Indicadores relacionados")
         if not cp.kpis:
             s.linea("(el corpus no tiene kpis.csv)")
             return
@@ -300,8 +290,7 @@ class Briefing(Comando):
 
     @staticmethod
     def _gobierno(s, cp, todos):
-        s.linea()
-        s.linea("## Gobierno documental (resumen)")
+        s.seccion("Gobierno documental (resumen)")
         if not todos:
             s.linea("(el área no tiene documentos)")
             return
@@ -313,8 +302,7 @@ class Briefing(Comando):
 
     @staticmethod
     def _normativa(s, cp, todos):
-        s.linea()
-        s.linea("## Normativa citada (resumen)")
+        s.seccion("Normativa citada (resumen)")
         grupos = agrupar_por_tipo(citas_de(cp, todos))
         if not grupos:
             s.linea("(los documentos del área no citan normativa)")
@@ -325,8 +313,7 @@ class Briefing(Comando):
 
     @staticmethod
     def _perfil_y_funciones(s, cp, des):
-        s.linea()
-        s.linea("## Perfil y funciones (resumen por puesto)")
+        s.seccion("Perfil y funciones (resumen por puesto)")
         if not des:
             s.linea("(el área no tiene descriptivos)")
             return
@@ -344,8 +331,7 @@ class Briefing(Comando):
 
     @staticmethod
     def _no_documentado(s, cp, cod, todos, part):
-        s.linea()
-        s.linea("## No documentado")
+        s.seccion("No documentado")
         ne = [(c, cp.meta[c].get("campos_no_especificados")) for c in todos
               if c in cp.meta and cp.meta[c].get("campos_no_especificados")]
         if ne:

@@ -16,6 +16,7 @@ _REEXPORTADOS = (AREA_GENERAL, area_de, tipo_desde_texto, tipo_de_codigo)
 # Codigos del corpus: TTT-AAA-NN (DES-SEG-01, PRD-SEG-01, POL-GEN-01, ORG-GEN-01). Ver comun/tipos.py.
 RE_CODIGO = re.compile(rf"^{PATRON_CODIGO}$", re.I)
 RE_TITULO_DOC = re.compile(rf"^## \[({PATRON_CODIGO})\]\s*(.*)$")
+RE_DOC_MD = re.compile(rf"^## \[({PATRON_CODIGO})\]", re.M)      # titulo de un documento en un Markdown publicado
 RE_SECCION = re.compile(rf"^(#{{3,6}})\s+(?:\[{PATRON_CODIGO}\]\s*)?(.*)$")
 
 INICIO_TITULO_ENCABEZADO_PIE = "Datos de encabezado y pie"
@@ -55,6 +56,11 @@ ARCHIVO_KPIS = "kpis.csv"
 ARCHIVO_AREAS_EXTRA = "areas_extra.csv"
 ARCHIVO_REVISADOS = "revision_visual_ok.txt"
 ARCHIVO_REVISION = "revision_visual.csv"
+# informe de la construccion (HTML) y lo que lo alimenta
+ARCHIVO_INFORME = "INFORME_CONSTRUCCION.html"
+ARCHIVO_LOG = "log_construccion.txt"
+ARCHIVO_DATOS = "construccion.json"
+ARCHIVO_TIEMPOS = "tiempos_conversion.csv"
 # Area de cada documento que no esta en una carpeta de area (entrada\Descriptivos\archivo.pdf).
 ARCHIVO_AREAS_DOCUMENTOS = "areas.csv"
 AREA_SIN_ASIGNAR = "Sin Área"
@@ -85,6 +91,12 @@ def estado_no_publicable(estado):
     """
     n = norm(estado).strip(" .:;-")
     return any(n == e or n.startswith(e + " ") for e in ESTADOS_NO_PUBLICABLES)
+
+
+def tipo_de_fila(fila, defecto="PRD"):
+    """Codigo de tipo de una fila de inventario o indice: 'DES', o desde 'Descriptivo'/'D' (formato anterior).
+    Sin columna de tipo se usa el prefijo del codigo; sin codigo, ``defecto``."""
+    return tipo_desde_texto(fila.get("tipo")) or (fila.get("codigo") or "").split("-")[0].upper() or defecto
 
 
 def inventario_activo(filas):

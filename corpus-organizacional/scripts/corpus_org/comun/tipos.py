@@ -63,7 +63,6 @@ _TIPOS_RE = "|".join(t.codigo for t in TIPOS_DOCUMENTO)
 PATRON_CODIGO = rf"(?:{_TIPOS_RE})-[A-Z0-9]{{3}}-\d{{2,3}}"
 PATRON_CODIGO_ANTERIOR = r"[PDC]-[A-Z0-9]{3}-\d{2,3}"
 RE_CODIGO_ANTERIOR = re.compile(rf"^({PATRON_CODIGO_ANTERIOR})$", re.I)
-RE_ARCHIVO_DOCUMENTOS = re.compile(rf"^({_TIPOS_RE})_([A-Z0-9]{{3}})\.md$")
 
 
 def tipo(codigo_tipo) -> Optional[TipoDocumento]:

@@ -4,7 +4,7 @@ import collections
 import unittest
 
 from tests import ayuda  # noqa: F401
-from corpus_org.conversion.extractores.pdf import palabras_ocr
+from corpus_org.conversion.extractores.pdf.lineas import palabras_ocr
 from corpus_org.conversion.modelo import DocumentoExtraido
 from corpus_org.conversion.verificacion import verificar
 

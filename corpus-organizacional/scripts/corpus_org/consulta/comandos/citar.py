@@ -7,7 +7,6 @@ from ...comun.texto import norm, recortar_palabras, tokens
 from ...comun.tipos import AREA_GENERAL, es_general
 from .base import Comando
 
-COBERTURA_LITERAL = 1.0          # todas las palabras de la afirmacion, en el mismo orden y juntas
 COBERTURA_PARCIAL = 0.6          # fraccion de las palabras de la afirmacion que deben estar en el documento
 VENTANA_EXTRA = 6                # palabras de margen al comparar la afirmacion con una ventana del documento
 PALABRAS_PASAJE = 45

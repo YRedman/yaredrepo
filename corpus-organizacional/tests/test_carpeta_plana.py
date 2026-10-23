@@ -12,7 +12,7 @@ from corpus_org.comun.archivos import escribir_csv
 from corpus_org.comun.esquema import AREA_SIN_ASIGNAR, AVISO_ESCANEADO, COLUMNAS_INDICE
 from corpus_org.conversion import cli as conversion_cli
 from corpus_org.conversion.asignacion import asignar_archivos
-from corpus_org.conversion.publicacion import validar_publicacion
+from corpus_org.conversion.validacion import validar_publicacion
 from corpus_org.conversion.inventario import actualizar_plantilla_areas, leer_base, parsear_lista
 
 try:

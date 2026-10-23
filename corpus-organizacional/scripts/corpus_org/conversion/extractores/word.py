@@ -1,15 +1,15 @@
 """Extractor de Word (.docx) leyendo el XML con lxml."""
 
-import collections
 import html
 import re
 import zipfile
 
 from ...comun.esquema import MARCA_COMBINADA
-from ...comun.texto import norm, numeros, tokens
+from ...comun.texto import norm, tokens
 from ..modelo import DocumentoExtraido, bloque_h
 from ..secciones import clave_titulo, es_seccion_conocida, es_titulo_corto, profundidad_numeracion
 from .base import Extractor
+from .ooxml import nombre_local
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 NS = {
@@ -24,11 +24,6 @@ NS_APP = "{http://schemas.openxmlformats.org/officeDocument/2006/extended-proper
 EMU_CM = 360000
 AREA_DIAGRAMA = (6 * EMU_CM) * (4 * EMU_CM)   # imagenes mayores a 6x4 cm se marcan como diagrama
 RE_ROMANO = re.compile(r"^[IVXLC]{1,6}\.\s")
-
-
-def _local(el):
-    t = el.tag
-    return t.split("}", 1)[1] if isinstance(t, str) and "}" in t else t
 
 
 def _wattr(el, nombre):
@@ -174,7 +169,7 @@ class _ContextoDocx:
 
         def visitar(el):
             for h in el:
-                nom = _local(h)
+                nom = nombre_local(h)
                 if nom in ("del", "instrText", "delText", "Fallback", "rPr", "pPr"):
                     continue
                 if nom == "txbxContent":
@@ -231,7 +226,7 @@ class _ContextoDocx:
 
     def _es_negrita(self, p, sid):
         """True si todas las corridas con texto estan en negrita (directa o por estilo)."""
-        runs = [r for r in p.iter("{%s}r" % W) if any(_local(x) == "t" and (x.text or "").strip() for x in r)]
+        runs = [r for r in p.iter("{%s}r" % W) if any(nombre_local(x) == "t" and (x.text or "").strip() for x in r)]
         estilo_bold = bool(sid and self.estilo_prop(sid, "bold"))
         bold = bool(runs)
         for r in runs:
@@ -312,7 +307,7 @@ def _unir_filas_partidas(filas):
 def _textos_celda(tc, ctx):
     textos = []
     for el in tc:
-        nom = _local(el)
+        nom = nombre_local(el)
         if nom == "p":
             t = ctx.texto_parrafo(el)[0]
             if t:
@@ -350,7 +345,7 @@ class _ConversionDocx:
 
     def procesar(self, contenedor):
         for el in contenedor:
-            nom = _local(el)
+            nom = nombre_local(el)
             if nom == "p":
                 self._parrafo(el)
             elif nom == "tbl":
@@ -383,7 +378,7 @@ class _ConversionDocx:
         """Contenido de un cuadro de texto: parrafos, tablas (los diagramas de flujo de Word son tablas dentro de
         cuadros) y cuadros anidados."""
         for el in cb:
-            nom = _local(el)
+            nom = nombre_local(el)
             if nom == "p":
                 texto, _imgs, anidados, _notas = self.ctx.texto_parrafo(el)
                 if texto:
@@ -446,8 +441,7 @@ class ExtractorDocx(Extractor):
             crudo = _crudo_docx_xml(z.read("word/document.xml"))
             if "word/footnotes.xml" in z.namelist():
                 crudo += " " + _crudo_docx_xml(z.read("word/footnotes.xml"))
-            d.crudo = collections.Counter(tokens(crudo))
-            d.numeros = numeros(crudo)
+            d.registrar_original(crudo, descontar_marcas=False)
             d.paginas = self._paginas(ctx)
         return d
 
@@ -460,7 +454,7 @@ class ExtractorDocx(Extractor):
             r = ctx.etree.fromstring(z.read(n))
             lineas = []
             for el in r:
-                if _local(el) == "p":
+                if nombre_local(el) == "p":
                     t, _, cuadros, _ = ctx.texto_parrafo(el)
                     if t:
                         lineas.append(t)
@@ -469,7 +463,7 @@ class ExtractorDocx(Extractor):
                             tt = ctx.texto_parrafo(p)[0]
                             if tt:
                                 lineas.append(tt)
-                elif _local(el) == "tbl":
+                elif nombre_local(el) == "tbl":
                     for f in _tabla_docx(el, ctx):
                         lineas.append(" · ".join(c for c in f if c))
             for l in lineas:

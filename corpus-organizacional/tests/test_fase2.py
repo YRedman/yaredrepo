@@ -18,11 +18,13 @@ from corpus_org.consulta.entidades import leer_areas_extra, quitar_exclusiones
 from corpus_org.consulta.integridad import verificar_huellas
 from corpus_org.consulta.roles import verbo
 from corpus_org.conversion import cli as conversion_cli
-from corpus_org.conversion.analisis import analizar, avisos_de_estructura
-from corpus_org.conversion.extractores.pdf import _unir_tablas_continuas
+from corpus_org.conversion.analisis import analizar
+from corpus_org.conversion.analisis.estructura import avisos_de_estructura
+from corpus_org.conversion.extractores.pdf.continuas import unir_tablas_continuas
 from corpus_org.conversion.inventario import InventarioBase, construir_inventario, leer_base
 from corpus_org.conversion.modelo import DocumentoExtraido, bloque_h
-from corpus_org.conversion.publicacion import _muestra, escribir_huellas
+from corpus_org.conversion.publicacion import escribir_huellas
+from corpus_org.conversion.validacion import muestra_reproducible
 from corpus_org.conversion.render import render_documento
 from corpus_org.conversion.verificacion import verificar
 
@@ -70,7 +72,7 @@ class AvisosEstructuraTest(unittest.TestCase):
         items = [(0, 100, 80, tabla([["No.", "Actividad"], ["1", "Uno"]])), (1, 60, 80, suelta),
                  (1, 80, 80, tabla([["2", "Dos"], ["3", "Tres"]]))]
         d = DocumentoExtraido()
-        _unir_tablas_continuas(items, d)
+        unir_tablas_continuas(items, d)
         self.assertEqual([it[3]["tipo"] for it in items], ["tabla", "fila"])
         self.assertEqual([f[0] for f in items[0][3]["filas"]], ["No.", "1", "2", "3"])
         self.assertIn("líneas sueltas en medio", d.avisos[0])
@@ -87,9 +89,9 @@ class ActividadesTest(unittest.TestCase):
 class MuestraTest(unittest.TestCase):
     def test_reproducible(self):
         cods = [f"DES-COM-{i:02d}" for i in range(1, 21)]
-        self.assertEqual(len(_muestra(cods, 0.10)), 2)
-        self.assertEqual(_muestra(cods, 0.10), _muestra(list(reversed(cods)), 0.10))
-        self.assertEqual(_muestra(cods, 0), [])
+        self.assertEqual(len(muestra_reproducible(cods, 0.10)), 2)
+        self.assertEqual(muestra_reproducible(cods, 0.10), muestra_reproducible(list(reversed(cods)), 0.10))
+        self.assertEqual(muestra_reproducible(cods, 0), [])
 
 
 class CodigosEstablesTest(unittest.TestCase):

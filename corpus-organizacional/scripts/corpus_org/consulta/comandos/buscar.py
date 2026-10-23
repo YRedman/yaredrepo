@@ -33,22 +33,9 @@ class Buscar(Comando):
         terminos = [t.strip() for t in args.terminos.split("|") if t.strip()]
         if not terminos:
             raise CorpusError("Indica al menos un término.")
-        cods = sorted(cp.docs)
-        if args.area:
-            cod = ctx.area(args.area)
-            cods = [c for c in cods if area_de(c) == cod]
-        if args.tipo:
-            cods = [c for c in cods if cumple_tipo(c, args.tipo)]
+        cods = self._documentos(ctx, args)
         pats = [patron_termino(t) for t in terminos]
-        resultados = collections.OrderedDict()
-        for c in cods:
-            for sec, l in cp.cuerpo(c):
-                nl = norm(l)
-                if any(p.search(nl) for p in pats):
-                    resultados.setdefault(c, []).append((sec, l))
-            titulo = cp.docs[c].titulo
-            if c not in resultados and any(p.search(norm(titulo)) for p in pats):
-                resultados[c] = [("(título)", titulo)]
+        resultados = _coincidencias(cp, cods, pats)
         s.linea(f"BÚSQUEDA · términos: {', '.join(terminos)}" + (f" · área: {args.area}" if args.area else "")
                 + (f" · tipo: {args.tipo}" if args.tipo else ""))
         s.linea(f"Documentos revisados: {len(cods)} · con coincidencias: {len(resultados)} · "
@@ -56,14 +43,7 @@ class Buscar(Comando):
         if not resultados:
             s.linea("Sin coincidencias literales. Prueba con sinónimos o variantes (separados con |).")
             return
-        filas = []
-        for c, lista in resultados.items():
-            f = cp.meta.get(c, {})
-            for sec, l in lista[:MAX_COINCIDENCIAS_POR_DOC]:
-                filas.append([c, cp.nombre(c), f.get("departamento", ""), recortar(sec, 8), fragmento(l, pats)])
-            if len(lista) > MAX_COINCIDENCIAS_POR_DOC:
-                filas.append([c, "", "", "", f"… y {len(lista) - MAX_COINCIDENCIAS_POR_DOC} coincidencias más "
-                                             f"(ver doc {c})"])
+        filas = _filas(cp, resultados, pats)
         s.linea()
         s.linea("Todos los documentos con coincidencias: " + ", ".join(f"{c} ({len(v)})" for c, v in resultados.items()))
         s.linea()
@@ -71,3 +51,39 @@ class Buscar(Comando):
         if len(filas) > MAX_FILAS:
             s.linea(f"Se muestran {MAX_FILAS} de {len(filas)} filas. Para ver el resto, acota con --area o --tipo, "
                     "o lee cada documento con doc <CÓDIGO>.")
+
+    @staticmethod
+    def _documentos(ctx, args):
+        """Los documentos donde se busca: todos, o los de un area y/o un tipo."""
+        cods = sorted(ctx.corpus.docs)
+        if args.area:
+            cod = ctx.area(args.area)
+            cods = [c for c in cods if area_de(c) == cod]
+        if args.tipo:
+            cods = [c for c in cods if cumple_tipo(c, args.tipo)]
+        return cods
+
+
+def _coincidencias(cp, cods, pats):
+    """{codigo: [(seccion, linea)]} de las lineas (o el titulo) donde aparece algun termino."""
+    resultados = collections.OrderedDict()
+    for c in cods:
+        for sec, l in cp.cuerpo(c):
+            nl = norm(l)
+            if any(p.search(nl) for p in pats):
+                resultados.setdefault(c, []).append((sec, l))
+        titulo = cp.docs[c].titulo
+        if c not in resultados and any(p.search(norm(titulo)) for p in pats):
+            resultados[c] = [("(título)", titulo)]
+    return resultados
+
+
+def _filas(cp, resultados, pats):
+    filas = []
+    for c, lista in resultados.items():
+        f = cp.meta.get(c, {})
+        for sec, l in lista[:MAX_COINCIDENCIAS_POR_DOC]:
+            filas.append([c, cp.nombre(c), f.get("departamento", ""), recortar(sec, 8), fragmento(l, pats)])
+        if len(lista) > MAX_COINCIDENCIAS_POR_DOC:
+            filas.append([c, "", "", "", f"… y {len(lista) - MAX_COINCIDENCIAS_POR_DOC} coincidencias más (ver doc {c})"])
+    return filas
