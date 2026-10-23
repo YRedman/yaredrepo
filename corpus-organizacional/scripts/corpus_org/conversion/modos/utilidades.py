@@ -8,7 +8,7 @@ from ...comun.errores import CorpusError
 from ...comun.estructura import CARPETA_PUBLICADA
 from ...consulta.matriz import escribir_matriz
 from ..extractores.ocr import diagnostico
-from ..informe_html import generar_informe
+from ..informe import generar_informe
 from ..publicacion import escribir_huellas
 from .base import CARPETA_SALIDA_CONSTRUCCION, Modo
 

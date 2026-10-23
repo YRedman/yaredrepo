@@ -24,12 +24,13 @@ from ...comun.tipos import TIPOS_AREA, tipo as tipo_documento
 from ...consulta.matriz import ARCHIVO_MATRIZ, escribir_matriz
 from ..bitacora import Tee, guardar_bitacora
 from ..entradas import buscar_entradas, localizar, partes_ruta
-from ..informe_html import generar_informe
+from ..informe import generar_informe
 from ..inventario import escribir_equivalencias, leer_equivalencias, migrar_fila, tipo_de_carpeta
 from ..materiales_contexto import (archivos_no_leidos, contexto_anterior, copiar_datos_de_contexto,
                                    documentos_de_area_del_contexto, equivalencias_de_contexto)
-from ..publicacion import (MUESTRA_REVISION, escribir_huellas, escribir_resumen_construccion, leer_revisados,
-                           limpiar_generados, publicar_corpus, validar_publicacion)
+from ..publicacion import escribir_huellas, limpiar_generados, publicar_corpus
+from ..resumen import escribir_resumen_construccion
+from ..validacion import MUESTRA_REVISION, leer_revisados, validar_publicacion
 from ..skills import CARPETA_SCRIPTS
 from .base import Modo, agregar_argumentos_de_conversion, agregar_argumentos_de_lista, raiz_de_construccion
 from .contexto import ejecutar_contexto
@@ -290,11 +291,11 @@ def _imprimir_resultado(c, validacion, rutas, medidas, matriz, resumen):
         print(f"REVISIÓN VISUAL PENDIENTE ({len(pendientes)}); ubicación de cada original en "
               f"{resumen.name} y control/revision_visual.csv:")
         for codigo, motivo in pendientes[:REVISIONES_MOSTRADAS]:
-            print(f"- {codigo} {validacion.ubicacion.get(codigo, ('', ''))[1]} ({motivo[:60]})")
+            print(f"- {codigo} {validacion.ubicacion_de(codigo)[1]} ({motivo[:60]})")
         if len(pendientes) > REVISIONES_MOSTRADAS:
             print(f"- … y {len(pendientes) - REVISIONES_MOSTRADAS} más")
     for codigo, motivos in validacion.con_problemas.items():
-        print(f"- PROBLEMA en {codigo} {validacion.ubicacion.get(codigo, ('', ''))[1]}: {'; '.join(motivos)}")
+        print(f"- PROBLEMA en {codigo} {validacion.ubicacion_de(codigo)[1]}: {'; '.join(motivos)}")
     for x in validacion.avisos:
         print("AVISO: " + x)
 

@@ -8,6 +8,7 @@ documento, un organigrama) se leen con OCR y quedan bajo una marca, igual que en
 
 import collections
 import datetime
+import importlib.util
 import io
 import warnings
 import zipfile
@@ -173,9 +174,7 @@ class ExtractorExcel(Extractor):
     extensiones = (".xlsx", ".xlsm")
 
     def extraer(self, path):
-        try:
-            import openpyxl  # noqa: F401 - solo para dar el mensaje de instalacion
-        except ImportError:
+        if importlib.util.find_spec("openpyxl") is None:
             raise RuntimeError("Falta openpyxl para leer Excel: python -m pip install openpyxl")
         path = Path(path)
         try:

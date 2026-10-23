@@ -16,6 +16,7 @@ _REEXPORTADOS = (AREA_GENERAL, area_de, tipo_desde_texto, tipo_de_codigo)
 # Codigos del corpus: TTT-AAA-NN (DES-SEG-01, PRD-SEG-01, POL-GEN-01, ORG-GEN-01). Ver comun/tipos.py.
 RE_CODIGO = re.compile(rf"^{PATRON_CODIGO}$", re.I)
 RE_TITULO_DOC = re.compile(rf"^## \[({PATRON_CODIGO})\]\s*(.*)$")
+RE_DOC_MD = re.compile(rf"^## \[({PATRON_CODIGO})\]", re.M)      # titulo de un documento en un Markdown publicado
 RE_SECCION = re.compile(rf"^(#{{3,6}})\s+(?:\[{PATRON_CODIGO}\]\s*)?(.*)$")
 
 INICIO_TITULO_ENCABEZADO_PIE = "Datos de encabezado y pie"
