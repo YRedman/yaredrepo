@@ -4,8 +4,9 @@ import unittest
 
 from tests import ayuda  # noqa: F401
 from corpus_org.comun.errores import AreaAmbigua, AreaNoEncontrada
-from corpus_org.comun.texto import empieza_palabra, oracion_con
+from corpus_org.comun.texto import empieza_palabra, oracion_con, recortar_en_palabra, patron_termino
 from corpus_org.consulta.areas import ResolutorAreas, construir_alias
+from corpus_org.consulta.comandos.buscar import fragmento
 from corpus_org.consulta.comandos.ficha import resumen_desarrollo
 from corpus_org.consulta.modelo import Area, DocumentoCorpus
 from corpus_org.consulta.puestos import DetectorPuestos, Puesto
@@ -93,6 +94,28 @@ class FichaTest(unittest.TestCase):
         self.assertIn("general: 2", r)
         self.assertIn("Jefe; Gerente", r)
         self.assertNotIn("Responsable;", r)
+
+
+class PalabrasCortadasTest(unittest.TestCase):
+    TEXTO = ("Los registros deben estar supervisados por un responsable designado para ello, en la forma "
+             "que establezca la Gerencia de Calidad y Cumplimiento Regional de la compañía en cada país.")
+
+    def test_el_fragmento_de_la_busqueda_no_parte_palabras(self):
+        palabras = set(self.TEXTO.replace(",", "").replace(".", "").split())
+        for ancho in (30, 45, 60, 90, 110):
+            f = fragmento(self.TEXTO, [patron_termino("responsable")], ancho=ancho)
+            self.assertIn("responsable", f)
+            for p in f.replace("…", " ").replace(",", "").replace(".", "").split():
+                self.assertIn(p, palabras, f"palabra partida «{p}» con ancho {ancho}: {f}")
+
+    def test_un_texto_corto_se_devuelve_completo_y_sin_puntos_suspensivos(self):
+        self.assertEqual(fragmento("Aprobar el plan anual.", [patron_termino("plan")]), "Aprobar el plan anual.")
+
+    def test_recortar_en_palabra(self):
+        self.assertEqual(recortar_en_palabra("corto", 10), "corto")
+        r = recortar_en_palabra("uno dos tres cuatro cinco", 12)
+        self.assertEqual(r, "uno dos tres …")
+        self.assertEqual(recortar_en_palabra("uno dos tres cuatro", 7), "uno dos …")
 
 
 if __name__ == "__main__":

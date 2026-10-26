@@ -282,6 +282,11 @@ fuente-corpus/
 
 Código: `comun/tipos.py`, `comun/estructura.py`, `conversion/inventario.py`, `conversion/publicacion.py`, `conversion/skills.py`, `consulta/ubicacion.py`, `consulta/extraccion.py`, `consulta/pertinencia.py`, `consulta/jerarquia.py`, `consulta/matriz.py`, `consulta/comandos/briefing.py` y `normativa.py`. La conversión y la verificación de fidelidad no cambian.
 
+## v4.8: palabras completas en las consultas y guía del formulario de levantamiento
+
+- **Palabras cortadas.** `buscar` mostraba el fragmento de cada coincidencia cortado por caracteres, así que las palabras de los extremos salían partidas («…rcial no tendrá…», «Ge…»). Ahora la ventana (110 caracteres) empieza y termina en palabras completas y siempre incluye el término buscado. Las celdas de la matriz de más de 3 000 caracteres también se cortan en una palabra (`comun/texto.recortar_en_palabra`). Las tablas del `briefing` siguen recortando por **palabras** (propósito y objetivo a 30, funciones a 10) y lo marcan con «…»: el agente debe leer el texto completo con `doc` antes de citarlas (nueva regla en SKILL.md y en las instrucciones).
+- **Formulario de levantamiento.** `guias/Guia del formulario de levantamiento.md` describe el formulario de Excel de las entrevistas de puesto y carga laboral: hojas, columnas, valores permitidos (que el lector de Excel no ve) y qué se puede proponer desde el corpus y qué solo lo informa la persona entrevistada. Se copia a la carpeta de contexto y se publica como un material más (`CTX-GEN-NN`). Los ejemplos en rojo del Excel original no se incluyen como datos. SKILL.md tiene un flujo nuevo (sección 13).
+
 ## v4.7: código reorganizado (sin cambios de comportamiento)
 
 Se revisó todo el código buscando duplicados y módulos que hacían demasiado. El resultado de la conversión, las consultas, la matriz y el informe es **idéntico** (se comparó contra la versión anterior con 40 PDF reales —con y sin OCR—, corpus de prueba completos, 80 consultas de `corpus.py`, la matriz y el informe HTML).

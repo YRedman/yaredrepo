@@ -2,7 +2,7 @@
 
 import re
 
-from ...comun.texto import sin_acentos
+from ...comun.texto import recortar_en_palabra, sin_acentos
 
 MAX_TEXTO_CELDA = 3000
 
@@ -109,7 +109,7 @@ def cabecera_y_filas(nombre, filas):
             else [20] * len(cabecera)
     else:
         cabecera, anchos = ["Nota"], [100]
-    filas = [[str(x)[:MAX_TEXTO_CELDA] if isinstance(x, str) else x for x in f] for f in filas]
+    filas = [[recortar_en_palabra(x, MAX_TEXTO_CELDA) if isinstance(x, str) else x for x in f] for f in filas]
     if not filas and nombre in VACIAS:
         filas = [[VACIAS[nombre]] + [""] * (len(cabecera) - 1)]
     return cabecera, filas, anchos

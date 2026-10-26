@@ -49,6 +49,17 @@ def recortar_palabras(s, n):
     return " ".join(pal[:n]) + " …"
 
 
+def recortar_en_palabra(s, n):
+    """Corta ``s`` a lo mas ``n`` caracteres sin partir una palabra y agrega « …» si quito algo."""
+    if len(s) <= n:
+        return s
+    corte = s[:n]
+    if not s[n].isspace():                       # el corte cae dentro de una palabra: se vuelve al espacio anterior
+        previo = corte.rfind(" ")
+        corte = corte[:previo] if previo > n // 2 else corte
+    return corte.rstrip() + " …"
+
+
 def limitar_lineas(texto, n_palabras):
     """Corta un texto multilinea al completar la linea donde se alcanzan n palabras."""
     if len(texto.split()) <= n_palabras:
