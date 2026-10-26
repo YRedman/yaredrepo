@@ -6,7 +6,7 @@ description: >-
 
 # Corpus organizacional
 
-> Compatible con `convertir.py` v4.7 y `corpus.py` v4.7.
+> Compatible con `convertir.py` v4.8 y `corpus.py` v4.8.
 
 Este skill consulta exclusivamente el corpus publicado. Los documentos son la fuente de verdad; el índice sirve para localizar, contar y filtrar, pero los datos sustantivos se confirman en el Markdown original.
 
@@ -109,6 +109,7 @@ python scripts/corpus.py <comando> <argumentos>
 
 ### Reglas de uso
 
+- Una celda de tabla que termina en `…` está recortada para ahorrar espacio. No la completes ni la cites como literal: lee el texto entero con `doc <CÓDIGO>` (o `--seccion "<título>"`).
 - **Solo documentos suministrados.** Responde únicamente con lo que traen los documentos del corpus (`doc`, `ficha`, tablas del script). No completes con conocimiento general ni con lo que “sería conveniente”; si algo no está, dilo (`No documentado`).
 - **Cada documento es un registro único.** No mezcles datos de dos documentos (puestos, versiones, funciones) en una sola afirmación; cita el código de cada uno.
 - **Respalda lo que afirmas.** Antes de citar un documento, confirma con `citar <CÓDIGO> --texto "<lo que afirmas>"` que existe y que lo dice. Con `SIN RESPALDO` no lo atribuyas a ese documento; con `RESPALDO PARCIAL` usa el pasaje literal. Un documento `GENERAL (GEN)` no es específico del área consultada: preséntalo como contexto o norma de toda la empresa y reevalúa si hay un documento más específico.
@@ -214,7 +215,11 @@ CORPUS_INCLUIR_NO_VIGENTES=1 python scripts/corpus.py gobierno
 - No evalúes si un proceso está bien o mal. Presenta “puntos a validar en la reunión”.
 - Usa solo el corpus; no completes con conocimiento general.
 
-## 13. Preguntas analíticas internas
+## 13. Flujo: formulario de levantamiento
+
+Si piden ayuda para llenar el formulario de entrevistas (descripción de puesto y carga laboral), busca su guía (`buscar "formulario de levantamiento" --tipo GEN`) y léela con `doc <CÓDIGO>`. Pregunta la hoja y el puesto y sigue el orden y los valores permitidos de la guía. Propón solo lo que respalden los documentos del puesto (`area`, `ficha`, `participacion`, `relaciones`, `kpis`), con su código y `[Inferido]`. Tiempos, volúmenes, frecuencias, retrabajo y todo dato que solo conoce la persona entrevistada se dejan como `[Preguntar]` con la pregunta sugerida. Los ejemplos en rojo de la guía no son datos de la empresa. Entrega la hoja como tabla Markdown (con columna Fuente) lista para copiar al Excel.
+
+## 14. Preguntas analíticas internas
 
 - ¿Qué procedimientos ejecuta, aprueba, revisa o recibe el área?
 - ¿Qué puestos concentran más procedimientos (resumen por puesto)?

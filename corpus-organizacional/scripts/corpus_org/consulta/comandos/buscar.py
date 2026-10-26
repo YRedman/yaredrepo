@@ -11,12 +11,19 @@ MAX_COINCIDENCIAS_POR_DOC = 4
 MAX_FILAS = 80
 
 
-def fragmento(linea, pats, ancho=90):
+def fragmento(linea, pats, ancho=110):
+    """Ventana de ``ancho`` caracteres alrededor del primer termino hallado, alineada a palabras completas."""
     texto = re.sub(r"\s+", " ", linea.strip().strip("|").replace("|", "·"))
     nl = norm(texto)
-    pos = min((m.start() for p in pats for m in [p.search(nl)] if m), default=0)
+    pos, fin_termino = min(((m.start(), m.end()) for p in pats for m in [p.search(nl)] if m), default=(0, 0))
+    pos, fin_termino = min(pos, len(texto)), min(fin_termino, len(texto))
     ini = max(0, pos - ancho // 2)
-    return ("…" if ini > 0 else "") + texto[ini:ini + ancho] + ("…" if ini + ancho < len(texto) else "")
+    fin = max(ini + ancho, fin_termino)
+    while 0 < ini < pos and not texto[ini - 1].isspace():       # no empezar en medio de una palabra
+        ini += 1
+    while len(texto) > fin > fin_termino and not texto[fin].isspace():   # ni terminar en medio de una palabra
+        fin -= 1
+    return ("…" if ini > 0 else "") + texto[ini:fin].strip() + ("…" if fin < len(texto) else "")
 
 
 class Buscar(Comando):
