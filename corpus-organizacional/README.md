@@ -282,6 +282,25 @@ fuente-corpus/
 
 Código: `comun/tipos.py`, `comun/estructura.py`, `conversion/inventario.py`, `conversion/publicacion.py`, `conversion/skills.py`, `consulta/ubicacion.py`, `consulta/extraccion.py`, `consulta/pertinencia.py`, `consulta/jerarquia.py`, `consulta/matriz.py`, `consulta/comandos/briefing.py` y `normativa.py`. La conversión y la verificación de fidelidad no cambian.
 
+## v4.9: vaciado de un K4 en la plantilla metodológica (`corpus.py vaciar`)
+
+El agente ya podía ayudar a **preparar** la entrevista (guía del formulario). Ahora puede **pasar un K4 completado** (más la transcripción y la minuta) a la plantilla metodológica de carga laboral, todo dentro de `fuente-corpus` (Copilot admite un solo skill por carga) y con solo la biblioteca estándar.
+
+```bash
+python scripts/corpus.py vaciar --k4 K4_completado.xlsx --leer                       # qué se lee del K4
+python scripts/corpus.py vaciar --k4 K4_completado.xlsx --plantilla Plantilla.xlsx \
+       --salida Metodologia_K4.xlsx [--complementos complementos.json] [--fuentes "Transcripción.docx" "Minuta.docx"]
+```
+
+- **Un xlsx es un zip de XML.** `openpyxl` no sirve para escribir la plantilla: al guardarla se pierden las 26 listas desplegables de tipo x14 de la plantilla de PwC. El script edita el XML de cada hoja, escribe solo las celdas de entrada (grises, sin fórmulas), copia byte a byte el resto del archivo y quita los valores guardados de las fórmulas para que Excel recalcule al abrir.
+- **Verificación.** Se relee el archivo escrito y se compara con la plantilla: fórmulas, listas desplegables, formatos, filas y tablas iguales; cada celda escrita con el valor esperado y en una celda de entrada; horas por mes recalculadas desde lo escrito. Si algo no coincide, el archivo se borra y no se entrega.
+- **Lector del K4** (`consulta/vaciado/k4.py`): reconoce cada hoja por su nombre y cada columna por su encabezado, lee también las hojas ocultas (Competencias), descarta las filas de ejemplo en rojo y las notas bajo las tablas, hereda proceso y tipo en el inventario y resuelve fórmulas sencillas sin valor guardado. La procedencia de cada celda (K4, entrevista, propuesta) sale de sus comentarios o de su relleno amarillo.
+- **Reglas** (K4 > transcripción > minuta; si difieren, celda vacía y punto): nunca se escribe un valor fuera de la lista de la plantilla; Bimestral → Anual × 6; retrabajo solo como fracción 0–1; meses/año = 12 con un supuesto global; sin participación indirecta, 100 % de dedicación; el correo y el teléfono no se copian; todo lo que no tiene destino va a `Puntos_a_validar` (PV-NNN, ≥ 100 filas, tabla `tblPuntosValidar`, tipos Dato sin destino, Valor fuera de lista, Diferencia K4/Reunión, Dato faltante, Supuesto, Interpretación y Recomendación). La hoja Capacidad no se llena: el FTE y las horas son preliminares.
+- **Complementos** (`--complementos`): JSON con `campos` (Control y Perfil_Puesto, con `modo: "diferencia"`), `actividades_nuevas`, `puntos` y `evidencias` (esquema en SKILL.md, 13.1).
+- **Plantillas en el skill.** Copie la plantilla (y el K4 en blanco) a `formularios/` junto a `scripts/` antes de `construir`: se publican en `fuente-corpus/formularios/`, donde `vaciar` las encuentra. No se versionan (`.gitignore`); si faltan, la construcción lo avisa.
+- `donde` y `vaciar` no cargan el corpus (`Comando.requiere_corpus = False`).
+- Código: `consulta/vaciado/` (`xlsx.py` lector, `k4.py`, `valores.py`, `hoja_xml.py` y `paquete.py` escritores, `metodologia.py`, `verificacion.py`, `resumen.py`) y `consulta/comandos/vaciar.py`. Pruebas: `tests/test_vaciado.py` con archivos sintéticos (`tests/fixtures_vaciado.py`; no hay datos de personas ni del cliente).
+
 ## v4.8: palabras completas en las consultas y guía del formulario de levantamiento
 
 - **Palabras cortadas.** `buscar` mostraba el fragmento de cada coincidencia cortado por caracteres, así que las palabras de los extremos salían partidas («…rcial no tendrá…», «Ge…»). Ahora la ventana (110 caracteres) empieza y termina en palabras completas y siempre incluye el término buscado. Las celdas de la matriz de más de 3 000 caracteres también se cortan en una palabra (`comun/texto.recortar_en_palabra`). Las tablas del `briefing` siguen recortando por **palabras** (propósito y objetivo a 30, funciones a 10) y lo marcan con «…»: el agente debe leer el texto completo con `doc` antes de citarlas (nueva regla en SKILL.md y en las instrucciones).
@@ -368,6 +387,6 @@ python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -t .      # o: python -m pytest tests
 ```
 
-Las pruebas de integración generan corpus sintéticos (`tests/fixtures_corpus.py`, `tests/fixtures_casos.py`, `tests/fixtures_plantilla.py`). Necesitan `pymupdf`, `lxml`, `python-docx` y `reportlab`, y las de PDF además LibreOffice (`soffice`); si falta alguno, esas pruebas se omiten.
+Las pruebas de integración generan corpus sintéticos (`tests/fixtures_corpus.py`, `tests/fixtures_casos.py`, `tests/fixtures_plantilla.py`) y los Excel del vaciado (`tests/fixtures_vaciado.py`). Necesitan `pymupdf`, `lxml`, `python-docx` y `reportlab`, y las de PDF además LibreOffice (`soffice`); si falta alguno, esas pruebas se omiten.
 
-Los datos del cliente (documentos, materiales de contexto y corpus generado) no se versionan: `.gitignore` excluye `contexto/`, `entrada/`, `salida_corpus/` y `publicado/`.
+Los datos del cliente (documentos, materiales de contexto y corpus generado) no se versionan: `.gitignore` excluye `contexto/`, `entrada/`, `salida_corpus/`, `publicado/` y los `.xlsx` de `formularios/`.

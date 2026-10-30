@@ -12,3 +12,6 @@ datos/
 # Entorno virtual de Python
 .venv/
 venv/
+
+# Plantillas y formularios completados (pueden traer datos del cliente): se copian a formularios/ y no se versionan
+formularios/*.xlsx
