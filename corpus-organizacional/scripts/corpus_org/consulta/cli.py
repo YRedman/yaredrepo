@@ -5,7 +5,7 @@ import sys
 
 from ..comun.errores import AreaAmbigua, AreaNoEncontrada, CorpusError
 from .comandos import COMANDOS
-from .comandos.base import Contexto
+from .comandos.base import Contexto, ContextoSinCorpus
 from .repositorio import cargar_corpus
 from .salida import Salida
 from .ubicacion import incluir_no_vigentes, raiz_del_skill, resolver_ubicacion
@@ -54,14 +54,15 @@ def main(argv=None, uso="", flujo=None):
         return 0 if not argv else 1
     try:
         args = crear_parser().parse_args(argv)
-        if args.comando == "donde":          # no necesita cargar el corpus: sirve justo cuando falta algo
-            COMANDOS["donde"].ejecutar(None, args, s)
+        comando = COMANDOS[args.comando]
+        if not comando.requiere_corpus:      # p. ej. «donde»: sirve justo cuando falta algo
+            comando.ejecutar(ContextoSinCorpus(s), args)
             return 0
         u = resolver_ubicacion(RAIZ_SKILL)
         for aviso in u.avisos:
             s.linea("AVISO: " + aviso)
         corpus = cargar_corpus(u.contexto, incluir_no_vigentes(), u.documentos)
-        COMANDOS[args.comando].ejecutar(Contexto(corpus, s), args)
+        comando.ejecutar(Contexto(corpus, s), args)
     except CorpusError as e:
         _mostrar_error(e, s)
         return e.codigo_salida

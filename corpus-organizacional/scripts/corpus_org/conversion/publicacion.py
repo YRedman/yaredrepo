@@ -5,15 +5,17 @@ import datetime
 import hashlib
 import re
 import shutil
+from pathlib import Path
 
 from .. import VERSION
 from ..comun.archivos import escribir_csv, leer_csv
 from ..comun.esquema import (ARCHIVO_AREAS_EXTRA, ARCHIVO_EQUIVALENCIAS, ARCHIVO_HUELLAS, ARCHIVO_INDICE, ARCHIVO_INVENTARIO,
                              ARCHIVO_KPIS, COLUMNAS_INDICE, PREFIJO_DIC, PREFIJO_REPORTE, RE_DOC_MD)
-from ..comun.estructura import BYTES_DIVIDIR_MD, NOMBRE_SKILL_MD, archivos_de_huellas, rutas_publicadas
+from ..comun.estructura import (BYTES_DIVIDIR_MD, CARPETA_FORMULARIOS, NOMBRE_SKILL_MD, archivos_de_huellas,
+                                rutas_publicadas)
 from ..comun.tipos import POR_CODIGO, TIPOS_DOCUMENTO
 from .huella import huella
-from .skills import copiar_scripts
+from .skills import CARPETA_SCRIPTS, copiar_scripts
 
 # Archivos que genera la conversion en control/ y que se regeneran en cada construccion
 # (incluye los nombres de la codificacion anterior: P_*.md, D_*.md, contexto.md).
@@ -135,6 +137,20 @@ def dividir_markdown(texto, nombre, max_bytes):
     return salida
 
 
+def copiar_formularios(destino, origen=None):
+    """Copia al skill las plantillas de Excel de ``formularios/`` (junto a scripts/): el K4 y la plantilla metodologica que
+    llena ``corpus.py vaciar``. Devuelve los archivos copiados."""
+    origen = Path(origen) if origen else CARPETA_SCRIPTS.parent / CARPETA_FORMULARIOS
+    if not origen.is_dir():
+        return []
+    copiados = []
+    for p in sorted(origen.glob("*.xlsx")):
+        if not p.name.startswith("~$"):
+            destino.mkdir(parents=True, exist_ok=True)
+            copiados.append(shutil.copy2(p, destino / p.name))
+    return copiados
+
+
 def publicar_corpus(control, publicado, avisos=None, max_md_bytes=BYTES_DIVIDIR_MD):
     """Publica el skill fuente-corpus, listo para comprimir (``publicado`` = salida_corpus/copilot):
 
@@ -172,7 +188,11 @@ def publicar_corpus(control, publicado, avisos=None, max_md_bytes=BYTES_DIVIDIR_
     indice, duplicados = consolidar_indices(control, rutas.indice, relocalizado)
     copiados.append(indice)
     copiados += copiar_scripts(rutas.scripts)
-    return copiados, duplicados
+    formularios = copiar_formularios(rutas.formularios)
+    if not formularios and avisos is not None:
+        avisos.append("No hay plantillas en formularios/ (junto a scripts/): «corpus.py vaciar» no tendrá la plantilla metodológica "
+                      "en el skill. Copie allí el K4 y la plantilla de PwC (.xlsx) y vuelva a construir.")
+    return copiados + formularios, duplicados
 
 
 def escribir_huellas(publicado):

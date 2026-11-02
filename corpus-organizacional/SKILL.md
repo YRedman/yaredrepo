@@ -1,12 +1,12 @@
 ---
 name: fuente-corpus
 description: >-
-  Consulta exacta del corpus organizacional publicado (descriptivos de puesto, procedimientos, protocolos, políticas, documentos generales e indicadores) con scripts/corpus.py. Incluye el texto de los documentos (carpeta documentos/), el contexto, el índice y la matriz. Úsalo cuando el usuario mencione un área, departamento, puesto, procedimiento, proceso, actividad, código, responsable, propietario, versión, vigencia, relación entre áreas, indicador, KPI, meta o preparación de reuniones.
+  Consulta exacta del corpus organizacional publicado (descriptivos de puesto, procedimientos, protocolos, políticas, documentos generales e indicadores) con scripts/corpus.py. Incluye el texto de los documentos (carpeta documentos/), el contexto, el índice y la matriz. Úsalo cuando el usuario mencione un área, departamento, puesto, procedimiento, proceso, actividad, código, responsable, propietario, versión, vigencia, relación entre áreas, indicador, KPI, meta, preparación de reuniones, formulario de levantamiento o K4 y plantilla metodológica de carga laboral.
 ---
 
 # Corpus organizacional
 
-> Compatible con `convertir.py` v4.8 y `corpus.py` v4.8.
+> Compatible con `convertir.py` v4.9 y `corpus.py` v4.9.
 
 Este skill consulta exclusivamente el corpus publicado. Los documentos son la fuente de verdad; el índice sirve para localizar, contar y filtrar, pero los datos sustantivos se confirman en el Markdown original.
 
@@ -106,6 +106,7 @@ python scripts/corpus.py <comando> <argumentos>
 | `citar <CÓDIGO>… [--texto "<afirmación>"]` | Confirma que el documento existe, si es específico de un área o general, dónde está su original y, con `--texto` (repetible), si respalda la afirmación: `RESPALDADO (literal)`, `RESPALDO PARCIAL` o `SIN RESPALDO` |
 | `kpis [--gestion "<texto>"] [--sin-medicion] [--relacionar] [--area "<área>"]` | Indicadores y documentos que mencionan sus términos |
 | `verificar` | Integridad (huellas), inventario, cobertura, corpus completo, peso y número de archivos por carpeta |
+| `vaciar --k4 <archivo.xlsx> [--plantilla <xlsx>] [--salida <xlsx>] [--complementos <json>] [--fuentes <nombres>] [--leer]` | Pasa un K4 completado a la plantilla metodológica de carga laboral y escribe la hoja de puntos a validar (no carga el corpus; ver 13.1) |
 
 ### Reglas de uso
 
@@ -218,6 +219,29 @@ CORPUS_INCLUIR_NO_VIGENTES=1 python scripts/corpus.py gobierno
 ## 13. Flujo: formulario de levantamiento
 
 Si piden ayuda para llenar el formulario de entrevistas (descripción de puesto y carga laboral), busca su guía (`buscar "formulario de levantamiento" --tipo GEN`) y léela con `doc <CÓDIGO>`. Pregunta la hoja y el puesto y sigue el orden y los valores permitidos de la guía. Propón solo lo que respalden los documentos del puesto (`area`, `ficha`, `participacion`, `relaciones`, `kpis`), con su código y `[Inferido]`. Tiempos, volúmenes, frecuencias, retrabajo y todo dato que solo conoce la persona entrevistada se dejan como `[Preguntar]` con la pregunta sugerida. Los ejemplos en rojo de la guía no son datos de la empresa. Entrega la hoja como tabla Markdown (con columna Fuente) lista para copiar al Excel.
+
+### 13.1 Vaciado de un K4 en la plantilla metodológica
+
+Si piden pasar un K4 **ya completado** (y, si los hay, la transcripción y la minuta de la entrevista) a la plantilla metodológica de carga laboral (PwC), usa `vaciar`: lee el K4 por el nombre de sus hojas y encabezados, escribe solo las celdas de entrada (grises) de la plantilla, relee el archivo y lo compara con la plantilla; si algo no coincide, lo borra y no lo entrega. No uses el corpus como fuente de este vaciado: los datos salen solo del K4, la transcripción y la minuta.
+
+1. Localiza el K4 (primero `/mnt/data`; luego `find / -iname '*.xlsx' 2>/dev/null | grep -i -e k4 -e levantamiento`). La plantilla va en `formularios/` del skill (el script la encuentra; si no, pídela y pásala con `--plantilla`).
+2. `python scripts/corpus.py vaciar --k4 <K4> --leer` muestra lo que se lee del K4 (actividades, hojas ocultas, filas ignoradas). Revísalo con la persona antes de vaciar si hay avisos.
+3. Si hay transcripción o minuta, arma un JSON de complementos y pásalo con `--complementos`; nombra los archivos con `--fuentes` (van a Evidencias). Esquema:
+   - `campos`: `[{"hoja": "Control" | "Perfil_Puesto", "campo": "<rótulo exacto>", "valor": "...", "fuente": "Transcripción" | "Minuta", "modo": "diferencia"}]`. `modo: "diferencia"` se usa cuando el K4 y la reunión dicen cosas distintas: la celda queda vacía y se crea un punto con ambos valores.
+   - `actividades_nuevas`: `[{"actividad", "proceso", "descripcion", "periodo", "volumen", "tiempo_min", "motivo", "fuente"}]` para actividades que surgieron en la entrevista y no están en el K4 (fuente «Entrevista» + punto a validar).
+   - `puntos`: `[{"hoja", "campo", "tipo", "valor_formato", "valor_reunion", "fuente_reunion", "que_validar"}]`; `tipo` es uno de: Dato sin destino, Valor fuera de lista, Diferencia K4/Reunión, Dato faltante, Supuesto, Interpretación, Recomendación.
+   - `evidencias`: `[{"nombre", "tipo"}]` (Entrevista, Documento…).
+4. `python scripts/corpus.py vaciar --k4 <K4> --salida <Metodologia_….xlsx> [--complementos <json>] [--fuentes "<transcripción>" "<minuta>"]`. Entrega el archivo y el resumen del script.
+
+Reglas que aplica el script y que debes respetar al informar:
+- Prioridad de fuentes: K4 > transcripción > minuta. Si difieren, la celda queda vacía y va un punto a validar; nunca elijas tú.
+- Nada se pierde: lo que no tiene dónde ir (reporte matricial, entregables, actividades transicionales, observaciones) va a la hoja `Puntos_a_validar` con su tipo. Un valor que no está en la lista desplegable de la plantilla no se escribe: va al punto con el valor original.
+- **Bimestral** no existe en la plantilla: se escribe `Anual` con eventos × 6 (mismas horas). **Retrabajo** solo se acepta como fracción 0–1 o porcentaje; un número mayor que 1 (¿minutos?) queda vacío y con punto. **Meses/año activos** = 12 por defecto (supuesto global); «Estacional» queda vacío y con punto. Sin participación indirecta, % dedicación = 100 %.
+- «A demanda» o «Por evento» se registran como `Eventual`. Los tiempos «0», «N/D» o vacíos no son datos.
+- El K4 no trae el rol RACI ni el resultado de cada responsabilidad (obligatorios en la plantilla): quedan como puntos para la entrevista. El correo y el teléfono del colaborador no se copian.
+- Capacidad no se llena: el FTE y las horas por mes que informa el resumen son **preliminares** (vacaciones, ausentismo y pausas están en 0 %). Dilo siempre así.
+- Las horas del resumen usan los días por mes de la plantilla; pueden diferir del total que el ocupante calculó en su K4 (que usa 4,33 semanas por mes). Explícalo si te lo preguntan.
+- El resultado del script es lo que se entrega: no edites el Excel por otros medios (se pierden las listas desplegables) ni completes celdas por tu cuenta.
 
 ## 14. Preguntas analíticas internas
 

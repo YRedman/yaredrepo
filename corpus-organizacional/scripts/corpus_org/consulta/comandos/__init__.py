@@ -15,7 +15,8 @@ from .normativa import Normativa
 from .participacion import Participacion
 from .procesos import Procesos
 from .relaciones import Relaciones
+from .vaciar import Vaciar
 from .verificar import Verificar
 
 COMANDOS = {c.nombre: c for c in (Donde(), Catalogo(), IndiceArea(), Briefing(), Ficha(), Documento(), Buscar(), Relaciones(),
-                                   Participacion(), Gobierno(), Procesos(), Indicadores(), Normativa(), Cadena(), Citar(), Verificar())}
+                                   Participacion(), Gobierno(), Procesos(), Indicadores(), Normativa(), Cadena(), Citar(), Verificar(), Vaciar())}

@@ -95,3 +95,15 @@ Opcional: solo si hay sugerencias. Columnas: Actividad o Subproceso (de la lista
 | 9 Educación y Competencias | Perfil y requisitos del descriptivo | Certificaciones y niveles no documentados |
 | 10 Condiciones de Trabajo | Lo que diga el descriptivo | Horario real, equipos y riesgos |
 | 11 Optimización | Nada | Todo |
+
+## Al pasar el K4 completado a la plantilla metodológica
+
+Con el K4 ya completado, el comando `vaciar` lo pasa a la plantilla de carga laboral (ver SKILL.md, 13.1). Para que el vaciado no pierda datos, al completar el K4 conviene saber que:
+
+- El tiempo y el volumen se leen como número: `45`, `1:30` (horas:minutos), `2 h` o un rango (`20-30`, se usa el promedio y se avisa). Un `0`, `N/D` o la celda vacía significan «sin dato». Excel convierte a veces un rango como `2-4` en una fecha: escríbalo como texto.
+- «Bimestral» es válido en el K4 pero no existe en la plantilla: se registra como `Anual` con 6 eventos por cada uno (mismas horas) y queda anotado como punto a validar.
+- «A demanda» o «Por evento» no son una frecuencia de la plantilla: se registran como `Eventual`.
+- El retrabajo solo se interpreta como fracción (`0.1` = 10 %) o porcentaje (`10%`). Un número mayor que 1 (por ejemplo `15`, ¿minutos?) no se copia: queda como punto a validar.
+- Los meses del año en que se hace cada actividad no los pide el K4: se asumen 12. Una actividad «Estacional» queda sin meses y con un punto a validar.
+- Las filas de ejemplo en rojo y las notas o cálculos que se dejen debajo de las tablas no se toman como datos.
+

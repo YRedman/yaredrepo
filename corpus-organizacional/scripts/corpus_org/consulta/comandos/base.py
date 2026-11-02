@@ -65,11 +65,19 @@ class Contexto:
         return [c for c in codigos if not es_general(c) and area_de(c) == cod]
 
 
+class ContextoSinCorpus:
+    """Lo que recibe un comando que no necesita cargar el corpus: solo donde escribir."""
+
+    def __init__(self, salida):
+        self.salida = salida
+
+
 class Comando(ABC):
     """Un subcomando de ``corpus.py``. Para agregar uno nuevo: subclase + registro en ``comandos``."""
 
     nombre = ""
     ayuda = ""
+    requiere_corpus = True       # False: funciona aunque el corpus falte (sirve justo cuando algo no se encuentra)
 
     def configurar(self, parser):
         """Declara los argumentos del comando."""

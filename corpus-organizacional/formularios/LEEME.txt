@@ -1,0 +1,7 @@
+Plantillas de Excel que usa «corpus.py vaciar» (el agente las llena a partir de un K4 completado).
+
+Copie aquí, antes de «convertir.py construir»:
+  - la plantilla metodológica de carga laboral (su nombre debe contener «plantilla» o «PwC»);
+  - opcionalmente, el K4 en blanco.
+
+La construcción copia los .xlsx de esta carpeta a fuente-corpus/formularios/. No se versionan (ver .gitignore).

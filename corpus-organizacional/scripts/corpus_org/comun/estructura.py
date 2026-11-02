@@ -24,6 +24,7 @@ CARPETA_CONTEXTO = "contexto"      # documentos generales (ORG_GEN.md...) y kpis
 CARPETA_INDICE = "indice"          # indice, inventario, areas_extra, huellas, resumen, equivalencias
 CARPETA_MATRIZ = "matriz"          # matriz_organizacional.xlsx y un CSV por hoja
 CARPETA_SCRIPTS = "scripts"        # corpus.py y corpus_org/ (sin subcarpetas)
+CARPETA_FORMULARIOS = "formularios"    # plantillas de Excel (K4 y metodologia) que el agente llena con «vaciar»
 RAIZ_SKILLS_COPILOT = Path("/home/oai/skills/appCatalog")
 NOMBRE_SKILL_MD = "SKILL.md"
 ARCHIVO_NOTA_UBICACION = "NOTA_UBICACION_SKILL.md"
@@ -62,6 +63,7 @@ class Rutas:
     indice: Path
     matriz: Path
     scripts: Path
+    formularios: Path
 
     @property
     def skill_contexto(self):
@@ -74,7 +76,8 @@ def rutas_de_skill(skill, documentos=None):
     el skill fuente-documentos como hermano)."""
     skill = Path(skill)
     return Rutas(skill.parent, skill, Path(documentos) if documentos else skill / CARPETA_DOCUMENTOS,
-                 skill / CARPETA_CONTEXTO, skill / CARPETA_INDICE, skill / CARPETA_MATRIZ, skill / CARPETA_SCRIPTS)
+                 skill / CARPETA_CONTEXTO, skill / CARPETA_INDICE, skill / CARPETA_MATRIZ, skill / CARPETA_SCRIPTS,
+                 skill / CARPETA_FORMULARIOS)
 
 
 def rutas_publicadas(publicado):
