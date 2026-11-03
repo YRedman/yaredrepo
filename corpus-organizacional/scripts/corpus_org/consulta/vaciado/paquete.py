@@ -85,6 +85,14 @@ class Paquete:
             xml = re.sub(r"<calcPr\b", '<calcPr fullCalcOnLoad="1"', xml, count=1)
         self._cambios["xl/workbook.xml"] = xml.encode("utf-8")
 
+    def reemplazar_parte(self, nombre, datos):
+        """Cambia el contenido de una parte del paquete (p. ej. xl/styles.xml con formatos agregados al final)."""
+        self._cambios[nombre] = datos if isinstance(datos, bytes) else datos.encode("utf-8")
+
+    def conservar_valores_calculados(self):
+        """No borra los valores guardados de las formulas (el K4 trae formulas sencillas cuyo valor se lee tal cual)."""
+        self._limpiar_calculados = False
+
     # -- guardar -----------------------------------------------------------------------------------------------
 
     def quitar_valores_calculados(self):

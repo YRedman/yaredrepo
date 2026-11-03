@@ -61,6 +61,7 @@ EJEMPLO DEL FORMULARIO: Interna, Contabilidad, Gerente de contabilidad, informe 
 
 ### Hoja 5. Herramientas Tecnológicas
 Columnas: Nombre de la herramienta o sistema, Tipo de herramienta o sistema, Para qué se utiliza en el puesto, Nivel de dominio requerido, Frecuencia de uso y ¿Es requerido o deseable?
+Distribución: los seis encabezados están en una fila gris; cada herramienta va en una fila debajo. La fila gris no se borra ni se usa para una herramienta.
 
 ### Hoja 6. Responsabilidades del Puesto
 Columnas: Función o tarea detallada, Frecuencia, Nivel de responsabilidad y Observaciones (si aplica).
@@ -70,6 +71,7 @@ Columnas: Propósito principal del puesto, Función clave o contribución al neg
 
 ### Hoja 8. Información General
 Columnas: Nombre del puesto, Código interno, Área, Departamento, Reporta directamente a (nombre, apellido y puesto), Reporta matricialmente o regionalmente a (nombre, apellido y puesto), Número de personas a cargo, Puestos bajo su cargo y Ubicación o sucursal.
+Distribución: tabla horizontal de un solo registro. Los nombres de campo están en la fila gris y los valores van en la fila de abajo, cada uno bajo su encabezado (no como lista vertical con los nombres repetidos).
 
 ### Hoja 9. Educación y hoja oculta 9. Competencias
 Educación: Nivel académico, Área de formación y Certificaciones. Competencias (oculta): Tipo de competencia (técnica o conductual), Competencia, Nivel requerido y Observaciones.
@@ -106,4 +108,8 @@ Con el K4 ya completado, el comando `vaciar` lo pasa a la plantilla de carga lab
 - El retrabajo solo se interpreta como fracción (`0.1` = 10 %) o porcentaje (`10%`). Un número mayor que 1 (por ejemplo `15`, ¿minutos?) no se copia: queda como punto a validar.
 - Los meses del año en que se hace cada actividad no los pide el K4: se asumen 12. Una actividad «Estacional» queda sin meses y con un punto a validar.
 - Las filas de ejemplo en rojo y las notas o cálculos que se dejen debajo de las tablas no se toman como datos.
+
+## Texto en rojo del formulario
+
+Todo lo que está en rojo en el formulario original (los ejemplos de cada tabla y las notas «La información en rojo es un ejemplo…») es una guía de formato y **no debe quedar en el archivo completado**. El comando `llenar-k4` lo borra y escribe las respuestas en negro y los pendientes (`VALIDAR: …`) en morado.
 

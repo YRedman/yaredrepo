@@ -11,6 +11,7 @@ from .donde import Donde
 from .ficha import Ficha
 from .gobierno import Gobierno
 from .kpis import Indicadores
+from .llenar_k4 import LlenarK4
 from .normativa import Normativa
 from .participacion import Participacion
 from .procesos import Procesos
@@ -19,4 +20,4 @@ from .vaciar import Vaciar
 from .verificar import Verificar
 
 COMANDOS = {c.nombre: c for c in (Donde(), Catalogo(), IndiceArea(), Briefing(), Ficha(), Documento(), Buscar(), Relaciones(),
-                                   Participacion(), Gobierno(), Procesos(), Indicadores(), Normativa(), Cadena(), Citar(), Verificar(), Vaciar())}
+                                   Participacion(), Gobierno(), Procesos(), Indicadores(), Normativa(), Cadena(), Citar(), Verificar(), Vaciar(), LlenarK4())}

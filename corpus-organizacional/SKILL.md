@@ -6,7 +6,7 @@ description: >-
 
 # Corpus organizacional
 
-> Compatible con `convertir.py` v4.9 y `corpus.py` v4.9.
+> Compatible con `convertir.py` v4.10 y `corpus.py` v4.10.
 
 Este skill consulta exclusivamente el corpus publicado. Los documentos son la fuente de verdad; el índice sirve para localizar, contar y filtrar, pero los datos sustantivos se confirman en el Markdown original.
 
@@ -107,6 +107,7 @@ python scripts/corpus.py <comando> <argumentos>
 | `kpis [--gestion "<texto>"] [--sin-medicion] [--relacionar] [--area "<área>"]` | Indicadores y documentos que mencionan sus términos |
 | `verificar` | Integridad (huellas), inventario, cobertura, corpus completo, peso y número de archivos por carpeta |
 | `vaciar --k4 <archivo.xlsx> [--plantilla <xlsx>] [--salida <xlsx>] [--complementos <json>] [--fuentes <nombres>] [--leer]` | Pasa un K4 completado a la plantilla metodológica de carga laboral y escribe la hoja de puntos a validar (no carga el corpus; ver 13.1) |
+| `llenar-k4 --base <K4_en_blanco.xlsx> (--estructura \| --datos <json> [--salida <xlsx>])` | Escribe los datos de la entrevista en una copia del K4 en blanco sin cambiar su estructura; borra el texto en rojo y deja los pendientes en morado (no carga el corpus; ver 13.2) |
 
 ### Reglas de uso
 
@@ -242,6 +243,29 @@ Reglas que aplica el script y que debes respetar al informar:
 - Capacidad no se llena: el FTE y las horas por mes que informa el resumen son **preliminares** (vacaciones, ausentismo y pausas están en 0 %). Dilo siempre así.
 - Las horas del resumen usan los días por mes de la plantilla; pueden diferir del total que el ocupante calculó en su K4 (que usa 4,33 semanas por mes). Explícalo si te lo preguntan.
 - El resultado del script es lo que se entrega: no edites el Excel por otros medios (se pierden las listas desplegables) ni completes celdas por tu cuenta.
+
+### 13.2 Completar el archivo K4 (Excel) con `llenar-k4`
+
+Cuando el entregable es el **archivo K4 completado** (formulario de Macrotech), **no edites el Excel por tu cuenta**: usa `llenar-k4`. El script escribe solo en las celdas de respuesta, deja intacta la estructura, relee el archivo y lo compara con el base; si algo no coincide, lo borra y no lo entrega. (No aplica a la tabla de ayuda en el chat ni a la plantilla de PwC; esa la llena `vaciar`, que deja la celda vacía y crea un punto a validar en lugar de escribir «VALIDAR».)
+
+1. Localiza el **K4 en blanco** del usuario (primero `/mnt/data`) y no lo modifiques: `llenar-k4` siempre genera una copia.
+2. `python scripts/corpus.py llenar-k4 --base <K4_en_blanco.xlsx> --estructura` muestra, por hoja, las claves, los campos, los valores permitidos de las listas desplegables y cuántas filas admite. Úsalo para armar los datos.
+3. Arma un JSON con una lista de registros por hoja (claves: `inventario`, `actividades`, `transicionales`, `entregables`, `relaciones`, `herramientas`, `responsabilidades`, `proposito`, `general`, `competencias`, `educacion`, `condiciones`, `optimizacion`) y, además, `colaborador` (`nombre`, `apellido`, `correo`, `telefono`) y `exposicion` (lista de textos del bloque de riesgos y disponibilidad). Ejemplo: `{"general": [{"puesto": "…", "codigo": "…", "area": "…"}], "herramientas": [{"nombre": "SAP", "tipo": "ERP"}], "actividades": [{"actividad": "…", "tiempo": 30, "volumen": 5, "periodo": "Mensual"}]}`.
+4. `python scripts/corpus.py llenar-k4 --base <K4_en_blanco.xlsx> --datos <datos.json> --salida "<Puesto - Nombre Apellido>.xlsx"`. Entrega el archivo y el resumen del script (pendientes en morado, avisos).
+
+Lo que garantiza el script (no lo repitas a mano):
+- **Estructura inalterable:** encabezados grises, celdas combinadas, colores, bordes, anchos, listas desplegables (se amplían a las filas nuevas), comentarios, fórmulas y hojas ocultas quedan como en el base. No agrega columnas ni etiquetas dentro de las tablas ni convierte tablas horizontales en verticales.
+- **Todo el texto en rojo se borra** (los ejemplos de las tablas y las notas «la información en rojo es un ejemplo…»); los datos se escriben en **negro** y los pendientes en **morado**.
+- **Información General** es un solo registro horizontal en la fila bajo los encabezados; **Herramientas** conserva sus seis encabezados. Si falta un campo en esas dos hojas, escribe `VALIDAR: <campo>` en morado (con textos propios para el reporte matricial y la ubicación) en lugar de dejarlo vacío.
+- Los campos con lista desplegable (recurrencia, período, automatización, transición) solo aceptan sus opciones (corrige mayúsculas y acentos; si no calza, no escribe nada y dice cuáles son). Las actividades de las hojas 2, 2.1 y 11 deben estar en el inventario (hoja 1).
+- Si el base no tiene su fila de encabezados, o trae datos, o los datos no caben sin pasar sobre otro contenido, no escribe el archivo y explica por qué: no lo arregles editando el Excel; pide el archivo base original.
+
+Lo que sí te toca decidir (reglas de contenido):
+- **Completitud:** antes de marcar un campo como pendiente, busca en este orden: lo que dijo el usuario, la minuta, la transcripción, el descriptivo exacto del puesto y el organigrama documentado. No dejes sin dato lo que esas fuentes permitan completar total o parcialmente.
+- Puesto, área y departamento documentados: complétalos. Jefe directo documentado: el título del puesto aunque falte el nombre; si falta solo el nombre, `VALIDAR: nombre del ocupante. Puesto documentado: <puesto>`.
+- Puesto sin personal a cargo documentado: Número de personas a cargo `0` y Puestos bajo su cargo `No aplica`. Sin reporte matricial documentado: `VALIDAR: confirmar si existe reporte matricial o regional`. Sin ubicación: `VALIDAR: ubicación o sucursal`.
+- Vacío: solo cuando la metodología del formulario lo exige (p. ej., el tiempo de participación indirecta de una actividad que nace del propio puesto). `No aplica`: solo cuando una fuente confirma que el campo no corresponde al puesto, nunca como sustituto de una búsqueda incompleta. `VALIDAR: <dato>`: cuando el dato es requerido y no está suficientemente documentado.
+- No inventes nombres, códigos, dependencias, ubicaciones ni cantidades.
 
 ## 14. Preguntas analíticas internas
 
