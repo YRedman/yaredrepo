@@ -50,6 +50,7 @@ en el corpus» sin haber localizado antes el skill.
 MAX_NIVELES = 3                    # niveles de carpetas contando la del skill: fuente-corpus/scripts/corpus_org
 MAX_BYTES_ARCHIVO = 25 * 1024 * 1024
 MAX_BYTES_SKILL = 50 * 1024 * 1024
+MAX_CARACTERES_SKILL_MD = 30000       # Copilot: «Skill instructions must not exceed 30000 characters»
 MAX_ARCHIVOS_AGENTE = 350
 BYTES_DIVIDIR_MD = 20 * 1024 * 1024    # un Markdown mas grande se divide en partes
 
