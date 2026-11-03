@@ -469,5 +469,29 @@ class PublicacionTest(VaciadoBase):
         self.assertEqual(Libro(salida).hoja("Control").valor("C11"), "CMP-001")
 
 
+class SkillMdTest(unittest.TestCase):
+    """Copilot rechaza un SKILL.md de más de 30 000 caracteres («Skill instructions must not exceed 30000 characters»)."""
+
+    def test_el_skill_md_del_repositorio_deja_margen_bajo_el_limite(self):
+        from corpus_org.comun.estructura import MAX_CARACTERES_SKILL_MD
+        texto = (Path(__file__).resolve().parent.parent / "SKILL.md").read_text(encoding="utf-8")
+        crlf = len(texto) + texto.count("\n")                       # Windows guarda cada salto de línea como dos caracteres
+        self.assertLess(crlf, MAX_CARACTERES_SKILL_MD - 1500, f"SKILL.md tiene {len(texto)} caracteres ({crlf} con CRLF)")
+
+    def test_la_construccion_avisa_si_el_skill_md_es_demasiado_largo(self):
+        from types import SimpleNamespace
+
+        from corpus_org.comun.estructura import MAX_CARACTERES_SKILL_MD
+        from corpus_org.conversion.modos.construir import _copiar_skill_md
+        with tempfile.TemporaryDirectory() as tmp:
+            skill = Path(tmp) / "fuente-corpus"
+            skill.mkdir()
+            largo = Path(tmp) / "largo.md"
+            largo.write_text("x" * (MAX_CARACTERES_SKILL_MD + 1), encoding="utf-8")
+            validacion = SimpleNamespace(avisos=[])
+            _copiar_skill_md(SimpleNamespace(skill_md=str(largo)), SimpleNamespace(skill=skill), Path("nota.md"), validacion)
+        self.assertTrue(any("30000 characters" in a for a in validacion.avisos), validacion.avisos)
+
+
 if __name__ == "__main__":
     unittest.main()

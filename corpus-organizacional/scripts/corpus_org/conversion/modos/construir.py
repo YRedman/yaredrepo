@@ -17,8 +17,8 @@ from ... import VERSION
 from ...comun.archivos import escribir_csv, leer_csv
 from ...comun.errores import CorpusError
 from ...comun.esquema import ARCHIVO_CATALOGO, ARCHIVO_EQUIVALENCIAS, ARCHIVO_INVENTARIO, ARCHIVO_RESUMEN, COLUMNAS_INVENTARIO
-from ...comun.estructura import (ARCHIVO_NOTA_UBICACION, CARPETA_PUBLICADA, LLAVE_NOTA_UBICACION, NOMBRE_SKILL_MD,
-                                 NOTA_UBICACION_SKILL, SKILL_CONTEXTO, SKILL_CORPUS, SKILL_DOCUMENTOS, informe_limites,
+from ...comun.estructura import (ARCHIVO_NOTA_UBICACION, CARPETA_PUBLICADA, LLAVE_NOTA_UBICACION, MAX_CARACTERES_SKILL_MD,
+                                 NOMBRE_SKILL_MD, NOTA_UBICACION_SKILL, SKILL_CONTEXTO, SKILL_CORPUS, SKILL_DOCUMENTOS, informe_limites,
                                  rutas_publicadas)
 from ...comun.tipos import TIPOS_AREA, tipo as tipo_documento, tipo_de_carpeta
 from ...consulta.matriz import ARCHIVO_MATRIZ, escribir_matriz
@@ -242,6 +242,9 @@ def _copiar_skill_md(args, rutas, nota, validacion):
     if not destino.is_file():
         validacion.avisos.append(f"Falta {rutas.skill.name}/{NOMBRE_SKILL_MD}: póngalo como SKILL.md junto a la carpeta "
                                  "scripts/ del repositorio (se copia solo) o cópielo en esa carpeta antes de comprimirla.")
+    elif len(destino.read_text(encoding="utf-8", errors="replace")) > MAX_CARACTERES_SKILL_MD:
+        validacion.avisos.append(f"El {rutas.skill.name}/{NOMBRE_SKILL_MD} tiene más de {MAX_CARACTERES_SKILL_MD} caracteres y Copilot no "
+                                 "lo acepta («Skill instructions must not exceed 30000 characters»): acórtelo antes de subir el skill.")
     elif LLAVE_NOTA_UBICACION not in destino.read_text(encoding="utf-8", errors="replace"):
         validacion.avisos.append(f"El {rutas.skill.name}/{NOMBRE_SKILL_MD} no explica dónde queda cargado el skill "
                                  f"({LLAVE_NOTA_UBICACION}): el agente puede buscarlo en una ruta equivocada. Agregue "

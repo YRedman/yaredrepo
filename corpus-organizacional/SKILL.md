@@ -62,23 +62,13 @@ Antes del primer briefing de una sesión, ejecuta `verificar`.
 - Si `verificar` dice “corpus completo: no”, no afirmes ausencias (“no tiene descriptivo”, “no participa”).
 - Si `verificar` informa archivos modificados después de la conversión, avísalo: el corpus pudo alterarse.
 
-Para construir o actualizar:
+El corpus lo construye el equipo con `convertir.py construir` (ver el README del proyecto); el agente no lo ejecuta. Se comprime y se sube **una sola carpeta**: `salida_corpus/copilot/fuente-corpus`. `verificar` informa también el peso y el número de archivos por carpeta.
 
-```bash
-python scripts/convertir.py construir --entrada <carpeta_documentos> --contexto <carpeta_contexto>
-python scripts/corpus.py verificar        # informa también peso y número de archivos por carpeta
-```
-
-`construir` convierte varios documentos a la vez (`--trabajadores N`; por defecto núcleos − 1, hasta 4; `1` = uno a uno) y escribe `salida_corpus\NOTA_UBICACION_SKILL.md` (el párrafo de la sección 0; avisa si este `SKILL.md` no lo trae) y copia este `SKILL.md` a `fuente-corpus/`. Se comprime y se sube **una sola carpeta**: `salida_corpus/copilot/fuente-corpus`.
-
-- Los documentos van en `Descriptivos\<Área>\archivo`, `Procedimientos\<Área>\…`, `Protocolos\<Área>\…` o `Políticas\<Área>\…`. Una política o protocolo de varias áreas o de toda la empresa va en la carpeta de área `General` (código `GEN`). Si están directamente en `Descriptivos\` (sin carpeta de área), el área se escribe en `entrada\areas.csv` (`archivo;area`); el script crea ese archivo con la columna `area` vacía. `lista.txt` es opcional: sin ella, la lista se arma con la carpeta de entrada.
-- En la carpeta de contexto, los procedimientos y fichas de proceso (`PRD`), las políticas, normativas y reglamentos (`POL`), los protocolos (`PRO`) y los descriptivos (`DES`) se tratan como documentos de área: área de `areas.csv` (manda si el archivo está ahí), de la subcarpeta que sigue a la del tipo (`Fichas de proceso\Calidad\`) o, si el archivo está directamente en la carpeta del tipo, de la carpeta que la contiene (`Gestión Comercial\Ventas\Procedimiento\x.docx` → Ventas); si no, `GEN`. Un árbol `Gestión X\<Área>\Procedimiento|Política\archivo` se clasifica solo. Lo demás es un documento general por su subcarpeta o nombre (organigrama, glosario, mapa de procesos) o `CTX`; los `kpi*.csv` van a `kpis.csv`.
-- Los documentos sin área quedan como «Sin Área» con códigos provisionales `DES-SAR-NN` y la construcción termina en REQUIERE REVISIÓN. No cites esos códigos como definitivos.
-
-- **REQUIERE REVISIÓN** (código 2): faltan documentos, hay texto del original que no aparece (cobertura < 100 %), palabras que no están en el original, códigos duplicados o errores del contexto.
-- **PENDIENTE DE REVISIÓN VISUAL** (código 3): documentos con avisos de estructura (tabla leída como texto, filas partidas, posible diagrama, números incompletos, OCR…) y una muestra del 10 % de los demás. Una persona compara cada uno con su original y anota su código en `revision_visual_ok.txt` (uno por línea); luego se vuelve a construir. `--muestra-revision 0` desactiva la muestra.
-- **LISTO PARA PUBLICAR** (código 0).
-- Inventario: se ignoran temporales (`~$…`, `Thumbs.db`); el mismo documento en `.docx` y `.pdf` o una copia `(1)` se inventaría una vez (`--incluir-duplicados` conserva todos); los archivos se emparejan por su ruta `Tipo/Departamento/Archivo`. Al reconstruir, los códigos no cambian: los documentos nuevos van al final y los retirados reservan su código. Un corpus construido con la codificación anterior se migra solo (`D-` → `DES-`, `P-` → `PRD-` con el mismo número; `C-CTX-` por tipo dentro de `GEN`) y `revision_visual_ok.txt` puede seguir con los códigos anteriores.
+- **REQUIERE REVISIÓN**: faltan documentos, hay texto del original que no aparece (cobertura < 100 %), palabras que no están en el original, códigos duplicados o errores del contexto.
+- **PENDIENTE DE REVISIÓN VISUAL**: documentos con avisos de estructura (tabla leída como texto, filas partidas, posible diagrama, números incompletos, OCR…) y una muestra de los demás que una persona aún no compara con su original.
+- **LISTO PARA PUBLICAR**: sin pendientes.
+- Los documentos sin área quedan como «Sin Área» con códigos provisionales `DES-SAR-NN`: no los cites como definitivos.
+- Los códigos no cambian al reconstruir: los documentos nuevos van al final y los retirados reservan su código. Un corpus de la codificación anterior se migra solo (`D-` → `DES-`, `P-` → `PRD-`, `C-CTX-` → por tipo dentro de `GEN`).
 
 ## 4. Herramienta de consulta
 
@@ -221,51 +211,32 @@ CORPUS_INCLUIR_NO_VIGENTES=1 python scripts/corpus.py gobierno
 
 Si piden ayuda para llenar el formulario de entrevistas (descripción de puesto y carga laboral), busca su guía (`buscar "formulario de levantamiento" --tipo GEN`) y léela con `doc <CÓDIGO>`. Pregunta la hoja y el puesto y sigue el orden y los valores permitidos de la guía. Propón solo lo que respalden los documentos del puesto (`area`, `ficha`, `participacion`, `relaciones`, `kpis`), con su código y `[Inferido]`. Tiempos, volúmenes, frecuencias, retrabajo y todo dato que solo conoce la persona entrevistada se dejan como `[Preguntar]` con la pregunta sugerida. Los ejemplos en rojo de la guía no son datos de la empresa. Entrega la hoja como tabla Markdown (con columna Fuente) lista para copiar al Excel.
 
-### 13.1 Vaciado de un K4 en la plantilla metodológica
+### 13.1 Pasar un K4 completado a la plantilla de PwC (`vaciar`)
 
-Si piden pasar un K4 **ya completado** (y, si los hay, la transcripción y la minuta de la entrevista) a la plantilla metodológica de carga laboral (PwC), usa `vaciar`: lee el K4 por el nombre de sus hojas y encabezados, escribe solo las celdas de entrada (grises) de la plantilla, relee el archivo y lo compara con la plantilla; si algo no coincide, lo borra y no lo entrega. No uses el corpus como fuente de este vaciado: los datos salen solo del K4, la transcripción y la minuta.
+Para pasar un K4 **ya completado** (y, si los hay, la transcripción y la minuta) a la plantilla metodológica de carga laboral, usa `vaciar`: escribe solo las celdas de entrada, relee el archivo y lo compara con la plantilla (si algo no coincide, lo borra). Los datos salen solo del K4, la transcripción y la minuta, no del corpus.
 
-1. Localiza el K4 (primero `/mnt/data`; luego `find / -iname '*.xlsx' 2>/dev/null | grep -i -e k4 -e levantamiento`). La plantilla va en `formularios/` del skill (el script la encuentra; si no, pídela y pásala con `--plantilla`).
-2. `python scripts/corpus.py vaciar --k4 <K4> --leer` muestra lo que se lee del K4 (actividades, hojas ocultas, filas ignoradas). Revísalo con la persona antes de vaciar si hay avisos.
-3. Si hay transcripción o minuta, arma un JSON de complementos y pásalo con `--complementos`; nombra los archivos con `--fuentes` (van a Evidencias). Esquema:
-   - `campos`: `[{"hoja": "Control" | "Perfil_Puesto", "campo": "<rótulo exacto>", "valor": "...", "fuente": "Transcripción" | "Minuta", "modo": "diferencia"}]`. `modo: "diferencia"` se usa cuando el K4 y la reunión dicen cosas distintas: la celda queda vacía y se crea un punto con ambos valores.
-   - `actividades_nuevas`: `[{"actividad", "proceso", "descripcion", "periodo", "volumen", "tiempo_min", "motivo", "fuente"}]` para actividades que surgieron en la entrevista y no están en el K4 (fuente «Entrevista» + punto a validar).
-   - `puntos`: `[{"hoja", "campo", "tipo", "valor_formato", "valor_reunion", "fuente_reunion", "que_validar"}]`; `tipo` es uno de: Dato sin destino, Valor fuera de lista, Diferencia K4/Reunión, Dato faltante, Supuesto, Interpretación, Recomendación.
-   - `evidencias`: `[{"nombre", "tipo"}]` (Entrevista, Documento…).
-4. `python scripts/corpus.py vaciar --k4 <K4> --salida <Metodologia_….xlsx> [--complementos <json>] [--fuentes "<transcripción>" "<minuta>"]`. Entrega el archivo y el resumen del script.
+1. Localiza el K4 (primero `/mnt/data`). La plantilla está en `formularios/` del skill; si no, pídela y usa `--plantilla`.
+2. `corpus.py vaciar --k4 <K4> --leer` muestra lo que se lee (actividades, hojas ocultas, filas ignoradas); revisa los avisos.
+3. Con transcripción o minuta, arma un JSON y pásalo con `--complementos` (nombra los archivos con `--fuentes`): `campos` (`hoja` Control o Perfil_Puesto, `campo` rótulo exacto, `valor`, `fuente`, `modo: "diferencia"` si K4 y reunión difieren), `actividades_nuevas` (`actividad`, `proceso`, `descripcion`, `periodo`, `volumen`, `tiempo_min`, `motivo`), `puntos` (`hoja`, `campo`, `tipo`, `valor_formato`, `valor_reunion`, `fuente_reunion`, `que_validar`; tipos: Dato sin destino, Valor fuera de lista, Diferencia K4/Reunión, Dato faltante, Supuesto, Interpretación, Recomendación) y `evidencias` (`nombre`, `tipo`).
+4. `corpus.py vaciar --k4 <K4> --salida <Metodologia_….xlsx> [--complementos <json>]`. Entrega el archivo y el resumen del script.
 
-Reglas que aplica el script y que debes respetar al informar:
-- Prioridad de fuentes: K4 > transcripción > minuta. Si difieren, la celda queda vacía y va un punto a validar; nunca elijas tú.
-- Nada se pierde: lo que no tiene dónde ir (reporte matricial, entregables, actividades transicionales, observaciones) va a la hoja `Puntos_a_validar` con su tipo. Un valor que no está en la lista desplegable de la plantilla no se escribe: va al punto con el valor original.
-- **Bimestral** no existe en la plantilla: se escribe `Anual` con eventos × 6 (mismas horas). **Retrabajo** solo se acepta como fracción 0–1 o porcentaje; un número mayor que 1 (¿minutos?) queda vacío y con punto. **Meses/año activos** = 12 por defecto (supuesto global); «Estacional» queda vacío y con punto. Sin participación indirecta, % dedicación = 100 %.
-- «A demanda» o «Por evento» se registran como `Eventual`. Los tiempos «0», «N/D» o vacíos no son datos.
-- El K4 no trae el rol RACI ni el resultado de cada responsabilidad (obligatorios en la plantilla): quedan como puntos para la entrevista. El correo y el teléfono del colaborador no se copian.
-- Capacidad no se llena: el FTE y las horas por mes que informa el resumen son **preliminares** (vacaciones, ausentismo y pausas están en 0 %). Dilo siempre así.
-- Las horas del resumen usan los días por mes de la plantilla; pueden diferir del total que el ocupante calculó en su K4 (que usa 4,33 semanas por mes). Explícalo si te lo preguntan.
-- El resultado del script es lo que se entrega: no edites el Excel por otros medios (se pierden las listas desplegables) ni completes celdas por tu cuenta.
+Reglas que aplica el script: K4 > transcripción > minuta; si difieren, celda vacía y punto a validar. Lo que no tiene destino (reporte matricial, entregables, actividades transicionales) va a `Puntos_a_validar`; un valor fuera de la lista de la plantilla no se escribe (va al punto). Bimestral → `Anual` × 6 (mismas horas); retrabajo solo como fracción 0–1 (mayor que 1 queda vacío con punto); meses/año = 12 (supuesto; «Estacional» queda vacío con punto); sin participación indirecta, dedicación 100 %; «A demanda» → `Eventual`. El K4 no trae el rol RACI ni el resultado de cada responsabilidad: quedan como puntos. No se copian correo ni teléfono. Capacidad no se llena: el FTE y las horas son **preliminares**; pueden diferir del total del K4 (que usa 4,33 semanas por mes). No edites ese Excel por otros medios (se pierden las listas desplegables).
 
-### 13.2 Completar el archivo K4 (Excel) con `llenar-k4`
+### 13.2 Completar el archivo K4 con `llenar-k4`
 
-Cuando el entregable es el **archivo K4 completado** (formulario de Macrotech), **no edites el Excel por tu cuenta**: usa `llenar-k4`. El script escribe solo en las celdas de respuesta, deja intacta la estructura, relee el archivo y lo compara con el base; si algo no coincide, lo borra y no lo entrega. (No aplica a la tabla de ayuda en el chat ni a la plantilla de PwC; esa la llena `vaciar`, que deja la celda vacía y crea un punto a validar en lugar de escribir «VALIDAR».)
+Para entregar el **archivo K4 completado** (formulario de Macrotech) **no edites el Excel por tu cuenta**: usa `llenar-k4`. Escribe solo bajo los encabezados, relee el archivo y lo compara con el base (si algo no coincide, lo borra). No aplica a la tabla de ayuda del chat ni a la plantilla de PwC (esa la llena `vaciar`, que deja la celda vacía y crea un punto en lugar de escribir «VALIDAR»).
 
-1. Localiza el **K4 en blanco** del usuario (primero `/mnt/data`) y no lo modifiques: `llenar-k4` siempre genera una copia.
-2. `python scripts/corpus.py llenar-k4 --base <K4_en_blanco.xlsx> --estructura` muestra, por hoja, las claves, los campos, los valores permitidos de las listas desplegables y cuántas filas admite. Úsalo para armar los datos.
-3. Arma un JSON con una lista de registros por hoja (claves: `inventario`, `actividades`, `transicionales`, `entregables`, `relaciones`, `herramientas`, `responsabilidades`, `proposito`, `general`, `competencias`, `educacion`, `condiciones`, `optimizacion`) y, además, `colaborador` (`nombre`, `apellido`, `correo`, `telefono`) y `exposicion` (lista de textos del bloque de riesgos y disponibilidad). Ejemplo: `{"general": [{"puesto": "…", "codigo": "…", "area": "…"}], "herramientas": [{"nombre": "SAP", "tipo": "ERP"}], "actividades": [{"actividad": "…", "tiempo": 30, "volumen": 5, "periodo": "Mensual"}]}`.
-4. `python scripts/corpus.py llenar-k4 --base <K4_en_blanco.xlsx> --datos <datos.json> --salida "<Puesto - Nombre Apellido>.xlsx"`. Entrega el archivo y el resumen del script (pendientes en morado, avisos).
+1. Localiza el **K4 en blanco** del usuario (primero `/mnt/data`); no se modifica, siempre se genera una copia.
+2. `corpus.py llenar-k4 --base <K4_en_blanco> --estructura` muestra por hoja las claves, los campos, los valores de las listas y las filas que admite.
+3. Arma un JSON con una lista de registros por hoja (claves: `inventario`, `actividades`, `transicionales`, `entregables`, `relaciones`, `herramientas`, `responsabilidades`, `proposito`, `general`, `competencias`, `educacion`, `condiciones`, `optimizacion`), más `colaborador` (`nombre`, `apellido`, `correo`, `telefono`) y `exposicion` (lista de textos). Ejemplo: `{"general": [{"puesto": "…", "codigo": "…"}], "herramientas": [{"nombre": "SAP", "tipo": "ERP"}]}`.
+4. `corpus.py llenar-k4 --base <K4_en_blanco> --datos <datos.json> --salida "<Puesto - Nombre Apellido>.xlsx"`. Entrega el archivo y el resumen.
 
-Lo que garantiza el script (no lo repitas a mano):
-- **Estructura inalterable:** encabezados grises, celdas combinadas, colores, bordes, anchos, listas desplegables (se amplían a las filas nuevas), comentarios, fórmulas y hojas ocultas quedan como en el base. No agrega columnas ni etiquetas dentro de las tablas ni convierte tablas horizontales en verticales.
-- **Todo el texto en rojo se borra** (los ejemplos de las tablas y las notas «la información en rojo es un ejemplo…»); los datos se escriben en **negro** y los pendientes en **morado**.
-- **Información General** es un solo registro horizontal en la fila bajo los encabezados; **Herramientas** conserva sus seis encabezados. Si falta un campo en esas dos hojas, escribe `VALIDAR: <campo>` en morado (con textos propios para el reporte matricial y la ubicación) en lugar de dejarlo vacío.
-- Los campos con lista desplegable (recurrencia, período, automatización, transición) solo aceptan sus opciones (corrige mayúsculas y acentos; si no calza, no escribe nada y dice cuáles son). Las actividades de las hojas 2, 2.1 y 11 deben estar en el inventario (hoja 1).
-- Si el base no tiene su fila de encabezados, o trae datos, o los datos no caben sin pasar sobre otro contenido, no escribe el archivo y explica por qué: no lo arregles editando el Excel; pide el archivo base original.
+El script garantiza: estructura intacta (encabezados, combinadas, formatos, listas, comentarios, fórmulas, hojas ocultas); **todo el texto en rojo se borra** (ejemplos y notas); datos en negro y pendientes en morado; **Información General** como un solo registro horizontal y **Herramientas** con sus seis encabezados (un campo sin dato queda como `VALIDAR: …`); las listas solo aceptan sus opciones y las actividades deben estar en el inventario. Si el base no tiene sus encabezados, trae datos o los datos no caben, no escribe el archivo y lo explica: pide el base original, no lo arregles a mano.
 
-Lo que sí te toca decidir (reglas de contenido):
-- **Completitud:** antes de marcar un campo como pendiente, busca en este orden: lo que dijo el usuario, la minuta, la transcripción, el descriptivo exacto del puesto y el organigrama documentado. No dejes sin dato lo que esas fuentes permitan completar total o parcialmente.
-- Puesto, área y departamento documentados: complétalos. Jefe directo documentado: el título del puesto aunque falte el nombre; si falta solo el nombre, `VALIDAR: nombre del ocupante. Puesto documentado: <puesto>`.
-- Puesto sin personal a cargo documentado: Número de personas a cargo `0` y Puestos bajo su cargo `No aplica`. Sin reporte matricial documentado: `VALIDAR: confirmar si existe reporte matricial o regional`. Sin ubicación: `VALIDAR: ubicación o sucursal`.
-- Vacío: solo cuando la metodología del formulario lo exige (p. ej., el tiempo de participación indirecta de una actividad que nace del propio puesto). `No aplica`: solo cuando una fuente confirma que el campo no corresponde al puesto, nunca como sustituto de una búsqueda incompleta. `VALIDAR: <dato>`: cuando el dato es requerido y no está suficientemente documentado.
-- No inventes nombres, códigos, dependencias, ubicaciones ni cantidades.
+A ti te toca el contenido:
+- Antes de marcar algo como pendiente busca, en este orden: el usuario, la minuta, la transcripción, el descriptivo exacto del puesto y el organigrama. No dejes sin dato lo que se pueda completar total o parcialmente.
+- Jefe directo documentado: el título del puesto aunque falte el nombre; si falta solo el nombre, `VALIDAR: nombre del ocupante. Puesto documentado: <puesto>`. Sin personal a cargo documentado: personas `0` y puestos `No aplica`. Sin reporte matricial documentado: `VALIDAR: confirmar si existe reporte matricial o regional`.
+- Vacío solo cuando la metodología lo exige (p. ej., participación indirecta de una actividad propia del puesto). `No aplica` solo si una fuente confirma que no corresponde, nunca por búsqueda incompleta. `VALIDAR: <dato>` si es requerido y no está documentado. No inventes nombres, códigos, ubicaciones ni cantidades.
 
 ## 14. Preguntas analíticas internas
 
