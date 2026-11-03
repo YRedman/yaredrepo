@@ -6,7 +6,7 @@ description: >-
 
 # Corpus organizacional
 
-> Compatible con `convertir.py` v4.9 y `corpus.py` v4.9.
+> Compatible con `convertir.py` v4.10 y `corpus.py` v4.10.
 
 Este skill consulta exclusivamente el corpus publicado. Los documentos son la fuente de verdad; el índice sirve para localizar, contar y filtrar, pero los datos sustantivos se confirman en el Markdown original.
 
@@ -107,6 +107,7 @@ python scripts/corpus.py <comando> <argumentos>
 | `kpis [--gestion "<texto>"] [--sin-medicion] [--relacionar] [--area "<área>"]` | Indicadores y documentos que mencionan sus términos |
 | `verificar` | Integridad (huellas), inventario, cobertura, corpus completo, peso y número de archivos por carpeta |
 | `vaciar --k4 <archivo.xlsx> [--plantilla <xlsx>] [--salida <xlsx>] [--complementos <json>] [--fuentes <nombres>] [--leer]` | Pasa un K4 completado a la plantilla metodológica de carga laboral y escribe la hoja de puntos a validar (no carga el corpus; ver 13.1) |
+| `llenar-k4 --base <K4_en_blanco.xlsx> (--estructura \| --datos <json> [--salida <xlsx>])` | Escribe los datos de la entrevista en una copia del K4 en blanco sin cambiar su estructura; borra el texto en rojo y deja los pendientes en morado (no carga el corpus; ver 13.2) |
 
 ### Reglas de uso
 
@@ -243,31 +244,28 @@ Reglas que aplica el script y que debes respetar al informar:
 - Las horas del resumen usan los días por mes de la plantilla; pueden diferir del total que el ocupante calculó en su K4 (que usa 4,33 semanas por mes). Explícalo si te lo preguntan.
 - El resultado del script es lo que se entrega: no edites el Excel por otros medios (se pierden las listas desplegables) ni completes celdas por tu cuenta.
 
-### 13.2 Preservación de la plantilla al completar el K4 (Excel)
+### 13.2 Completar el archivo K4 (Excel) con `llenar-k4`
 
-Estas reglas valen cuando el entregable es el **archivo K4 completado** (formulario de Macrotech), no la tabla de ayuda en el chat ni la plantilla de PwC (esa la llena `vaciar`, que deja vacío y crea un punto a validar en lugar de escribir «VALIDAR»). La estructura del archivo base es inalterable.
+Cuando el entregable es el **archivo K4 completado** (formulario de Macrotech), **no edites el Excel por tu cuenta**: usa `llenar-k4`. El script escribe solo en las celdas de respuesta, deja intacta la estructura, relee el archivo y lo compara con el base; si algo no coincide, lo borra y no lo entrega. (No aplica a la tabla de ayuda en el chat ni a la plantilla de PwC; esa la llena `vaciar`, que deja la celda vacía y crea un punto a validar en lugar de escribir «VALIDAR».)
 
-**Estructura**
-- Trabaja siempre sobre una copia nueva del archivo base vacío que entregó el usuario; nunca sobre el original.
-- No elimines, desplaces, insertes, conviertas ni sobrescribas: filas o columnas de encabezado, celdas grises con los nombres de los campos, celdas combinadas, colores, bordes, anchos y alturas, listas desplegables, validaciones, comentarios metodológicos, fórmulas ni filas o columnas ocultas.
-- Borra o reemplaza solo los ejemplos en rojo de las celdas de respuesta. Un encabezado o una celda gris nunca es un ejemplo.
-- Escribe solo en las celdas de respuesta. No agregues columnas auxiliares, etiquetas ni nombres de campo dentro del cuerpo de las tablas, y no cambies una tabla horizontal a vertical ni al revés.
-- **Hoja «5. Herramientas Tecnológicas»:** la fila gris de encabezados se conserva completa y en las mismas coordenadas: Nombre de la herramienta o sistema · Tipo de herramienta / sistema · Para qué se utiliza en el puesto · Nivel de dominio requerido · Frecuencia de uso · ¿Es requerido o deseable?. Cada herramienta ocupa una fila debajo; nunca uses la fila gris para una herramienta ni quites la primera columna.
-- **Hoja «8. Información General»:** es una tabla horizontal de **un solo registro**. Los nombres de campo quedan en la fila gris y los valores en la fila inmediatamente inferior, cada uno bajo su encabezado, en este orden: Nombre del puesto · Código interno · Área · Departamento · Reporta directamente a · Reporta matricialmente / regionalmente a · Número de personas a cargo · Puestos bajo su cargo · Ubicación / Sucursal. No repitas esos nombres en la fila de respuesta ni los pases a una lista vertical.
+1. Localiza el **K4 en blanco** del usuario (primero `/mnt/data`) y no lo modifiques: `llenar-k4` siempre genera una copia.
+2. `python scripts/corpus.py llenar-k4 --base <K4_en_blanco.xlsx> --estructura` muestra, por hoja, las claves, los campos, los valores permitidos de las listas desplegables y cuántas filas admite. Úsalo para armar los datos.
+3. Arma un JSON con una lista de registros por hoja (claves: `inventario`, `actividades`, `transicionales`, `entregables`, `relaciones`, `herramientas`, `responsabilidades`, `proposito`, `general`, `competencias`, `educacion`, `condiciones`, `optimizacion`) y, además, `colaborador` (`nombre`, `apellido`, `correo`, `telefono`) y `exposicion` (lista de textos del bloque de riesgos y disponibilidad). Ejemplo: `{"general": [{"puesto": "…", "codigo": "…", "area": "…"}], "herramientas": [{"nombre": "SAP", "tipo": "ERP"}], "actividades": [{"actividad": "…", "tiempo": 30, "volumen": 5, "periodo": "Mensual"}]}`.
+4. `python scripts/corpus.py llenar-k4 --base <K4_en_blanco.xlsx> --datos <datos.json> --salida "<Puesto - Nombre Apellido>.xlsx"`. Entrega el archivo y el resumen del script (pendientes en morado, avisos).
 
-**Completitud (Información General y el resto del formulario)**
-- Antes de marcar un campo como pendiente, busca en este orden: lo que dijo el usuario, la minuta, la transcripción, el descriptivo exacto del puesto y el organigrama documentado. No dejes en blanco lo que pueda completarse total o parcialmente con esas fuentes.
-- Puesto, área y departamento documentados: complétalos. Jefe directo documentado: escribe el título del puesto aunque falte el nombre; si falta solo el nombre, `VALIDAR: nombre del ocupante. Puesto documentado: <puesto>`.
-- Si está documentado que el puesto no tiene personal a cargo: Número de personas a cargo `0` y Puestos bajo su cargo `No aplica`.
-- Sin reporte matricial documentado: `VALIDAR: confirmar si existe reporte matricial o regional`. Sin ubicación documentada: `VALIDAR: ubicación o sucursal`.
+Lo que garantiza el script (no lo repitas a mano):
+- **Estructura inalterable:** encabezados grises, celdas combinadas, colores, bordes, anchos, listas desplegables (se amplían a las filas nuevas), comentarios, fórmulas y hojas ocultas quedan como en el base. No agrega columnas ni etiquetas dentro de las tablas ni convierte tablas horizontales en verticales.
+- **Todo el texto en rojo se borra** (los ejemplos de las tablas y las notas «la información en rojo es un ejemplo…»); los datos se escriben en **negro** y los pendientes en **morado**.
+- **Información General** es un solo registro horizontal en la fila bajo los encabezados; **Herramientas** conserva sus seis encabezados. Si falta un campo en esas dos hojas, escribe `VALIDAR: <campo>` en morado (con textos propios para el reporte matricial y la ubicación) en lugar de dejarlo vacío.
+- Los campos con lista desplegable (recurrencia, período, automatización, transición) solo aceptan sus opciones (corrige mayúsculas y acentos; si no calza, no escribe nada y dice cuáles son). Las actividades de las hojas 2, 2.1 y 11 deben estar en el inventario (hoja 1).
+- Si el base no tiene su fila de encabezados, o trae datos, o los datos no caben sin pasar sobre otro contenido, no escribe el archivo y explica por qué: no lo arregles editando el Excel; pide el archivo base original.
+
+Lo que sí te toca decidir (reglas de contenido):
+- **Completitud:** antes de marcar un campo como pendiente, busca en este orden: lo que dijo el usuario, la minuta, la transcripción, el descriptivo exacto del puesto y el organigrama documentado. No dejes sin dato lo que esas fuentes permitan completar total o parcialmente.
+- Puesto, área y departamento documentados: complétalos. Jefe directo documentado: el título del puesto aunque falte el nombre; si falta solo el nombre, `VALIDAR: nombre del ocupante. Puesto documentado: <puesto>`.
+- Puesto sin personal a cargo documentado: Número de personas a cargo `0` y Puestos bajo su cargo `No aplica`. Sin reporte matricial documentado: `VALIDAR: confirmar si existe reporte matricial o regional`. Sin ubicación: `VALIDAR: ubicación o sucursal`.
+- Vacío: solo cuando la metodología del formulario lo exige (p. ej., el tiempo de participación indirecta de una actividad que nace del propio puesto). `No aplica`: solo cuando una fuente confirma que el campo no corresponde al puesto, nunca como sustituto de una búsqueda incompleta. `VALIDAR: <dato>`: cuando el dato es requerido y no está suficientemente documentado.
 - No inventes nombres, códigos, dependencias, ubicaciones ni cantidades.
-
-**Vacío, «No aplica» y «VALIDAR»**
-- Vacío: solo cuando la metodología del formulario lo exige (por ejemplo, el tiempo de participación indirecta de una actividad que nace del propio puesto).
-- `No aplica`: solo cuando una fuente confirma que el campo no corresponde al puesto; nunca como sustituto de una búsqueda incompleta.
-- `VALIDAR: <dato requerido>` en **letra morada**: cuando el dato es requerido y no está suficientemente documentado (también en Herramientas). No dejes vacío un campo requerido que pueda marcarse así. Todo dato por confirmar va en morado.
-
-**Control antes de entregar:** compara la salida con el archivo base vacío y confirma que los nombres de las hojas son los mismos; la fila gris de encabezados sigue en cada hoja; el número y el orden de las columnas y los rangos combinados no cambiaron; Herramientas tiene sus seis encabezados; Información General tiene una sola fila de respuestas sin nombres de campo repetidos; no quedan ejemplos rojos mezclados con datos reales; todo punto pendiente está en morado; y ningún campo requerido está vacío si la minuta, la transcripción o el descriptivo lo traen. Para esto relee el archivo guardado (no puedes abrirlo en Excel). Si algo falla, corrígelo antes de entregar.
 
 ## 14. Preguntas analíticas internas
 

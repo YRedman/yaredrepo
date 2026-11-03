@@ -13,6 +13,8 @@ RE_SHEETDATA = re.compile(r"(<sheetData\b[^>]*?(?:/>|>)).*?(</sheetData>)|<sheet
 RE_FILA = re.compile(r"<row\b([^>]*?)(/>|>(.*?)</row>)", re.S)
 RE_CELDA = re.compile(r"<c\b([^>]*?)(/>|>(.*?)</c>)", re.S)
 RE_ATRIBUTO = re.compile(r'([\w:]+)="([^"]*)"')
+RE_COMBINADAS = re.compile(r"<mergeCells\b[^>]*?(?:/>|>.*?</mergeCells>)", re.S)
+RE_RANGO = re.compile(r"^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$")
 RE_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")
 LIMITE_TEXTO = 32000
 
@@ -89,10 +91,11 @@ class HojaXml:
 
     # -- escritura ---------------------------------------------------------------------------------------------
 
-    def escribir(self, ref, valor, estilo=None):
+    def escribir(self, ref, valor, estilo=None, forzar=False):
         """Escribe un texto o un numero en ``ref`` conservando el estilo de la celda. Devuelve True si el texto se recorto.
 
-        Rechaza las celdas con formula. ``estilo`` se usa solo si la celda no existia.
+        Rechaza las celdas con formula. ``estilo`` se usa solo si la celda no existia, salvo con ``forzar`` (el K4 cambia
+        el color de la letra de la celda de respuesta).
         """
         col, fila = partir_ref(ref)
         k = columna_a_numero(col)
@@ -103,7 +106,7 @@ class HojaXml:
         if existente is not None and "<f" in existente:
             raise CeldaConFormula(ref)
         s = estilo
-        if existente is not None:
+        if existente is not None and not (forzar and estilo is not None):
             s = dict(RE_ATRIBUTO.findall(RE_CELDA.match(existente).group(1))).get("s", estilo)
         atributos = f' r="{ref}"' + (f' s="{s}"' if s not in (None, "") else "")
         recortado = False
@@ -122,6 +125,50 @@ class HojaXml:
         f[0] = re.sub(r'\s+spans="[^"]*"', "", f[0])
         self.modificada = True
         return recortado
+
+    def quitar_alto_fijo(self, fila):
+        """La fila vuelve a ajustar su alto al texto (se quita ``ht`` y ``customHeight``)."""
+        f = self._filas.get(fila)
+        if f is not None:
+            f[0] = re.sub(r'\s+(?:ht|customHeight)="[^"]*"', "", f[0])
+            self.modificada = True
+
+    def _editar_fuera_de_los_datos(self, cambio):
+        texto = cambio(self.texto())
+        self._texto, self.modificada = texto, True
+        self._filas.clear()
+        self._separar()
+        self.modificada = True
+
+    def combinadas(self):
+        return re.findall(r'<mergeCell\b[^>]*?\bref="([^"]+)"', self.texto())
+
+    def cambiar_combinadas(self, quitar=(), agregar=()):
+        """Quita y agrega rangos combinados (solo para el cuerpo de una tabla; los encabezados no se tocan)."""
+        quitar = set(quitar)
+
+        def cambio(texto):
+            actuales = re.findall(r'<mergeCell\b[^>]*?\bref="([^"]+)"', texto)
+            nuevas = [r for r in actuales if r not in quitar] + [r for r in agregar if r not in actuales]
+            bloque = (f'<mergeCells count="{len(nuevas)}">' + "".join(f'<mergeCell ref="{r}"/>' for r in nuevas) + "</mergeCells>") if nuevas else ""
+            m = RE_COMBINADAS.search(texto)
+            if m:
+                return texto[:m.start()] + bloque + texto[m.end():]
+            return texto.replace("</sheetData>", "</sheetData>" + bloque, 1)
+        self._editar_fuera_de_los_datos(cambio)
+
+    def ampliar_validaciones(self, columnas, fila_vieja, fila_nueva):
+        """Las listas desplegables de las columnas dadas que terminaban en ``fila_vieja`` llegan hasta ``fila_nueva``."""
+        def ampliar(m):
+            fichas = []
+            for ficha in m.group(2).split():
+                r = RE_RANGO.match(ficha)
+                if r and r.group(1) in columnas and (r.group(3) is None or r.group(3) == r.group(1)) \
+                        and int(r.group(4) or r.group(2)) == fila_vieja:
+                    ficha = f"{r.group(1)}{r.group(2)}:{r.group(1)}{fila_nueva}"
+                fichas.append(ficha)
+            return m.group(1) + " ".join(fichas) + m.group(3)
+        self._editar_fuera_de_los_datos(lambda t: re.sub(r'(<dataValidation\b[^>]*?\bsqref=")([^"]*)(")', ampliar, t))
 
     def agregar_validacion_lista(self, sqref, opciones):
         """Lista desplegable clasica en ``sqref``; se inserta donde el esquema lo exige (antes de los hipervinculos)."""

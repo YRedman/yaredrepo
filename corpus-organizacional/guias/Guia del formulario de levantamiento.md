@@ -109,3 +109,7 @@ Con el K4 ya completado, el comando `vaciar` lo pasa a la plantilla de carga lab
 - Los meses del año en que se hace cada actividad no los pide el K4: se asumen 12. Una actividad «Estacional» queda sin meses y con un punto a validar.
 - Las filas de ejemplo en rojo y las notas o cálculos que se dejen debajo de las tablas no se toman como datos.
 
+## Texto en rojo del formulario
+
+Todo lo que está en rojo en el formulario original (los ejemplos de cada tabla y las notas «La información en rojo es un ejemplo…») es una guía de formato y **no debe quedar en el archivo completado**. El comando `llenar-k4` lo borra y escribe las respuestas en negro y los pendientes (`VALIDAR: …`) en morado.
+

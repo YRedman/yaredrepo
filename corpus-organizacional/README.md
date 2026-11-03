@@ -282,6 +282,21 @@ fuente-corpus/
 
 Código: `comun/tipos.py`, `comun/estructura.py`, `conversion/inventario.py`, `conversion/publicacion.py`, `conversion/skills.py`, `consulta/ubicacion.py`, `consulta/extraccion.py`, `consulta/pertinencia.py`, `consulta/jerarquia.py`, `consulta/matriz.py`, `consulta/comandos/briefing.py` y `normativa.py`. La conversión y la verificación de fidelidad no cambian.
 
+## v4.10: `corpus.py llenar-k4` (completar el K4 sin romper su estructura)
+
+El agente editaba el Excel por su cuenta y fallaba: borraba la fila gris de encabezados de «5. Herramientas Tecnológicas» y convertía la tabla horizontal de «8. Información General» en una lista vertical. Ahora el agente solo entrega los datos y el script escribe el archivo.
+
+```bash
+python scripts/corpus.py llenar-k4 --base K4_en_blanco.xlsx --estructura                  # claves, campos, listas y filas por hoja
+python scripts/corpus.py llenar-k4 --base K4_en_blanco.xlsx --datos datos.json --salida "Puesto - Nombre Apellido.xlsx"
+```
+
+- **Qué escribe.** Cada hoja se reconoce por su nombre y cada columna por su encabezado (no por posición). Los registros van en las filas bajo la fila gris; si hay más registros que filas con formato, se agregan filas con el formato del cuerpo (la última conserva el borde inferior) y las listas desplegables se amplían. «Información General» admite un solo registro y «Herramientas» exige sus seis encabezados; un campo sin dato en esas dos hojas queda como `VALIDAR: …` en morado.
+- **Texto en rojo.** Todo el texto rojo del formulario (ejemplos y notas) se borra; los datos quedan en negro. Para eso se agregan al final de `styles.xml` copias de los formatos con otro color de letra; los existentes no cambian.
+- **Verificación.** Se relee el archivo y se compara con el base: nombres y visibilidad de hojas, partes del paquete, encabezados, filas sobre las respuestas, celdas combinadas (solo cambian las del cuerpo del inventario, que se reagrupan por proceso), listas desplegables, formatos, celdas no pedidas, color de cada respuesta, ausencia de texto rojo, un solo registro horizontal, XML válido. Si algo falla, se borra la salida.
+- **Errores que impiden escribir** (y no dejan archivo): base sin su fila de encabezados o con datos, campo o clave inexistente, valor fuera de lista, actividad que no está en el inventario, más filas de las que caben sin pasar sobre otro contenido.
+- Código: `consulta/vaciado/llenado_k4.py`, `estilos.py`, `verificacion_k4.py`, `consulta/comandos/llenar_k4.py`; ampliaciones en `hoja_xml.py` (combinadas, listas, alto de fila) y `paquete.py`. Pruebas: `tests/test_llenado_k4.py` (K4 en blanco sintético en `tests/fixtures_vaciado.py`).
+
 ## v4.9: vaciado de un K4 en la plantilla metodológica (`corpus.py vaciar`)
 
 El agente ya podía ayudar a **preparar** la entrevista (guía del formulario). Ahora puede **pasar un K4 completado** (más la transcripción y la minuta) a la plantilla metodológica de carga laboral, todo dentro de `fuente-corpus` (Copilot admite un solo skill por carga) y con solo la biblioteca estándar.

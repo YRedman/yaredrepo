@@ -41,6 +41,14 @@ TIPOS_PROCESO = ["Core", "Soporte", "Gobierno/Control"]
 AUTOMATIZACIONES = ["Manual", "Semiautomatizada", "Automatizada"]
 
 
+PREFIJO_VALIDAR = "VALIDAR"
+
+
+def es_validar(valor):
+    """True si el texto es un pendiente («VALIDAR: …»), que en el K4 va en letra morada."""
+    return isinstance(valor, str) and norm(valor).startswith(norm(PREFIJO_VALIDAR))
+
+
 def _texto(valor):
     return " ".join(str(valor).replace("\xa0", " ").split())
 

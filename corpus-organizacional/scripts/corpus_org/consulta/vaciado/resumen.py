@@ -49,3 +49,21 @@ def texto_resultado(resultado, k4, nombre_k4, plantilla, celdas_verificadas):
         lineas.append(f"| PV-{i:03d} | {p['hoja']} | {p['campo'][:60]} | {p['tipo']} | "
                       f"{(p['valor_formato'] or '—')[:50].replace(chr(10), ' / ').replace('|', '/')} | {p['que_validar'][:110]} |")
     return lineas
+
+
+def texto_llenado(r, nombre_base, nombre_datos):
+    """Resultado de ``llenar-k4``: lo escrito, lo borrado, los pendientes en morado y los avisos."""
+    lineas = [f"Base: {nombre_base}", f"Datos: {nombre_datos}", f"Archivo generado: {r.destino}",
+              "Verificación: correcta (encabezados, celdas combinadas, formatos, listas desplegables, comentarios y fórmulas del "
+              "formulario sin cambios; respuestas releídas; sin texto en rojo)", "",
+              "Celdas escritas por hoja: " + (" · ".join(f"{h} {n}" for h, n in r.por_hoja.items()) or "ninguna"),
+              "Registros: " + (" · ".join(f"{c} {n}" for c, n in r.filas.items()) or "ninguno"),
+              f"Texto rojo borrado: {len(r.borradas)} celda(s) (ejemplos y notas del formulario)"]
+    if r.combinadas_quitadas:
+        lineas.append("Celdas combinadas del cuerpo ajustadas: " + "; ".join(f"{h} ({', '.join(m)})" for h, m in r.combinadas_quitadas.items()))
+    lineas.append(f"Pendientes «VALIDAR» en morado: {len(r.validar)}")
+    lineas += [f"AVISO: {a}" for a in r.advertencias]
+    if r.validar:
+        lineas += ["", "| Hoja | Celda | Pendiente |", "|---|---|---|"]
+        lineas += [f"| {h} | {ref} | {texto[:100].replace('|', '/')} |" for h, ref, texto in r.validar]
+    return lineas

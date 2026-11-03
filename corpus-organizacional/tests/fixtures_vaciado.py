@@ -80,19 +80,24 @@ def _col_de(ref):
     return n
 
 
-def _hoja_xml(celdas, tabla=None, x14=False, combinadas=()):
+def _hoja_xml(celdas, tabla=None, x14=False, combinadas=(), validaciones=(), alturas=None):
     """celdas: {ref: valor | (valor, estilo)}."""
     filas = {}
     for ref, v in celdas.items():
         valor, estilo = v if isinstance(v, tuple) else (v, NORMAL)
         filas.setdefault(_fila_de(ref), {})[_col_de(ref)] = _celda(ref, valor, estilo)
-    cuerpo = "".join(f'<row r="{n}" spans="1:30">' + "".join(c[k] for k in sorted(c)) + "</row>" for n, c in sorted(filas.items()))
+    alturas = alturas or {}
+    cuerpo = "".join(f'<row r="{n}" spans="1:30"' + (f' ht="{alturas[n]}" customHeight="1"' if n in alturas else "") + ">"
+                     + "".join(c[k] for k in sorted(c)) + "</row>" for n, c in sorted(filas.items()))
+    listas = "".join(f'<dataValidation type="list" allowBlank="1" sqref="{sqref}"><formula1>"{escape(opciones)}"</formula1></dataValidation>'
+                     for sqref, opciones in validaciones)
+    listas = f'<dataValidations count="{len(validaciones)}">{listas}</dataValidations>' if validaciones else ""
     refs = list(celdas)
     dimension = f'<dimension ref="A1:{_columna(max(_col_de(r) for r in refs))}{max(_fila_de(r) for r in refs)}"/>' if refs else ""
     merges = f'<mergeCells count="{len(combinadas)}">' + "".join(f'<mergeCell ref="{m}"/>' for m in combinadas) + "</mergeCells>" if combinadas else ""
     partes = '<tableParts count="1"><tablePart r:id="rId1"/></tableParts>' if tabla else ""
     return (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet {NS}>{dimension}<sheetViews><sheetView workbookViewId="0"/>'
-            f'</sheetViews><sheetFormatPr defaultRowHeight="15"/><sheetData>{cuerpo}</sheetData>{merges}'
+            f'</sheetViews><sheetFormatPr defaultRowHeight="15"/><sheetData>{cuerpo}</sheetData>{merges}{listas}'
             f'<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>{partes}{X14 if x14 else ""}</worksheet>')
 
 
@@ -114,7 +119,8 @@ def crear_xlsx(ruta, hojas):
         libro_hojas.append(f'<sheet name="{escape(h["nombre"])}" sheetId="{i}"{estado} r:id="rId{i}"/>')
         rels_libro.append(f'<Relationship Id="rId{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i}.xml"/>')
         tipos.append(f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>')
-        partes[f"xl/worksheets/sheet{i}.xml"] = _hoja_xml(h["celdas"], h.get("tabla"), h.get("x14", False), h.get("combinadas", ()))
+        partes[f"xl/worksheets/sheet{i}.xml"] = _hoja_xml(h["celdas"], h.get("tabla"), h.get("x14", False), h.get("combinadas", ()),
+                                                          h.get("validaciones", ()), h.get("alturas"))
         rels = []
         if h.get("tabla"):
             n_tabla += 1
@@ -255,6 +261,57 @@ def hojas_plantilla():
 
 def crear_k4(ruta):
     return crear_xlsx(ruta, hojas_k4())
+
+
+# -- K4 en blanco (el que se llena con «llenar-k4») ----------------------------------------------------------------------
+
+NOTA_ROJA = "Nota: La información en rojo es un ejemplo de cómo debe llenarse este formulario; puede eliminarla cuando ya no la necesite."
+LISTA_RECURRENCIA = "Por evento,A demanda,Continua,Estacional,Única"
+LISTA_PERIODO = "Diaria,Semanal,Quincenal,Mensual,Bimestral,Trimestral,Semestral,Anual"
+LISTA_AUTOMATIZACION = "Manual,Semiautomatizada,Automatizada"
+
+
+def _marco(primera, ultima, columnas, estilo=ROJO):
+    """Celdas de respuesta vacias con el formato del formulario (letra roja, como en el K4 real)."""
+    return {f"{_columna(c)}{n}": (None, estilo) for n in range(primera, ultima + 1) for c in range(2, 2 + columnas)}
+
+
+def hojas_k4_en_blanco(sin_encabezados_de=None):
+    """K4 vacio: encabezados grises, ejemplos y notas en rojo, combinadas, listas desplegables y un bloque de exposicion."""
+    def hoja(nombre, encabezados, fila_enc, filas_marco, **extra):
+        celdas = {"B6": (NOTA_ROJA, ROJO)}
+        if nombre != sin_encabezados_de:
+            celdas.update({f"{_columna(2 + j)}{fila_enc}": (e, ENCABEZADO) for j, e in enumerate(encabezados)})
+        celdas.update(_marco(fila_enc + 1, fila_enc + filas_marco, len(encabezados)))
+        celdas.update(extra.pop("celdas", {}))
+        return {"nombre": nombre, "celdas": celdas, **extra}
+
+    actividades = ["Actividad / Subproceso", "Descripción de la actividad", "Recurrencia", "Tiempo que le toma (min)", "Volumen", "Período del volumen",
+                   "Tiempo de participación indirecta (min)", "Nivel de automatización", "Tiempo de retrabajo", "Causa del retrabajo", "Riesgos"]
+    hojas = [
+        {"nombre": "Instrucciones", "celdas": {"D7": "Nombre: ", "E7": (None, ENTRADA), "D8": "Apellido: ", "E8": (None, ENTRADA),
+                                               "D9": "Correo: ", "E9": (None, ENTRADA), "D10": "Número de teléfono / Ext.: ", "E10": (None, ENTRADA)}},
+        hoja("1. Inventario de Procesos", ["Proceso", "Actividad / Subproceso", "Tipo (Core / Soporte)"], 8, 5, combinadas=["B9:B13", "D9:D13"]),
+        hoja("2. Actividades Base", actividades, 8, 3, validaciones=[("D9:D11", LISTA_RECURRENCIA), ("G9:G11", LISTA_PERIODO),
+                                                                      ("I9:I11", LISTA_AUTOMATIZACION)], alturas={9: 20, 10: 20}),
+        hoja("5. Herramientas Tecnológicas", ["Nombre de la herramienta o sistema", "Tipo de herramienta / sistema", "Para qué se utiliza en el puesto",
+                                              "Nivel de dominio requerido", "Frecuencia de uso", "¿Es requerido o deseable?"], 9, 3),
+        hoja("6. Responsabilidades del Puesto", ["Función / tarea detallada", "Frecuencia", "Nivel de responsabilidad", "Observaciones / comentarios"], 8, 4),
+        hoja("8. Información General", ["Nombre del puesto", "Código interno", "Área", "Departamento", "Reporta directamente a (nombre, apellido y puesto)",
+                                        "Reporta matricialmente / regionalmente a", "Número de personas a cargo", "Puestos bajo su cargo", "Ubicación / Sucursal"], 7, 2),
+        hoja("9. Competencias", ["Tipo de competencia (técnica/conductual)", "Competencia", "Nivel requerido", "Observaciones"], 8, 2,
+             estado="hidden", celdas={"B9": ("Técnica", ROJO), "C9": ("Legislación laboral", ROJO), "D9": ("Avanzado", ROJO), "E9": ("N/A", ROJO),
+                                      "B10": ("Conductual", ROJO), "C10": ("Liderazgo", ROJO), "D10": ("Avanzado", ROJO), "E10": ("N/A", ROJO),
+                                      "B13": ("La información en color rojo es un ejemplo de cómo debe llenarse esta hoja.", ROJO)}),
+        hoja("10. Condiciones de Trabajo", ["Horario de trabajo", "Modalidad", "Equipos utilizados", "Observaciones"], 8, 2,
+             combinadas=["B12:E12", "B13:E13", "B14:E14"],
+             celdas={"B12": ("Exposición del puesto a riesgos laborales y disponibilidad", ENCABEZADO), "B13": (None, ROJO), "B14": (None, ROJO)}),
+    ]
+    return hojas
+
+
+def crear_k4_en_blanco(ruta, sin_encabezados_de=None):
+    return crear_xlsx(ruta, hojas_k4_en_blanco(sin_encabezados_de))
 
 
 def crear_plantilla(ruta):
