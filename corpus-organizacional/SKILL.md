@@ -243,6 +243,32 @@ Reglas que aplica el script y que debes respetar al informar:
 - Las horas del resumen usan los días por mes de la plantilla; pueden diferir del total que el ocupante calculó en su K4 (que usa 4,33 semanas por mes). Explícalo si te lo preguntan.
 - El resultado del script es lo que se entrega: no edites el Excel por otros medios (se pierden las listas desplegables) ni completes celdas por tu cuenta.
 
+### 13.2 Preservación de la plantilla al completar el K4 (Excel)
+
+Estas reglas valen cuando el entregable es el **archivo K4 completado** (formulario de Macrotech), no la tabla de ayuda en el chat ni la plantilla de PwC (esa la llena `vaciar`, que deja vacío y crea un punto a validar en lugar de escribir «VALIDAR»). La estructura del archivo base es inalterable.
+
+**Estructura**
+- Trabaja siempre sobre una copia nueva del archivo base vacío que entregó el usuario; nunca sobre el original.
+- No elimines, desplaces, insertes, conviertas ni sobrescribas: filas o columnas de encabezado, celdas grises con los nombres de los campos, celdas combinadas, colores, bordes, anchos y alturas, listas desplegables, validaciones, comentarios metodológicos, fórmulas ni filas o columnas ocultas.
+- Borra o reemplaza solo los ejemplos en rojo de las celdas de respuesta. Un encabezado o una celda gris nunca es un ejemplo.
+- Escribe solo en las celdas de respuesta. No agregues columnas auxiliares, etiquetas ni nombres de campo dentro del cuerpo de las tablas, y no cambies una tabla horizontal a vertical ni al revés.
+- **Hoja «5. Herramientas Tecnológicas»:** la fila gris de encabezados se conserva completa y en las mismas coordenadas: Nombre de la herramienta o sistema · Tipo de herramienta / sistema · Para qué se utiliza en el puesto · Nivel de dominio requerido · Frecuencia de uso · ¿Es requerido o deseable?. Cada herramienta ocupa una fila debajo; nunca uses la fila gris para una herramienta ni quites la primera columna.
+- **Hoja «8. Información General»:** es una tabla horizontal de **un solo registro**. Los nombres de campo quedan en la fila gris y los valores en la fila inmediatamente inferior, cada uno bajo su encabezado, en este orden: Nombre del puesto · Código interno · Área · Departamento · Reporta directamente a · Reporta matricialmente / regionalmente a · Número de personas a cargo · Puestos bajo su cargo · Ubicación / Sucursal. No repitas esos nombres en la fila de respuesta ni los pases a una lista vertical.
+
+**Completitud (Información General y el resto del formulario)**
+- Antes de marcar un campo como pendiente, busca en este orden: lo que dijo el usuario, la minuta, la transcripción, el descriptivo exacto del puesto y el organigrama documentado. No dejes en blanco lo que pueda completarse total o parcialmente con esas fuentes.
+- Puesto, área y departamento documentados: complétalos. Jefe directo documentado: escribe el título del puesto aunque falte el nombre; si falta solo el nombre, `VALIDAR: nombre del ocupante. Puesto documentado: <puesto>`.
+- Si está documentado que el puesto no tiene personal a cargo: Número de personas a cargo `0` y Puestos bajo su cargo `No aplica`.
+- Sin reporte matricial documentado: `VALIDAR: confirmar si existe reporte matricial o regional`. Sin ubicación documentada: `VALIDAR: ubicación o sucursal`.
+- No inventes nombres, códigos, dependencias, ubicaciones ni cantidades.
+
+**Vacío, «No aplica» y «VALIDAR»**
+- Vacío: solo cuando la metodología del formulario lo exige (por ejemplo, el tiempo de participación indirecta de una actividad que nace del propio puesto).
+- `No aplica`: solo cuando una fuente confirma que el campo no corresponde al puesto; nunca como sustituto de una búsqueda incompleta.
+- `VALIDAR: <dato requerido>` en **letra morada**: cuando el dato es requerido y no está suficientemente documentado (también en Herramientas). No dejes vacío un campo requerido que pueda marcarse así. Todo dato por confirmar va en morado.
+
+**Control antes de entregar:** compara la salida con el archivo base vacío y confirma que los nombres de las hojas son los mismos; la fila gris de encabezados sigue en cada hoja; el número y el orden de las columnas y los rangos combinados no cambiaron; Herramientas tiene sus seis encabezados; Información General tiene una sola fila de respuestas sin nombres de campo repetidos; no quedan ejemplos rojos mezclados con datos reales; todo punto pendiente está en morado; y ningún campo requerido está vacío si la minuta, la transcripción o el descriptivo lo traen. Para esto relee el archivo guardado (no puedes abrirlo en Excel). Si algo falla, corrígelo antes de entregar.
+
 ## 14. Preguntas analíticas internas
 
 - ¿Qué procedimientos ejecuta, aprueba, revisa o recibe el área?
