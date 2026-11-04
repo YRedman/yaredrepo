@@ -1,4 +1,4 @@
-"""Codificacion TTT-AAA-NN, migracion de codigos anteriores y estructura en dos skills de Copilot."""
+"""Codificacion TTT-AAA-NN, migracion de codigos anteriores y ubicacion del skill fuente-corpus de Copilot."""
 
 import csv
 import io
@@ -227,16 +227,6 @@ class UbicacionTest(unittest.TestCase):
         (skill / "documentos" / "DES" / "DES_SEG.md").write_text("## [DES-SEG-01] Jefe\n", encoding="utf-8")
         return skill
 
-    def _dos_skills(self, raiz, carpeta_docs="b2"):
-        """La estructura anterior: fuente-contexto y fuente-documentos como skills separados."""
-        ctx = raiz / "appCatalog" / "a1" / "fuente-contexto"
-        (ctx / "indice").mkdir(parents=True)
-        (ctx / "indice" / "indice_corpus.csv").write_text("codigo\n", encoding="utf-8")
-        docs = raiz / "appCatalog" / carpeta_docs / "fuente-documentos"
-        (docs / "DES").mkdir(parents=True)
-        (docs / "DES" / "DES_SEG.md").write_text("## [DES-SEG-01] Jefe\n", encoding="utf-8")
-        return ctx, docs
-
     def test_los_documentos_estan_dentro_del_skill(self):
         with tempfile.TemporaryDirectory() as tmp:
             skill = self._skill(Path(tmp))
@@ -251,14 +241,6 @@ class UbicacionTest(unittest.TestCase):
                 u = ubicacion.resolver_ubicacion(raiz / "copia_de_scripts", entorno={})
             self.assertEqual((u.contexto, u.documentos), (skill.resolve(), (skill / "documentos").resolve()))
 
-    def test_estructura_anterior_de_dos_skills_se_sigue_encontrando(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            raiz = Path(tmp)
-            ctx, docs = self._dos_skills(raiz)                    # en otra <carpeta>
-            with mock.patch.object(ubicacion, "RAIZ_SKILLS_COPILOT", raiz / "appCatalog"):
-                u = ubicacion.resolver_ubicacion(ctx, entorno={})
-            self.assertEqual((u.contexto, u.documentos), (ctx.resolve(), docs.resolve()))
-
     def test_variable_corpus_datos(self):
         with tempfile.TemporaryDirectory() as tmp:
             raiz = Path(tmp)
@@ -266,12 +248,12 @@ class UbicacionTest(unittest.TestCase):
             for valor in (raiz / "appCatalog" / "a1", skill):          # la carpeta que lo contiene, o el skill
                 u = ubicacion.resolver_ubicacion(raiz / "otro", entorno={"CORPUS_DATOS": str(valor)})
                 self.assertEqual((u.contexto, u.documentos), (skill.resolve(), (skill / "documentos").resolve()), valor)
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp:                     # una ruta invalida se ignora y se busca por otros medios
             raiz = Path(tmp)
-            ctx, docs = self._dos_skills(raiz, "a1")
-            for valor in (raiz / "appCatalog" / "a1", ctx, docs):   # estructura anterior
-                u = ubicacion.resolver_ubicacion(raiz / "otro", entorno={"CORPUS_DATOS": str(valor)})
-                self.assertEqual((u.contexto, u.documentos), (ctx.resolve(), docs.resolve()), valor)
+            skill = self._skill(raiz)
+            with mock.patch.object(ubicacion, "RAIZ_SKILLS_COPILOT", raiz / "appCatalog"):
+                u = ubicacion.resolver_ubicacion(raiz / "otro", entorno={"CORPUS_DATOS": str(raiz / "no_existe")})
+            self.assertEqual(u.contexto, skill.resolve())
 
     def test_el_skill_directamente_en_la_carpeta_de_skills_o_mas_hondo_tambien_se_encuentra(self):
         """El agente asumio /home/oai/skills/fuente-corpus; la copia real estaba en appCatalog/<carpeta>/. Ambas (y niveles

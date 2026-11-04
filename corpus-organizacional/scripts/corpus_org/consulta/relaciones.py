@@ -4,7 +4,7 @@ import collections
 import re
 from dataclasses import dataclass
 
-from ..comun.esquema import area_de
+from ..comun.tipos import area_de
 from ..comun.texto import norm
 from .areas import patrones_area
 from .entidades import quitar_exclusiones

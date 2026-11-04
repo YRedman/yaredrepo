@@ -6,10 +6,10 @@ from pathlib import Path
 from ..comun.archivos import leer_csv, leer_csv_opcional
 from ..comun.errores import CorpusError
 from ..comun.esquema import (ARCHIVO_AREAS_EXTRA, ARCHIVO_INDICE, ARCHIVO_INVENTARIO, ARCHIVO_KPIS, ARCHIVO_RESUMEN,
-                             COLUMNAS_INDICE, PREFIJO_DIC, PREFIJO_REPORTE, RE_TITULO_DOC, area_de,
-                             INVENTARIO_RETIRADO, estado_no_publicable, inventario_activo, tipo_de_fila)
-from ..comun.estructura import SKILL_CORPUS, markdown_de_documentos, rutas_de_skill_contexto
-from ..comun.tipos import TIPOS_AREA, es_general, tipo as tipo_documento
+                             COLUMNAS_INDICE, INVENTARIO_RETIRADO, PREFIJO_DIC, PREFIJO_REPORTE, RE_TITULO_DOC,
+                             estado_no_publicable, inventario_activo, tipo_de_fila)
+from ..comun.estructura import CARPETA_DOCUMENTOS, SKILL_CORPUS, markdown_de_documentos, rutas_de_skill
+from ..comun.tipos import TIPOS_AREA, area_de, es_general, tipo as tipo_documento
 from . import parser
 from .areas import construir_alias
 from .entidades import leer_areas_extra
@@ -20,9 +20,8 @@ class Corpus:
     """Corpus publicado en memoria. Solo lectura; no imprime ni termina el programa."""
 
     def __init__(self, carpeta, meta, docs, archivos_md, inventario, fuente_indice, duplicados, excluidos,
-                 extra=(), exclusiones=(), kpis=(), carpeta_documentos=None):
+                 extra=(), exclusiones=(), kpis=()):
         self.carpeta = carpeta              # skill fuente-corpus
-        self.carpeta_documentos = carpeta_documentos   # fuente-corpus/documentos
         self.meta = meta                    # codigo -> fila del indice
         self.docs = docs                    # codigo -> DocumentoCorpus
         self.archivos_md = archivos_md
@@ -37,6 +36,10 @@ class Corpus:
         self.kpis = list(kpis)
         self.areas = _construir_areas(meta, docs, self.inventario)
         self.alias = construir_alias(self.areas, [d for c, d in docs.items() if es_general(c)], self.extra)
+
+    @property
+    def carpeta_documentos(self):
+        return Path(self.carpeta) / CARPETA_DOCUMENTOS      # fuente-corpus/documentos
 
     # -- consultas basicas -----------------------------------------------------
 
@@ -182,26 +185,24 @@ def _construir_areas(meta, docs, inventario):
     return areas
 
 
-def cargar_corpus(contexto_skill, incluir_no_vigentes=False, documentos=None):
+def cargar_corpus(skill, incluir_no_vigentes=False):
     """Lee el corpus publicado.
 
-    ``contexto_skill`` es la carpeta del skill fuente-corpus (indice/ con el indice, el inventario y areas_extra;
-    contexto/ con los documentos generales y kpis.csv; documentos/ con los de area) y ``documentos`` la carpeta de
-    documentos si no es ``contexto_skill/documentos`` (estructura anterior: skill fuente-documentos aparte). Los documentos con estado no publicable se separan en
+    ``skill`` es la carpeta del skill fuente-corpus (indice/ con el indice, el inventario y areas_extra; contexto/ con los
+    documentos generales y kpis.csv; documentos/ con los de area). Los documentos con estado no publicable se separan en
     ``excluidos``: la exclusion se aplica al indice y al texto a la vez; asi un documento obsoleto no aparece
     en busquedas ni se reporta como "documento sin fila en el indice".
     """
-    contexto_skill = Path(contexto_skill)
-    if not contexto_skill.is_dir():
-        raise CorpusError(f"No existe la carpeta del skill {SKILL_CORPUS}: {contexto_skill}")
-    rutas = rutas_de_skill_contexto(contexto_skill)
-    documentos = Path(documentos) if documentos else rutas.documentos
-    archivos_md = markdown_de_documentos(documentos) \
+    skill = Path(skill)
+    if not skill.is_dir():
+        raise CorpusError(f"No existe la carpeta del skill {SKILL_CORPUS}: {skill}")
+    rutas = rutas_de_skill(skill)
+    archivos_md = markdown_de_documentos(rutas.documentos) \
         + sorted(p for p in rutas.contexto.glob("*.md") if _es_markdown_de_datos(p))
     meta, dup_indice, fuente, hay_indice = _leer_indice(rutas.indice)
     if not archivos_md and not hay_indice:
-        raise CorpusError(f"El corpus está vacío: {contexto_skill} no contiene Markdown ni índice.")
-    docs, dup_md = _leer_markdown(archivos_md, documentos)
+        raise CorpusError(f"El corpus está vacío: {skill} no contiene Markdown ni índice.")
+    docs, dup_md = _leer_markdown(archivos_md, rutas.documentos)
     excluidos = {}
     if not incluir_no_vigentes:
         excluidos = {c: f.get("estado_documental", "") for c, f in meta.items()
@@ -211,5 +212,4 @@ def cargar_corpus(contexto_skill, incluir_no_vigentes=False, documentos=None):
     inventario = leer_csv_opcional(rutas.indice / ARCHIVO_INVENTARIO)
     extra, exclusiones = leer_areas_extra(rutas.indice / ARCHIVO_AREAS_EXTRA)
     kpis = leer_csv_opcional(rutas.contexto / ARCHIVO_KPIS)
-    return Corpus(contexto_skill, meta, docs, archivos_md, inventario, fuente, dup_indice + dup_md, excluidos,
-                  extra, exclusiones, kpis, documentos)
+    return Corpus(skill, meta, docs, archivos_md, inventario, fuente, dup_indice + dup_md, excluidos, extra, exclusiones, kpis)

@@ -3,8 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, List
 
-from ..comun.esquema import area_de
-from ..comun.tipos import TIPOS_AREA, familia, tipo_de_codigo
+from ..comun.tipos import TIPOS_AREA, area_de, familia, tipo_de_codigo
 
 
 @dataclass

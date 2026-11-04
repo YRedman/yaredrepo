@@ -13,7 +13,6 @@ from pathlib import Path, PurePosixPath
 
 NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 NS_REL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
-NS_PKG = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 RE_REF = re.compile(r"^([A-Z]+)(\d+)$")
 ORIGEN_SERIE = datetime.datetime(1899, 12, 30)
 FORMATOS_FECHA_INTEGRADOS = set(range(14, 23)) | {27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 45, 46, 47, 50, 51, 52, 53, 54, 55, 56, 57, 58}

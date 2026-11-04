@@ -7,7 +7,6 @@ from .xlsx import columna_a_numero, numero_a_columna, partir_ref
 
 FILA_ENCABEZADO_TABLA = 7
 PRIMERA_FILA_TABLA = 8
-ESTILO_ENTRADA_FILAS_NUEVAS = None        # lo decide quien escribe (se copia el de la fila de encabezado de entrada)
 
 
 def clave(texto):
@@ -43,10 +42,6 @@ class Plantilla:
         """Estilo de las celdas de entrada de una columna (el de su primera fila de datos)."""
         c = self.libro.hoja(hoja).celda(f"{columna}{PRIMERA_FILA_TABLA}")
         return c.estilo if c else None
-
-    def capacidad_de_filas(self, hoja, parte_de_tabla_ref):
-        """Ultima fila de la tabla (de su ref 'B7:K18')."""
-        return int(re.search(r"(\d+)$", parte_de_tabla_ref).group(1))
 
     def catalogo(self, encabezado, hoja="Catálogos", fila_encabezado=6):
         """Opciones de una lista de la hoja de catalogos (columna cuyo encabezado, en la fila 6, es ``encabezado``); [] si no esta."""

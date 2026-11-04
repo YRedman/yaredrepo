@@ -6,8 +6,7 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from ..comun.esquema import area_de
-from ..comun.tipos import tipo_de_codigo
+from ..comun.tipos import area_de, tipo_de_codigo
 from ..comun.texto import norm
 
 PATRON_PUESTO = re.compile(

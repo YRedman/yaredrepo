@@ -18,7 +18,7 @@ from ...comun.archivos import escribir_csv, leer_csv
 from ...comun.errores import CorpusError
 from ...comun.esquema import ARCHIVO_CATALOGO, ARCHIVO_EQUIVALENCIAS, ARCHIVO_INVENTARIO, ARCHIVO_RESUMEN, COLUMNAS_INVENTARIO
 from ...comun.estructura import (ARCHIVO_NOTA_UBICACION, CARPETA_PUBLICADA, LLAVE_NOTA_UBICACION, MAX_CARACTERES_SKILL_MD,
-                                 NOMBRE_SKILL_MD, NOTA_UBICACION_SKILL, SKILL_CONTEXTO, SKILL_CORPUS, SKILL_DOCUMENTOS, informe_limites,
+                                 NOMBRE_SKILL_MD, NOTA_UBICACION_SKILL, SKILL_CORPUS, SKILLS_ANTERIORES, informe_limites,
                                  rutas_publicadas)
 from ...comun.tipos import TIPOS_AREA, tipo as tipo_documento, tipo_de_carpeta
 from ...consulta.matriz import ARCHIVO_MATRIZ, escribir_matriz
@@ -179,7 +179,7 @@ def _limpiar_publicacion_anterior(raiz_salida, publicado, avisos):
     instrucciones = raiz_salida / "instrucciones_copilot.md"
     if instrucciones.is_file():
         instrucciones.unlink()
-    anteriores = [publicado / n for n in (SKILL_CONTEXTO, SKILL_DOCUMENTOS) if (publicado / n).is_dir()]
+    anteriores = [publicado / n for n in SKILLS_ANTERIORES if (publicado / n).is_dir()]
     if anteriores:
         destino = raiz_salida / "anterior_dos_skills"
         destino.mkdir(exist_ok=True)

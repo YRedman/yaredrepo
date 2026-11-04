@@ -40,7 +40,6 @@ class Resultado:
     puntos: list = field(default_factory=list)
     advertencias: list = field(default_factory=list)
     horas_mes: float = 0.0
-    fte: float = 0.0
     sin_horas: list = field(default_factory=list)        # actividades que la plantilla calcularia en 0 h
     desbordes: dict = field(default_factory=dict)        # hoja -> filas que no cupieron
     horas_por_actividad: list = field(default_factory=list)
@@ -149,7 +148,7 @@ class Vaciado:
             self.poner_en_fila(hoja, fila, valores_por_encabezado)
         return fila
 
-    def _campo(self, hoja, rotulo, valor, referencia_k4=""):
+    def _campo(self, hoja, rotulo, valor):
         """Escribe el valor de un rotulo de Control o Perfil_Puesto (solo si la celda esta vacia en la plantilla)."""
         ref = self.plantilla.valor_de_rotulo(hoja, rotulo, DIRECCION[hoja])
         if ref is None:

@@ -10,8 +10,8 @@ from functools import cached_property
 
 from ...comun.archivos import leer_csv_opcional
 from ...comun.estructura import CARPETA_PUBLICADA, rutas_publicadas
-from ...comun.esquema import ARCHIVO_REVISION, AVISO_ESCANEADO, area_de
-from ...comun.tipos import TIPOS_PROCESO, es_general, tipo as tipo_documento, tipo_de_codigo
+from ...comun.esquema import ARCHIVO_REVISION, AVISO_ESCANEADO
+from ...comun.tipos import TIPOS_PROCESO, area_de, es_general, tipo as tipo_documento, tipo_de_codigo
 from ..cadena import calcular_enlaces, tipo_de_codigo_cliente
 from ..extraccion import alcance, funciones, normativa, perfil, relaciones
 from ..participacion import calcular_participacion
@@ -65,7 +65,7 @@ class ContextoMatriz:
 
     def __init__(self, raiz):
         self.raiz = raiz
-        self.corpus = cargar_corpus(rutas_publicadas(raiz / CARPETA_PUBLICADA).skill_contexto, incluir_no_vigentes=True)
+        self.corpus = cargar_corpus(rutas_publicadas(raiz / CARPETA_PUBLICADA).skill, incluir_no_vigentes=True)
         self.detector = DetectorPuestos.desde_corpus(self.corpus)
         self.revision = _revision(raiz)
 

@@ -110,7 +110,6 @@ class Paquete:
             if hoja.modificada:
                 self._cambios[parte] = hoja.texto().encode("utf-8")
         if self._limpiar_calculados:
-            self._cambios_antes = dict(self._cambios)
             self.quitar_valores_calculados()
         destino.parent.mkdir(parents=True, exist_ok=True)
         fd, temporal = tempfile.mkstemp(suffix=".xlsx", dir=str(destino.parent))
@@ -124,7 +123,3 @@ class Paquete:
             if os.path.exists(temporal):
                 os.unlink(temporal)
         return destino
-
-    @property
-    def partes_cambiadas(self):
-        return sorted(self._cambios)

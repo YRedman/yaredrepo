@@ -19,6 +19,14 @@ def importar_fitz():
     return fitz
 
 
+def dibujos_de(page):
+    """Dibujos vectoriales de la pagina; [] si PyMuPDF no puede leerlos (la pagina se trata como sin formas)."""
+    try:
+        return page.get_drawings()
+    except Exception:
+        return []
+
+
 def _es_bold(span):
     fuente = span["font"].lower()
     return bool(span["flags"] & 16) or "bold" in fuente or "black" in fuente

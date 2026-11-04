@@ -6,8 +6,8 @@ from pathlib import Path
 from ... import VERSION
 from ...comun.archivos import leer_csv
 from ...comun.errores import CorpusError
-from ...comun.esquema import ARCHIVO_INVENTARIO, inventario_activo, tipo_desde_texto
-from ...comun.tipos import TIPOS_AREA
+from ...comun.esquema import ARCHIVO_INVENTARIO, inventario_activo
+from ...comun.tipos import TIPOS_AREA, tipo_desde_texto
 from ..asignacion import asignar_archivos, grupos_a_convertir
 from ..bitacora import registrar_tiempos
 from ..entradas import buscar_entradas, localizar

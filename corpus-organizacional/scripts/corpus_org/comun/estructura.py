@@ -8,16 +8,15 @@ El ``SKILL.md`` es el del repositorio (junto a ``scripts/``): ``construir`` lo c
 el skill en /home/oai/skills/appCatalog/<carpeta>/fuente-corpus/ y la <carpeta> cambia, por eso ``corpus.py`` se localiza
 por su propia ubicacion y, si hace falta, buscando ``fuente-corpus`` por su nombre.
 
-Las versiones anteriores publicaban dos skills (``fuente-contexto`` y ``fuente-documentos``); esas carpetas se siguen
-reconociendo al leer, pero ``construir`` ya no las genera.
+Las versiones anteriores publicaban dos skills (``fuente-contexto`` y ``fuente-documentos``): ``construir`` ya no los genera
+y borra de la publicacion lo que queda de ellos (``SKILLS_ANTERIORES``); ``corpus.py`` solo lee la estructura actual.
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 
 SKILL_CORPUS = "fuente-corpus"     # el unico skill publicado
-SKILL_DOCUMENTOS = "fuente-documentos"     # estructura anterior (dos skills): solo para reconocerla
-SKILL_CONTEXTO = "fuente-contexto"         # estructura anterior
+SKILLS_ANTERIORES = ("fuente-contexto", "fuente-documentos")      # publicacion anterior en dos skills: se limpia al construir
 CARPETA_DOCUMENTOS = "documentos"  # dentro del skill: DES/ PRD/ PRO/ POL/
 CARPETA_PUBLICADA = "copilot"      # dentro de salida_corpus/
 CARPETA_CONTEXTO = "contexto"      # documentos generales (ORG_GEN.md...) y kpis.csv
@@ -66,19 +65,12 @@ class Rutas:
     scripts: Path
     formularios: Path
 
-    @property
-    def skill_contexto(self):
-        """Nombre anterior de ``skill`` (cuando habia dos skills): hoy es el mismo skill."""
-        return self.skill
 
-
-def rutas_de_skill(skill, documentos=None):
-    """Carpetas de un skill: ``documentos`` es ``skill/documentos`` salvo que se indique otra (estructura anterior, con
-    el skill fuente-documentos como hermano)."""
+def rutas_de_skill(skill):
+    """Carpetas del skill fuente-corpus a partir de su carpeta."""
     skill = Path(skill)
-    return Rutas(skill.parent, skill, Path(documentos) if documentos else skill / CARPETA_DOCUMENTOS,
-                 skill / CARPETA_CONTEXTO, skill / CARPETA_INDICE, skill / CARPETA_MATRIZ, skill / CARPETA_SCRIPTS,
-                 skill / CARPETA_FORMULARIOS)
+    return Rutas(skill.parent, skill, skill / CARPETA_DOCUMENTOS, skill / CARPETA_CONTEXTO, skill / CARPETA_INDICE,
+                 skill / CARPETA_MATRIZ, skill / CARPETA_SCRIPTS, skill / CARPETA_FORMULARIOS)
 
 
 def rutas_publicadas(publicado):
@@ -86,17 +78,8 @@ def rutas_publicadas(publicado):
     return rutas_de_skill(Path(publicado) / SKILL_CORPUS)
 
 
-def rutas_de_skill_contexto(skill_contexto):
-    """Compatibilidad: las carpetas a partir de la carpeta del skill. Con la estructura anterior (``fuente-contexto``
-    con ``fuente-documentos`` al lado y sin ``documentos/`` dentro) los documentos son la carpeta hermana."""
-    skill = Path(skill_contexto)
-    if not (skill / CARPETA_DOCUMENTOS).is_dir() and (skill.parent / SKILL_DOCUMENTOS).is_dir():
-        return rutas_de_skill(skill, skill.parent / SKILL_DOCUMENTOS)
-    return rutas_de_skill(skill)
-
-
 def markdown_de_documentos(carpeta_documentos):
-    """Markdown de documentos de un skill fuente-documentos (todas las carpetas de tipo, sin SKILL.md)."""
+    """Markdown de la carpeta documentos/ del skill (todas las carpetas de tipo, sin SKILL.md)."""
     carpeta = Path(carpeta_documentos)
     if not carpeta.is_dir():
         return []
