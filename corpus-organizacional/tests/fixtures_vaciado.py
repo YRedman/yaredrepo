@@ -10,7 +10,7 @@ NS = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' \
      'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
 
 # estilos (indice en cellXfs)
-NORMAL, ENTRADA, ROJO, AMARILLO, ENCABEZADO, HORA = 0, 1, 2, 3, 4, 5
+NORMAL, ENTRADA, ROJO, AMARILLO, ENCABEZADO = 0, 1, 2, 3, 4
 
 
 class F:
@@ -22,7 +22,6 @@ class F:
 
 STYLES = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet {NS}>
-<numFmts count="1"><numFmt numFmtId="164" formatCode="h:mm"/></numFmts>
 <fonts count="3"><font><sz val="11"/><name val="Calibri"/></font>
 <font><sz val="11"/><color rgb="FFFF0000"/><name val="Calibri"/></font>
 <font><b/><sz val="11"/><name val="Calibri"/></font></fonts>
@@ -31,13 +30,12 @@ STYLES = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/><bgColor indexed="64"/></patternFill></fill></fills>
 <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="6">
+<cellXfs count="5">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
 <xf numFmtId="0" fontId="0" fillId="2" borderId="0" applyFill="1"/>
 <xf numFmtId="0" fontId="1" fillId="0" borderId="0" applyFont="1"/>
 <xf numFmtId="0" fontId="0" fillId="3" borderId="0" applyFill="1"/>
 <xf numFmtId="0" fontId="2" fillId="0" borderId="0" applyFont="1"/>
-<xf numFmtId="164" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/>
 </cellXfs></styleSheet>"""
 
 X14 = ('<extLst><ext uri="{CCE6A557-97BC-48c9-9E6D-5FF8CF2C9D7E}" '

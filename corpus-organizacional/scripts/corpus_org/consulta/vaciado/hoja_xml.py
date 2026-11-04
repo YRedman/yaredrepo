@@ -9,7 +9,6 @@ from xml.sax.saxutils import escape
 
 from .xlsx import columna_a_numero, numero_a_columna, partir_ref
 
-RE_SHEETDATA = re.compile(r"(<sheetData\b[^>]*?(?:/>|>)).*?(</sheetData>)|<sheetData\b[^>]*?/>", re.S)
 RE_FILA = re.compile(r"<row\b([^>]*?)(/>|>(.*?)</row>)", re.S)
 RE_CELDA = re.compile(r"<c\b([^>]*?)(/>|>(.*?)</c>)", re.S)
 RE_ATRIBUTO = re.compile(r'([\w:]+)="([^"]*)"')
@@ -32,7 +31,6 @@ class HojaXml:
     def __init__(self, texto):
         self._texto = texto
         self._filas = {}                 # numero -> [atributos, {columna: xml de la celda}]
-        self._orden_original = []
         self.modificada = False
         self._separar()
 
@@ -70,10 +68,6 @@ class HojaXml:
         return re.sub(r'<dimension ref="[^"]*"/>', f'<dimension ref="{ref}"/>', texto, count=1)
 
     # -- consulta ----------------------------------------------------------------------------------------------
-
-    def tiene_formula(self, ref):
-        xml = self.xml_celda(ref)
-        return xml is not None and "<f" in xml
 
     def xml_celda(self, ref):
         col, fila = partir_ref(ref)

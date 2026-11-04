@@ -7,11 +7,7 @@ sola vez, para que ambos scripts no puedan desalinearse.
 import re
 
 from .texto import norm
-from .tipos import (AREA_GENERAL, PATRON_CODIGO, TIPOS_AREA, area_de, tipo_desde_texto,  # noqa: F401
-                    tipo_de_codigo)
-
-# nombres de comun/tipos.py que el resto del paquete importa desde aqui
-_REEXPORTADOS = (AREA_GENERAL, area_de, tipo_desde_texto, tipo_de_codigo)
+from .tipos import PATRON_CODIGO, TIPOS_AREA, tipo_desde_texto
 
 # Codigos del corpus: TTT-AAA-NN (DES-SEG-01, PRD-SEG-01, POL-GEN-01, ORG-GEN-01). Ver comun/tipos.py.
 RE_CODIGO = re.compile(rf"^{PATRON_CODIGO}$", re.I)

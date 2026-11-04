@@ -32,8 +32,7 @@ Uso: python scripts/corpus.py <comando> [argumentos]
 
 Codigos TTT-AAA-NN: tipo (DES, PRD, PRO, POL; ORG, KPI, GLO, MPR... generales), area (GEN = general) y numero.
 
-Datos: este skill (fuente-corpus: documentos/, indice/, contexto/, matriz/). Con la estructura anterior (dos skills),
-los documentos estan en el skill hermano fuente-documentos.
+Datos: este skill (fuente-corpus: documentos/, indice/, contexto/, matriz/).
 Si el skill no esta junto a este archivo: CORPUS_DATOS (la carpeta del skill o la que lo contiene) y luego una busqueda
 por nombre en /home/oai/skills/appCatalog/<carpeta>/ y alrededores (en Copilot la <carpeta> cambia; ver ``donde``).
 Solo usa la biblioteca estandar de Python (sin red ni paquetes). No modifica ningun archivo.

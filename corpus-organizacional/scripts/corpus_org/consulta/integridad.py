@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List
 
 from ..comun.esquema import ARCHIVO_HUELLAS
-from ..comun.estructura import CARPETA_INDICE, SKILL_CONTEXTO, SKILL_CORPUS, SKILL_DOCUMENTOS
+from ..comun.estructura import CARPETA_INDICE, SKILL_CORPUS
 
 
 @dataclass
@@ -20,21 +20,16 @@ class ResultadoHuellas:
         return self.existe and not self.modificados and not self.faltantes
 
 
-def _ruta(nombre, contexto_skill, documentos):
-    """Archivo de una linea de huellas: '<skill>/<ruta>' (``fuente-corpus/...``; la estructura anterior tenia dos skills,
-    ``fuente-contexto/...`` y ``fuente-documentos/...``, y cada uno podia estar en otra carpeta)."""
-    skill, _, resto = nombre.partition("/")
-    if skill in (SKILL_CORPUS, SKILL_CONTEXTO) and resto:
-        return contexto_skill / resto
-    if skill == SKILL_DOCUMENTOS and resto:
-        return (documentos or contexto_skill.parent / SKILL_DOCUMENTOS) / resto
-    return contexto_skill / nombre
+def _ruta(nombre, skill):
+    """Archivo de una linea de huellas: '<skill>/<ruta>' (``fuente-corpus/...``)."""
+    nombre_skill, _, resto = nombre.partition("/")
+    return skill / resto if nombre_skill == SKILL_CORPUS and resto else skill / nombre
 
 
-def verificar_huellas(contexto_skill, documentos=None):
+def verificar_huellas(skill):
     """Compara los archivos con indice/huellas.sha256 del skill."""
-    contexto_skill = Path(contexto_skill)
-    p = contexto_skill / CARPETA_INDICE / ARCHIVO_HUELLAS
+    skill = Path(skill)
+    p = skill / CARPETA_INDICE / ARCHIVO_HUELLAS
     if not p.is_file():
         return ResultadoHuellas(existe=False)
     r = ResultadoHuellas(existe=True)
@@ -43,7 +38,7 @@ def verificar_huellas(contexto_skill, documentos=None):
             continue
         esperado, nombre = linea.split(None, 1)
         nombre = nombre.strip()
-        archivo = _ruta(nombre, contexto_skill, documentos)
+        archivo = _ruta(nombre, skill)
         if not archivo.is_file():
             r.faltantes.append(nombre)
         elif hashlib.sha256(archivo.read_bytes()).hexdigest() != esperado:

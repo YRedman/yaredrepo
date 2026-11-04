@@ -1,6 +1,5 @@
 from ...comun.errores import CorpusError
-from ...comun.esquema import area_de
-from ...comun.tipos import es_general
+from ...comun.tipos import area_de, es_general
 from ...comun.texto import norm, recortar_palabras as recortar
 from ..indicadores import kpis_relacionados, sin_medicion
 from ..salida import resumir_lista

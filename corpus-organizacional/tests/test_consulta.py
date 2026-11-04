@@ -118,5 +118,13 @@ class PalabrasCortadasTest(unittest.TestCase):
         self.assertEqual(recortar_en_palabra("uno dos tres cuatro", 7), "uno dos …")
 
 
+class NormativaTest(unittest.TestCase):
+    def test_el_orden_de_los_tipos_cubre_exactamente_los_tipos_de_la_extraccion(self):
+        from corpus_org.consulta.comandos.normativa import ORDEN_TIPOS
+        from corpus_org.consulta.extraccion import TIPOS_NORMATIVA
+        self.assertEqual(set(ORDEN_TIPOS), {tipo for tipo, _ in TIPOS_NORMATIVA})
+        self.assertEqual(len(ORDEN_TIPOS), len(set(ORDEN_TIPOS)))
+
+
 if __name__ == "__main__":
     unittest.main()

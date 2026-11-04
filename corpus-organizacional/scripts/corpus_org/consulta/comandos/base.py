@@ -5,8 +5,8 @@ import difflib
 from abc import ABC, abstractmethod
 
 from ...comun.errores import AreaNoEncontrada, CorpusError
-from ...comun.esquema import RE_CODIGO, area_de
-from ...comun.tipos import FILTROS_TIPO, cumple_tipo, es_general, filtro_tipo
+from ...comun.esquema import RE_CODIGO
+from ...comun.tipos import FILTROS_TIPO, area_de, cumple_tipo, es_general, filtro_tipo
 from ..areas import ResolutorAreas
 
 

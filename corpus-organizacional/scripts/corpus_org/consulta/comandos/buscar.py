@@ -2,8 +2,7 @@ import collections
 import re
 
 from ...comun.errores import CorpusError
-from ...comun.esquema import area_de
-from ...comun.tipos import FILTROS_TIPO, cumple_tipo
+from ...comun.tipos import FILTROS_TIPO, area_de, cumple_tipo
 from ...comun.texto import norm, patron_termino, recortar_palabras as recortar
 from .base import Comando, argumento_tipo
 

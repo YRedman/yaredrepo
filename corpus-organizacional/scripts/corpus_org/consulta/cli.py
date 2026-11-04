@@ -59,9 +59,7 @@ def main(argv=None, uso="", flujo=None):
             comando.ejecutar(ContextoSinCorpus(s), args)
             return 0
         u = resolver_ubicacion(RAIZ_SKILL)
-        for aviso in u.avisos:
-            s.linea("AVISO: " + aviso)
-        corpus = cargar_corpus(u.contexto, incluir_no_vigentes(), u.documentos)
+        corpus = cargar_corpus(u.contexto, incluir_no_vigentes())
         comando.ejecutar(Contexto(corpus, s), args)
     except CorpusError as e:
         _mostrar_error(e, s)

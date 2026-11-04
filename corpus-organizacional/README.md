@@ -2,7 +2,7 @@
 
 Scripts del corpus organizacional para un agente de Copilot (ver `SKILL.md`, que es el del único skill, `fuente-corpus`):
 
-- `scripts/convertir.py`: convierte descriptivos de puesto, procedimientos, protocolos y políticas (PDF/Word) a Markdown, construye el índice y publica el corpus en dos carpetas para comprimir: `fuente-documentos` y `fuente-contexto`.
+- `scripts/convertir.py`: convierte descriptivos de puesto, procedimientos, protocolos y políticas (PDF/Word) a Markdown, construye el índice y publica el corpus en una sola carpeta para comprimir y subir a Copilot: `fuente-corpus`.
 - `scripts/corpus.py`: consulta el corpus publicado (solo biblioteca estándar: en Copilot no hay red ni instalación de paquetes).
 
 Desde la v4.0 los códigos son `TTT-AAA-NN` (ver «v4.0» más abajo). Un corpus construido con la codificación anterior (`D-`, `P-`, `C-CTX-`) se migra solo al volver a construir.
@@ -281,6 +281,18 @@ fuente-corpus/
 **PDF: cajas de una columna y tablas partidas (v4.0).** Una banda de color con su título y filas con borde fino debajo («Accesos a Sistemas», «Herramientas de Trabajo»…) se lee como tabla; antes quedaba como líneas sueltas y se marcaba «posible diagrama vectorial». Una fila solo cuenta si tiene su línea de separación, así un párrafo bajo una banda no se parte en filas. Y una línea en negrita entre el final de una página y la tabla de la siguiente es un título: no se unen como una tabla partida. Código: `extractores/pdf.py` (`_bandas_apiladas`, `_es_suelta_entre_tablas`); pruebas en `tests/test_bandas.py`.
 
 Código: `comun/tipos.py`, `comun/estructura.py`, `conversion/inventario.py`, `conversion/publicacion.py`, `conversion/skills.py`, `consulta/ubicacion.py`, `consulta/extraccion.py`, `consulta/pertinencia.py`, `consulta/jerarquia.py`, `consulta/matriz.py`, `consulta/comandos/briefing.py` y `normativa.py`. La conversión y la verificación de fidelidad no cambian.
+
+## v4.12: limpieza de código (sin cambios en los resultados)
+
+Se auditó el código con `vulture`, un detector propio de definiciones sin uso (`scripts/` frente a `tests/`) y una revisión de buenas prácticas (excepciones desnudas, argumentos mutables, `import *`, `open` sin codificación, funciones muy largas). El código ya cumplía casi todo; esto es lo que se quitó o corrigió:
+
+- **Estructura anterior de dos skills (`fuente-contexto` / `fuente-documentos`) ya no se lee.** `corpus.py` solo reconoce `fuente-corpus` (con `documentos/` dentro): se simplificaron `ubicacion.py` (de 223 a 178 líneas), `integridad.py`, `repositorio.py` (`cargar_corpus(skill)` ya no recibe `documentos`; `Corpus.carpeta_documentos` es siempre `skill/documentos`) y `comun/estructura.py` (sin `rutas_de_skill_contexto`, `Rutas.skill_contexto` ni los nombres `SKILL_CONTEXTO`/`SKILL_DOCUMENTOS`). `construir` conserva solo la limpieza de esas carpetas viejas (`SKILLS_ANTERIORES`) si quedaron en `copilot/`. `Ubicacion` perdió `avisos` y `buscados`, que nadie leía.
+- **Código muerto**: `RE_SHEETDATA`, `HojaXml.tiene_formula`, `_orden_original`, `Paquete.partes_cambiadas`, `Plantilla.capacidad_de_filas`, `ESTILO_ENTRADA_FILAS_NUEVAS`, `valores.FRECUENCIAS`, `MODALIDADES`, `entero_o_texto`, `xlsx.NS_PKG`, el campo `Resultado.fte`, un parámetro sin uso de `_campo` y constantes sin uso en las pruebas.
+- **Reexportación con `# noqa`**: `comun/esquema.py` reexportaba `area_de` y `tipo_desde_texto` de `comun/tipos.py` para 13 módulos; ahora cada uno los importa de `tipos`.
+- **Duplicado**: la lectura tolerante de los dibujos vectoriales de una página (`try: page.get_drawings() except Exception`) estaba repetida cinco veces; ahora es `pdf/lineas.dibujos_de`.
+- **`assert` en código de producción** (`consulta/comandos/normativa.py`): la comprobación pasó a una prueba, porque `python -O` la desactiva.
+- **Comparación de salidas.** Con un corpus sintético, los 27 archivos publicados y la salida de 17 comandos de `corpus.py` son idénticos antes y después (salvo la ruta que imprime `donde`).
+- **Se conserva a propósito**: la migración de la codificación anterior de códigos (`D-`, `P-`, `C-CTX-` → `TTT-AAA-NN`), que sigue activa al reconstruir un inventario viejo; las 21 capturas `except Exception` de los extractores de PDF, OCR y Excel (un fallo de una página o imagen debe anotarse y no abortar la conversión; las que no dejan nota son lecturas opcionales de metadatos).
 
 ## v4.11: propuestas del agente en letra morada y guía de carga laboral
 

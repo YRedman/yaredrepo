@@ -2,18 +2,15 @@
 
 En Copilot un skill solo esta en disco despues de que el agente lo carga, y los skills cargados quedan
 juntos en /home/oai/skills/appCatalog/<carpeta>/<skill>/. La <carpeta> cambia, asi que no hay rutas fijas.
-Tambien se reconoce la estructura anterior (dos skills: fuente-contexto y fuente-documentos).
 Solo usa la biblioteca estandar.
 """
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List
 
 from ..comun.errores import CorpusError
-from ..comun.estructura import (CARPETA_DOCUMENTOS, CARPETA_INDICE, CARPETA_PUBLICADA, RAIZ_SKILLS_COPILOT,
-                                SKILL_CONTEXTO, SKILL_CORPUS, SKILL_DOCUMENTOS)
+from ..comun.estructura import CARPETA_DOCUMENTOS, CARPETA_INDICE, CARPETA_PUBLICADA, RAIZ_SKILLS_COPILOT, SKILL_CORPUS
 from ..comun.tipos import TIPOS_AREA
 
 VARIABLE_DATOS = "CORPUS_DATOS"
@@ -25,12 +22,10 @@ MENSAJE_SIN_DOCUMENTOS = ("no encuentro la carpeta documentos del skill fuente-c
                           "fuente-corpus completo (lee su SKILL.md) y vuelve a ejecutar.")
 
 
-@dataclass
+@dataclass(frozen=True)
 class Ubicacion:
     contexto: Path                          # carpeta del skill fuente-corpus
-    documentos: Path                        # fuente-corpus/documentos (o el skill fuente-documentos de la estructura anterior)
-    buscados: List[str] = field(default_factory=list)
-    avisos: List[str] = field(default_factory=list)
+    documentos: Path                        # fuente-corpus/documentos
 
 
 def _es_contexto(q):
@@ -86,7 +81,7 @@ def _recorrer(raiz, nombre, comprobar):
     return halladas
 
 
-def _buscar_por_nombre(nombre, comprobar, raiz_skill, u):
+def _buscar_por_nombre(nombre, comprobar, raiz_skill):
     """Carpetas ``nombre`` en las carpetas de skills de Copilot y en las superiores al skill actual; si no esta en
     ninguna ruta conocida, se recorre el disco (acotado) desde esas carpetas."""
     patrones = []
@@ -95,12 +90,10 @@ def _buscar_por_nombre(nombre, comprobar, raiz_skill, u):
     for anc in list(Path(raiz_skill).parents)[:NIVELES_ANCESTROS]:
         patrones += [anc / nombre, anc / "*" / nombre]
     for patron in patrones:
-        u.buscados.append(str(patron))
         halladas = [q for q in _expandir(patron) if comprobar(q)]
         if halladas:
             return halladas
     for raiz in _raices_de_busqueda():
-        u.buscados.append(f"{raiz}/** (hasta {PROFUNDIDAD_BUSQUEDA} niveles)")
         halladas = _recorrer(raiz, nombre, comprobar)
         if halladas:
             return halladas
@@ -114,32 +107,17 @@ def _documentos_del_skill(skill):
 
 
 def _skill_en(q):
-    """La carpeta del skill dentro de ``q`` (o ``q`` mismo): fuente-corpus o, en la estructura anterior, fuente-contexto."""
-    for c in (q, q / SKILL_CORPUS, q / CARPETA_PUBLICADA / SKILL_CORPUS, q / SKILL_CONTEXTO,
-              q / CARPETA_PUBLICADA / SKILL_CONTEXTO):
+    """La carpeta del skill dentro de ``q`` (o ``q`` mismo)."""
+    for c in (q, q / SKILL_CORPUS, q / CARPETA_PUBLICADA / SKILL_CORPUS):
         if _es_contexto(c):
             return c
     return None
 
 
 def _desde_variable(entorno):
-    """(carpeta indicada, skill, documentos aparte) que CORPUS_DATOS puede indicar: el skill fuente-corpus, la carpeta
-    que lo contiene o, en la estructura anterior, fuente-contexto / fuente-documentos."""
+    """El skill que CORPUS_DATOS indica: la carpeta del skill fuente-corpus o la que lo contiene; None si no la hay."""
     env = entorno.get(VARIABLE_DATOS)
-    if not env:
-        return None, None, None
-    q = Path(env).expanduser()
-    if q.name == SKILL_DOCUMENTOS and _es_documentos(q):          # estructura anterior: se indico la de documentos
-        hermana = q.parent / SKILL_CONTEXTO
-        return q, (hermana if _es_contexto(hermana) else None), q
-    skill = _skill_en(q)
-    documentos = None
-    if skill is not None and _documentos_del_skill(skill) is None:
-        for c in (q / SKILL_DOCUMENTOS, q / CARPETA_PUBLICADA / SKILL_DOCUMENTOS, skill.parent / SKILL_DOCUMENTOS):
-            if _es_documentos(c):
-                documentos = c
-                break
-    return q, skill, documentos
+    return _skill_en(Path(env).expanduser()) if env else None
 
 
 def resolver_ubicacion(raiz_skill, entorno=None):
@@ -147,50 +125,28 @@ def resolver_ubicacion(raiz_skill, entorno=None):
 
     El skill: el de ``CORPUS_DATOS`` si lo indica; si no, el propio (``raiz_skill`` es la carpeta que contiene
     scripts/), y en el repositorio salida_corpus/copilot/fuente-corpus; si no, se busca por nombre. Los documentos
-    estan en ``documentos/`` dentro del skill; con la estructura anterior (dos skills) se buscan en el skill
-    fuente-documentos hermano, en ``CORPUS_DATOS`` y por nombre. Si no se encuentra algo, CorpusError con el mensaje
-    que el agente sabe interpretar.
+    estan en ``documentos/`` dentro del skill. Si no se encuentra algo, CorpusError con el mensaje que el agente sabe
+    interpretar.
     """
     entorno = os.environ if entorno is None else entorno
     raiz_skill = Path(raiz_skill)
-    _q, contexto, documentos_env = _desde_variable(entorno)
-    u = Ubicacion(None, None)
-    if contexto is None:
+    skill = _desde_variable(entorno)
+    if skill is None:
         for c in (raiz_skill, raiz_skill / "salida_corpus" / CARPETA_PUBLICADA / SKILL_CORPUS,
-                  raiz_skill / CARPETA_PUBLICADA / SKILL_CORPUS, raiz_skill / "salida_corpus" / CARPETA_PUBLICADA / SKILL_CONTEXTO,
-                  raiz_skill / CARPETA_PUBLICADA / SKILL_CONTEXTO):
+                  raiz_skill / CARPETA_PUBLICADA / SKILL_CORPUS):
             if _es_contexto(c):
-                contexto = c
+                skill = c
                 break
-    if contexto is None:
-        for nombre in (SKILL_CORPUS, SKILL_CONTEXTO):
-            halladas = _buscar_por_nombre(nombre, _es_contexto, raiz_skill, u)
-            if halladas:
-                contexto = halladas[0]
-                break
-    if contexto is None:
+    if skill is None:
+        halladas = _buscar_por_nombre(SKILL_CORPUS, _es_contexto, raiz_skill)
+        skill = halladas[0] if halladas else None
+    if skill is None:
         raise CorpusError(MENSAJE_SIN_CONTEXTO)
-    u.contexto = contexto.resolve()
-    propios = _documentos_del_skill(u.contexto)
-    if propios is not None:
-        u.documentos = propios
-        return u
-    hermana = u.contexto.parent / SKILL_DOCUMENTOS                 # estructura anterior
-    u.buscados.append(str(hermana))
-    if _es_documentos(hermana):
-        u.documentos = hermana
-        return u
-    if documentos_env is not None:
-        u.documentos = documentos_env.resolve()
-        return u
-    halladas = _buscar_por_nombre(SKILL_DOCUMENTOS, _es_documentos, raiz_skill, u)
-    if not halladas:
+    skill = skill.resolve()
+    documentos = _documentos_del_skill(skill)
+    if documentos is None:
         raise CorpusError(MENSAJE_SIN_DOCUMENTOS)
-    halladas.sort(key=lambda d: d.stat().st_mtime, reverse=True)
-    u.documentos = halladas[0].resolve()
-    if len(halladas) > 1:
-        u.avisos.append(f"Hay {len(halladas)} carpetas {SKILL_DOCUMENTOS}; se usa la más reciente: {u.documentos}.")
-    return u
+    return Ubicacion(skill, documentos)
 
 
 def raiz_del_skill():
@@ -209,7 +165,6 @@ def describir_ubicacion(raiz_skill, entorno=None):
     try:
         u = resolver_ubicacion(raiz_skill, entorno)
         lineas += [f"skill fuente-corpus: {u.contexto}", f"documentos: {u.documentos}"]
-        lineas += ["AVISO: " + a for a in u.avisos]
         lineas += [f"corpus.py: {script}",
                    f'Ejecútalo desde cualquier carpeta: python "{script}" <comando>   (por ejemplo: verificar, catalogo)']
     except CorpusError as e:

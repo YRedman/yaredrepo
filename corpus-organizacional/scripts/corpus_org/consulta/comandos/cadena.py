@@ -1,6 +1,6 @@
 import collections
 
-from ...comun.esquema import area_de
+from ...comun.tipos import area_de
 from ..cadena import calcular_enlaces, faltantes, tipo_de_codigo_cliente, vecinos
 from ..salida import resumir_lista
 from .base import Comando

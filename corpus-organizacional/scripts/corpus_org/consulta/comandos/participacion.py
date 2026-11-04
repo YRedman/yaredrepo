@@ -1,6 +1,5 @@
 from ...comun.errores import CorpusError
-from ...comun.esquema import area_de
-from ...comun.tipos import TIPOS_PROCESO, tipo_de_codigo
+from ...comun.tipos import TIPOS_PROCESO, area_de, tipo_de_codigo
 from ...comun.texto import recortar_palabras as recortar
 from ..participacion import calcular_participacion
 from ..salida import resumir_lista

@@ -12,7 +12,6 @@ from .xlsx import serie_a_fecha
 SIN_DATO = {"", "n/d", "nd", "n/a", "na", "no aplica", "no aplica.", "ninguno", "ninguna", "-", "—", "s/d", "pendiente"}
 MINUTOS_POR_DIA_HORAS = 24 * 60
 
-FRECUENCIAS = ["Diaria", "Semanal", "Quincenal", "Mensual", "Trimestral", "Semestral", "Anual", "Eventual"]
 EVENTOS_POR_ANIO = {"Bimestral": 6}                  # periodos que la plantilla no tiene: se expresan en otro periodo
 _SINONIMOS_FRECUENCIA = {
     "diaria": "Diaria", "diario": "Diaria", "diariamente": "Diaria", "cada dia": "Diaria", "todos los dias": "Diaria",
@@ -34,7 +33,6 @@ _SINONIMOS_ESCOLARIDAD = (
     ("diplomado", "Especialización"), ("licenciatura", "Universitaria"), ("universit", "Universitaria"),
     ("grado", "Universitaria"), ("ingenier", "Universitaria"), ("tecnic", "Técnica"), ("tecnolog", "Técnica"),
     ("bachiller", "Secundaria"), ("secundaria", "Secundaria"), ("primaria", "Primaria"))
-MODALIDADES = ["Presencial", "Híbrido", "Remoto", "Campo"]
 NIVELES = ["Básico", "Intermedio", "Avanzado", "Experto"]
 TIPOS_COMPETENCIA = ["Técnica", "Conductual", "Liderazgo", "Calidad/SGQ", "Digital", "Regulatoria"]
 TIPOS_PROCESO = ["Core", "Soporte", "Gobierno/Control"]
@@ -159,7 +157,7 @@ def de_lista(valor, lista, sinonimos=None):
 
 
 def frecuencia(valor):
-    """(periodo, nota): uno de FRECUENCIAS, o 'Bimestral' (que la plantilla no tiene), o None."""
+    """(periodo, nota): una frecuencia de la plantilla (Diaria … Eventual), o 'Bimestral' (que la plantilla no tiene), o None."""
     if sin_dato(valor) or not isinstance(valor, str):
         return None, None
     t = norm(_texto(valor))
@@ -215,10 +213,3 @@ def tipo_proceso(valor):
 
 def automatizacion(valor):
     return de_lista(valor, AUTOMATIZACIONES)
-
-
-def entero_o_texto(valor):
-    """Para mostrar un numero sin '.0'."""
-    if isinstance(valor, float) and valor.is_integer():
-        return str(int(valor))
-    return str(valor)

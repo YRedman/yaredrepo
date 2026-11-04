@@ -1,6 +1,6 @@
 """Cajas con titulo en banda de color, cajas de organigrama y formas con texto."""
 
-from .lineas import dentro
+from .lineas import dentro, dibujos_de
 
 
 def formas_con_texto(page, lineas, rect_tablas, w, h):
@@ -10,10 +10,7 @@ def formas_con_texto(page, lineas, rect_tablas, w, h):
     Devuelve 0 si hay menos de 3 formas con texto.
     """
     formas = []
-    try:
-        dibujos = page.get_drawings()
-    except Exception:
-        return 0
+    dibujos = dibujos_de(page)
     for dr in dibujos:
         r = dr.get("rect")
         if r is None:
@@ -69,10 +66,7 @@ def _es_alto_de_banda(r, lineas):
 
 def rects_banda(page, w, lineas=()):
     """Rectangulos de color de una pagina con forma de banda de titulo (ancho, alto y relleno de las cajas)."""
-    try:
-        dibujos = page.get_drawings()
-    except Exception:
-        return []
+    dibujos = dibujos_de(page)
     return _sin_anidadas([dr["rect"] for dr in dibujos
                           if dr.get("rect") is not None and 0.4 * w <= dr["rect"].width <= 0.95 * w
                           and _es_alto_de_banda(dr["rect"], lineas)
@@ -120,10 +114,7 @@ def bandas_apiladas(fitz, page, lineas, rect_tablas, w, corte_sup=0.0, continua=
     vectorial». Una fila solo cuenta si tiene una linea de separacion debajo, asi un parrafo bajo un titulo
     en una banda no se parte en filas. Devuelve [(rect, filas, xs)] como ``_tablas``.
     """
-    try:
-        dibujos = page.get_drawings()
-    except Exception:
-        return []
+    dibujos = dibujos_de(page)
     bandas, separadores = [], []
     for dr in dibujos:
         r = dr.get("rect")
@@ -180,10 +171,7 @@ def cajas_con_texto(page, lineas, rect_tablas, w, h):
     Un organigrama o diagrama de cajas se extrae como lineas sueltas que se mezclan con el parrafo de
     al lado; agrupandolas por caja se conserva cada nombre completo y fuera del texto corrido.
     """
-    try:
-        dibujos = page.get_drawings()
-    except Exception:
-        return []
+    dibujos = dibujos_de(page)
     candidatas = []
     for dr in dibujos:
         r = dr.get("rect")

@@ -2,12 +2,11 @@ import collections
 
 from ...comun.texto import recortar_palabras
 from ...comun.tipos import es_general
-from ..extraccion import TIPOS_NORMATIVA, normativa
+from ..extraccion import normativa
 from .base import Comando
 
 ORDEN_TIPOS = ["Ley", "Reglamento", "Norma", "Política", "Protocolo", "Procedimiento", "Manual", "Instructivo",
                "Código de documento"]
-assert set(ORDEN_TIPOS) == {t for t, _ in TIPOS_NORMATIVA}
 PALABRAS_CITA = 60
 
 

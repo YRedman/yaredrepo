@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from ... import VERSION
 from ...comun.estructura import informe_limites
 from ...comun.texto import porcentaje
@@ -85,9 +83,7 @@ def _notas_del_corpus(s, cp):
 
 
 def _limites(s, cp):
-    carpetas = [c for c in (cp.carpeta, cp.carpeta_documentos)
-                if c and (c == cp.carpeta or cp.carpeta not in Path(c).parents)]       # los documentos ya van dentro del skill
-    medidas, avisos_limites = informe_limites(carpetas)
+    medidas, avisos_limites = informe_limites([cp.carpeta])
     for m in medidas:
         s.linea(f"- Peso y archivos · {m}")
     for a in avisos_limites:
@@ -103,7 +99,7 @@ class Verificar(Comando):
         s.linea(f"VERIFICACIÓN · corpus.py v{VERSION} · skill fuente-corpus: {cp.carpeta}")
         s.linea(f"documentos: {cp.carpeta_documentos}")
         s.linea(f"Índice utilizado: {cp.fuente_indice}")
-        huellas = verificar_huellas(cp.carpeta, cp.carpeta_documentos)
+        huellas = verificar_huellas(cp.carpeta)
         problemas = (_problemas_del_indice(cp) + _problemas_de_inventario(cp) + _problemas_de_texto(cp)
                      + _problema_de_huellas(huellas))
         s.lista(problemas)

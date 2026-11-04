@@ -38,11 +38,6 @@ def modificar(origen, destino, parte, cambio):
     return destino
 
 
-def celdas_de(libro, hoja, columna):
-    h = libro.hoja(hoja)
-    return {n: h.valor(f"{columna}{n}") for n in range(8, 31)}
-
-
 class ValoresTest(unittest.TestCase):
     def test_minutos(self):
         self.assertEqual(valores.minutos(480)[0], 480.0)

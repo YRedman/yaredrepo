@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List
 
-from ..comun.esquema import area_de
+from ..comun.tipos import area_de
 from ..comun.texto import oracion_con
 from .puestos import DetectorPuestos
 from .roles import es_columna_responsable, rol

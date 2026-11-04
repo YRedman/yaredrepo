@@ -1,5 +1,4 @@
-from ...comun.esquema import tipo_desde_texto
-from ...comun.tipos import TIPOS_AREA, tipo as tipo_documento
+from ...comun.tipos import TIPOS_AREA, tipo as tipo_documento, tipo_desde_texto
 from ...comun.texto import recortar_palabras as recortar
 from ..salida import resumir_lista
 from .base import Comando

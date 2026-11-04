@@ -260,5 +260,24 @@ class CeldaSinBordeTest(unittest.TestCase):
         self.assertIsNone(_celda_sin_borde(vertical, 1, 1))
 
 
+class DibujosIlegiblesTest(unittest.TestCase):
+    """Si PyMuPDF no puede leer los dibujos de una pagina, se trata como una pagina sin formas (no se aborta la conversion)."""
+
+    class Pagina:
+        def get_drawings(self):
+            raise RuntimeError("no se pueden leer los dibujos")
+
+    def test_cada_funcion_devuelve_su_valor_neutro(self):
+        from corpus_org.conversion.extractores.pdf import bandas, lineas, tablas
+        pagina = self.Pagina()
+        self.assertEqual(lineas.dibujos_de(pagina), [])
+        self.assertEqual(bandas.formas_con_texto(pagina, [], [], 600, 800), 0)
+        self.assertEqual(bandas.rects_banda(pagina, 600), [])
+        self.assertEqual(bandas.cajas_con_texto(pagina, [], [], 600, 800), [])
+        self.assertEqual(bandas.bandas_apiladas(None, pagina, [], [], 600), [])
+        rect = type("R", (), {"x0": 0, "x1": 100, "y0": 0, "y1": 50})()
+        self.assertEqual(tablas.bordes_horizontales_completos(pagina, rect), [])
+
+
 if __name__ == "__main__":
     unittest.main()

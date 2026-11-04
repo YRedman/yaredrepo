@@ -4,6 +4,7 @@ import collections
 
 from ....comun.esquema import MARCA_COMBINADA
 from ....comun.texto import limpiar_celda, norm, unir
+from .lineas import dibujos_de
 
 
 COBERTURA_BORDE = 0.9     # fraccion del ancho de una tabla que debe cubrir una linea para ser borde de fila
@@ -158,11 +159,7 @@ def bordes_horizontales_completos(page, rect):
     if ancho <= 0:
         return []
     cobertura = collections.defaultdict(float)
-    try:
-        dibujos = page.get_drawings()
-    except Exception:
-        return []
-    for dr in dibujos:
+    for dr in dibujos_de(page):
         for it in dr["items"]:
             if it[0] == "l" and abs(it[1].y - it[2].y) < 0.5:
                 y, a, b = it[1].y, min(it[1].x, it[2].x), max(it[1].x, it[2].x)
