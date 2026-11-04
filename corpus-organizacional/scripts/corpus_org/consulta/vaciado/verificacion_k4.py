@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 from ...comun.texto import norm
-from .estilos import MORADO, NEGRO, fuentes_y_formatos
+from .estilos import MORADO, NEGRO, verificar_estilos_agregados
 from .hoja_xml import RE_ATRIBUTO, RE_COMBINADAS, RE_FILA, limpiar_texto
 from .k4 import ROJOS
 from .valores import es_validar
@@ -71,28 +71,12 @@ def verificar_k4(base, salida, resultado):
         for n in zb.namelist():
             if zb.read(n) != zs.read(n) and n not in partes_hoja and n not in PARTES_QUE_PUEDEN_CAMBIAR:
                 errores.append(f"Cambió la parte {n}, que no debía tocarse.")
-        errores += _verificar_estilos(zb.read("xl/styles.xml").decode("utf-8"), zs.read("xl/styles.xml").decode("utf-8"))
+        errores += verificar_estilos_agregados(zb.read("xl/styles.xml").decode("utf-8"), zs.read("xl/styles.xml").decode("utf-8"))
         for h in lb.hojas:
             tb, ts = zb.read(h.parte).decode("utf-8"), zs.read(h.parte).decode("utf-8")
             errores += _verificar_hoja(h, ls.hoja(h.nombre), tb, ts, resultado)
     errores += _verificar_celdas(lb, ls, resultado)
     errores += _verificar_semantica(ls, resultado)
-    return errores
-
-
-def _verificar_estilos(texto_base, texto_nuevo):
-    fb, xb = fuentes_y_formatos(texto_base)
-    fn, xn = fuentes_y_formatos(texto_nuevo)
-    errores = []
-    if fn[:len(fb)] != fb or xn[:len(xb)] != xb:
-        errores.append("Cambiaron fuentes o formatos que ya existían en el archivo base.")
-    sin = lambda t: re.sub(r"<fonts\b.*?</fonts>|<cellXfs\b.*?</cellXfs>", "", t, flags=re.S)           # noqa: E731
-    if sin(texto_base) != sin(texto_nuevo):
-        errores.append("styles.xml cambió en algo más que fuentes y formatos agregados al final.")
-    for nombre, lista in (("fonts", fn), ("cellXfs", xn)):
-        m = re.search(rf'<{nombre}\b[^>]*?\bcount="(\d+)"', texto_nuevo)
-        if m is None or int(m.group(1)) != len(lista):
-            errores.append(f"styles.xml: la cantidad declarada en {nombre} no coincide con sus elementos.")
     return errores
 
 

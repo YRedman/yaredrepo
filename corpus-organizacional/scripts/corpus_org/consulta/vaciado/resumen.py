@@ -3,6 +3,7 @@
 import collections
 
 from . import calculo, valores
+from .checklist import NA
 
 
 def _min(x):
@@ -39,8 +40,12 @@ def texto_resultado(resultado, k4, nombre_k4, plantilla, celdas_verificadas):
                   f"(capacidad {capacidad:.1f} h/mes con vacaciones, ausentismo y pausas en 0 %)")
     if r.sin_horas:
         lineas.append(f"Actividades que la plantilla calcula en 0 h: {', '.join(n[:50] for n in r.sin_horas)}")
+    if r.propuestas:
+        lineas.append("Propuestas del agente en letra morada (validar a mano): " + " · ".join(f"{h} {n}" for h, n in r.propuestas.items()))
     tipos = collections.Counter(p["tipo"] for p in r.puntos)
     lineas.append(f"Puntos a validar: {len(r.puntos)} (" + ", ".join(f"{t}: {n}" for t, n in tipos.most_common()) + ")")
+    if r.checklist is not None:
+        lineas.append(f"Checklist del formulario: {r.checklist.veredicto} · completitud {r.checklist.porcentaje:.0%} · calidad {r.checklist.promedio:.1f}/5 · {r.checklist.alerta}")
     for hoja, filas in r.desbordes.items():
         lineas.append(f"AVISO: {len(filas)} fila(s) no cupieron en «{hoja}».")
     lineas += [f"AVISO: {a}" for a in r.advertencias]
@@ -66,4 +71,25 @@ def texto_llenado(r, nombre_base, nombre_datos):
     if r.validar:
         lineas += ["", "| Hoja | Celda | Pendiente |", "|---|---|---|"]
         lineas += [f"| {h} | {ref} | {texto[:100].replace('|', '/')} |" for h, ref, texto in r.validar]
+    return lineas
+
+
+ENCABEZADOS_CHECKLIST = ("Datos generales", "Propósito", "Funciones", "Frecuencia y tiempo", "Resp. y nivel de decisión", "Relaciones",
+                         "Formación y experiencia", "Competencias", "KPIs", "% Completitud", "Horas/mes", "Alerta de carga", "Coherencia (1–5)",
+                         "Especificidad (1–5)", "Calidad promedio")
+
+
+def texto_checklist(checklists):
+    """Tabla del checklist (una fila por formulario) y el detalle de lo que no está completo."""
+    lineas = ["| Formulario | " + " | ".join(ENCABEZADOS_CHECKLIST) + " | Veredicto |", "|---" * (len(ENCABEZADOS_CHECKLIST) + 2) + "|"]
+    for c in checklists:
+        nombre = (c.archivo or c.puesto or "—").replace("|", "/")
+        lineas.append(f"| {nombre} | " + " | ".join(x.estado for x in c.criterios) + f" | {c.porcentaje:.0%} | {c.horas_mes:.1f} | "
+                      f"{c.alerta} | {c.coherencia} | {c.especificidad} | {c.promedio:.1f} | **{c.veredicto}** |")
+    for c in checklists:
+        lineas += ["", f"{c.archivo or c.puesto}: {c.veredicto} ({c.motivo_veredicto})"]
+        lineas += [f"- {x.nombre}: {x.estado}" + (f" ({x.detalle})" if x.detalle else "") for x in c.criterios if x.estado not in ("Sí", NA)]
+        lineas += [f"- {x.nombre}: no aplica ({x.detalle})" for x in c.criterios if x.estado == NA]
+        lineas += [f"- Calidad (estimación heurística) · {d}" for d in c.detalle_calidad]
+        lineas.append(f"- Carga: {c.horas_mes:.1f} h/mes frente a {c.capacidad:.1f} h/mes de capacidad con vacaciones, ausentismo y pausas en 0 % (FTE preliminar {c.horas_mes / c.capacidad:.2f})")
     return lineas

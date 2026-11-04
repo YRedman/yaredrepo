@@ -4,9 +4,10 @@ from pathlib import Path
 from ... import VERSION
 from ...comun.errores import CorpusError
 from ..ubicacion import raiz_del_skill
+from ..vaciado.checklist import NO_LISTO, evaluar
 from ..vaciado.k4 import leer_k4
 from ..vaciado.metodologia import VerificacionFallida, vaciar_k4
-from ..vaciado.resumen import texto_k4, texto_resultado
+from ..vaciado.resumen import texto_checklist, texto_k4, texto_resultado
 from .base import Comando
 
 CARPETA_FORMULARIOS = "formularios"
@@ -52,7 +53,9 @@ class Vaciar(Comando):
         parser.add_argument("--complementos", default=None,
                             help="JSON con lo que aportan la transcripción y la minuta (campos, actividades_nuevas, puntos, evidencias).")
         parser.add_argument("--fuentes", nargs="*", default=[], help="Nombres de la transcripción y la minuta, para la hoja Evidencias.")
-        parser.add_argument("--leer", action="store_true", help="Solo muestra lo que se lee del K4; no genera el archivo.")
+        parser.add_argument("--leer", action="store_true", help="Solo muestra lo que se lee del K4 y su checklist; no genera el archivo.")
+        parser.add_argument("--exigir-listo", action="store_true",
+                            help="No genera el archivo si el checklist deja el K4 «No listo» (falta lo esencial o completitud menor al 50 %%).")
 
     def ejecutar(self, ctx, args):
         s = ctx.salida
@@ -60,8 +63,16 @@ class Vaciar(Comando):
             raise CorpusError(f"No encuentro el K4 «{args.k4}». Revisa /mnt/data o indica la ruta completa.")
         if args.leer:
             s.linea(f"K4 · corpus.py v{VERSION}")
-            s.lista(texto_k4(leer_k4(args.k4)), prefijo="")
+            k4 = leer_k4(args.k4)
+            s.lista(texto_k4(k4), prefijo="")
+            s.linea("")
+            s.lista(texto_checklist([evaluar(k4, Path(args.k4).name)]), prefijo="")
             return
+        if args.exigir_listo:
+            previo = evaluar(leer_k4(args.k4), Path(args.k4).name)
+            if previo.veredicto == NO_LISTO:
+                s.lista(texto_checklist([previo]), prefijo="")
+                raise CorpusError(f"El K4 no está listo para pasarse a la plantilla ({previo.motivo_veredicto}): complétalo y vuelve a intentarlo.", 2)
         plantilla = _localizar_plantilla(args.plantilla, args.k4)
         destino = Path(args.salida) if args.salida else Path(args.k4).resolve().with_name(f"Metodologia_{Path(args.k4).stem}.xlsx")
         if destino.resolve() in (Path(args.k4).resolve(), plantilla.resolve()):
@@ -73,3 +84,5 @@ class Vaciar(Comando):
                               + " | ".join(e.errores[:LIMITE_ERRORES_MOSTRADOS]), 2)
         s.linea(f"VACIADO · corpus.py v{VERSION}")
         s.lista(texto_resultado(resultado, k4, Path(args.k4).name, plantilla.name, celdas), prefijo="")
+        s.linea("")
+        s.lista(texto_checklist([resultado.checklist]), prefijo="")

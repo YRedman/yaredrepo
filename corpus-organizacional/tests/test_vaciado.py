@@ -18,8 +18,11 @@ from tests import fixtures_vaciado as fx
 from corpus_org.consulta import cli as consulta_cli
 from corpus_org.consulta.vaciado import valores
 from corpus_org.consulta.vaciado.hoja_xml import CeldaConFormula, HojaXml
-from corpus_org.consulta.vaciado.k4 import evaluar_aritmetica, leer_k4
+from corpus_org.consulta.vaciado import checklist
+from corpus_org.consulta.vaciado.checklist import alerta_de_carga, evaluar
+from corpus_org.consulta.vaciado.k4 import K4, evaluar_aritmetica, leer_k4
 from corpus_org.consulta.vaciado.metodologia import VerificacionFallida, vaciar_k4
+from corpus_org.consulta.vaciado.estilos import verificar_estilos_agregados
 from corpus_org.consulta.vaciado.verificacion import verificar
 from corpus_org.consulta.vaciado.xlsx import Libro
 
@@ -140,7 +143,7 @@ class HojaXmlTest(unittest.TestCase):
         h = HojaXml(self.texto)
         h.escribir("B40", "nuevo", estilo=str(fx.ENTRADA))
         self.assertEqual(h.estilo("B40"), str(fx.ENTRADA))
-        self.assertIn('<dimension ref="B7:Q40"/>', h.texto())
+        self.assertIn('<dimension ref="B7:V40"/>', h.texto())
 
     def test_lista_desplegable_clasica_antes_de_los_margenes(self):
         h = HojaXml(self.texto)
@@ -343,6 +346,124 @@ class ComplementosTest(VaciadoBase):
         self.assertTrue(any(p["campo"] == "Filas que no cupieron" for p in r.puntos))
 
 
+ACTIVIDADES = ("Emitir orden de compra", "Conciliar facturas")
+
+
+class PropuestasEnMoradoTest(VaciadoBase):
+    """Valor, subproceso, cliente y hallazgos que propone el agente: letra morada para que el consultor los valide a mano."""
+
+    MORADO = "FF7030A0"
+    COMPLEMENTOS = {
+        "clasificacion": [
+            {"actividad": ACTIVIDADES[0], "valor": "va", "subproceso": "Compras directas", "cliente": "interno", "responsabilidad": "Abastecer",
+             "participantes": 2},
+            {"actividad": ACTIVIDADES[1], "valor": "NVA-N", "cliente": "Quizás"},
+            {"actividad": "Actividad que no existe", "valor": "VA"}],
+        "hallazgos": [
+            {"actividad": ACTIVIDADES[0], "hallazgo": "Reingreso manual de datos", "evidencia": "K4 hoja 2", "causa_raiz": "Sin integración",
+             "impacto": "alto", "probabilidad": "Medio", "accion": "automatizar", "beneficio": "por medir", "esfuerzo": "medio", "prioridad": "alta"},
+            {"actividad": ACTIVIDADES[0], "complementa_k4": True, "impacto": "Alto", "accion": "Estandarizar", "causa_raiz": "no debe pisar al K4"},
+            {"actividad": "Otra", "evidencia": "sin hallazgo"},
+            {"actividad": ACTIVIDADES[1], "hallazgo": "Esperas", "impacto": "Gigante"}]}
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.resultado, _, _ = cls().vaciar("morado.xlsx", complementos=cls.COMPLEMENTOS)
+        cls.salida = Libro(cls.dir / "morado.xlsx")
+
+    def celda(self, hoja, ref):
+        return self.salida.hoja(hoja).celda(ref)
+
+    def col(self, hoja, encabezado, libro=None):
+        h = (libro or self.salida).hoja(hoja)
+        return next(c for c, x in h.fila(7).items() if isinstance(x.valor, str) and x.valor.replace("*", "").strip() == encabezado)
+
+    def en(self, hoja, encabezado, fila):
+        return self.celda(hoja, f"{self.col(hoja, encabezado)}{fila}")
+
+    def test_clasificacion_en_morado_con_valores_de_la_lista(self):
+        for encabezado, esperado in (("Subproceso", "Compras directas"), ("Cliente", "Interno"), ("Valor", "VA"),
+                                     ("Responsabilidad vinculada", "Abastecer"), ("Participantes por evento", 2.0)):
+            c = self.en("Actividades_Carga", encabezado, 8)
+            self.assertEqual((c.valor, c.color_letra), (esperado, self.MORADO), encabezado)
+        self.assertEqual(self.en("Actividades_Carga", "Valor", 9).valor, "NVA-N")
+        self.assertIsNone(self.en("Actividades_Carga", "Cliente", 9).valor)             # «Quizás» no es un cliente de la lista
+
+    def test_el_dato_del_k4_sigue_en_su_formato_y_solo_las_propuestas_cambian_de_color(self):
+        base = Libro(self.plantilla)
+        c = self.en("Actividades_Carga", "Actividad", 8)
+        self.assertNotEqual(c.color_letra, self.MORADO)
+        self.assertEqual(c.estilo, base.hoja("Actividades_Carga").celda(f"{self.col('Actividades_Carga', 'Actividad')}8").estilo)
+        col = self.col("Actividades_Carga", "Valor")
+        self.assertEqual(self.celda("Actividades_Carga", f"{col}8").color_relleno, base.hoja("Actividades_Carga").celda(f"{col}8").color_relleno)
+
+    def test_hallazgo_nuevo_en_morado_y_codigo_del_puesto_en_negro(self):
+        h = self.salida.hoja("Riesgos_Mejoras")
+        d, e = self.col("Riesgos_Mejoras", "Actividad / proceso"), self.col("Riesgos_Mejoras", "Hallazgo / dolor")
+        fila = next(n for n in range(8, 31) if h.valor(f"{d}{n}") == ACTIVIDADES[0] and h.valor(f"{e}{n}") == "Reingreso manual de datos")
+        self.assertEqual(self.en("Riesgos_Mejoras", "Código puesto", fila).valor, "CMP-001")
+        self.assertNotEqual(self.en("Riesgos_Mejoras", "Código puesto", fila).color_letra, self.MORADO)
+        for encabezado, esperado in (("Actividad / proceso", ACTIVIDADES[0]), ("Hallazgo / dolor", "Reingreso manual de datos"), ("Evidencia", "K4 hoja 2"),
+                                     ("Causa raíz", "Sin integración"), ("Impacto", "Alto"), ("Probabilidad", "Medio"), ("Acción sugerida", "Automatizar"),
+                                     ("Beneficio esperado", "por medir"), ("Esfuerzo", "Medio"), ("Prioridad", "Alta")):
+            c = self.en("Riesgos_Mejoras", encabezado, fila)
+            self.assertEqual((c.valor, c.color_letra), (esperado, self.MORADO), encabezado)
+
+    def test_complementa_la_fila_del_k4_sin_pisar_lo_que_escribio_el_ocupante(self):
+        self.assertEqual(self.en("Riesgos_Mejoras", "Actividad / proceso", 8).valor, "Emitir orden de compra")
+        causa = self.en("Riesgos_Mejoras", "Causa raíz", 8)
+        self.assertEqual(self.en("Riesgos_Mejoras", "Hallazgo / dolor", 8).valor, "Error de proveedor")
+        self.assertEqual(causa.valor, "Datos incompletos")                                # no la pisó «no debe pisar al K4»
+        self.assertNotEqual(causa.color_letra, self.MORADO)
+        for encabezado, esperado in (("Impacto", "Alto"), ("Acción sugerida", "Estandarizar")):
+            c = self.en("Riesgos_Mejoras", encabezado, 8)
+            self.assertEqual((c.valor, c.color_letra), (esperado, self.MORADO))
+
+    def test_lo_que_no_cuadra_va_a_puntos_y_no_se_escribe(self):
+        puntos = {(p["hoja"], p["campo"]): p for p in self.resultado.puntos}
+        self.assertEqual(puntos[("Actividades_Carga", f"Cliente de «{ACTIVIDADES[1]}»")]["tipo"], "Valor fuera de lista")
+        self.assertEqual(puntos[("Riesgos_Mejoras", f"Impacto de «{ACTIVIDADES[1]}»")]["valor_formato"], "Gigante")
+        self.assertEqual(puntos[("Actividades_Carga", "Clasificación de «Actividad que no existe»")]["tipo"], "Dato sin destino")
+        self.assertEqual(puntos[("Riesgos_Mejoras", "Hallazgo de «Otra»")]["tipo"], "Dato faltante")
+
+    def test_resumen_de_propuestas_y_punto_global(self):
+        self.assertEqual(self.resultado.propuestas["Actividades_Carga"], 6)
+        self.assertGreaterEqual(self.resultado.propuestas["Riesgos_Mejoras"], 12)
+        tipos = {(p["hoja"], p["campo"]): p["tipo"] for p in self.resultado.puntos}
+        self.assertEqual(tipos[("Actividades_Carga", "Propuestas del agente en letra morada")], "Interpretación")
+
+    def test_la_verificacion_pasa_y_detecta_morado_perdido_o_formato_cambiado(self):
+        ok = self.dir / "morado.xlsx"
+        args = (self.resultado.escritas, self.resultado.horas_mes, 23.83, self.resultado.colores)
+        self.assertEqual(verificar(self.plantilla, ok, *args), [])
+        base = Libro(self.plantilla)
+        parte = base.hoja("Actividades_Carga").parte
+        ref = f"{self.col('Actividades_Carga', 'Valor')}8"
+        gris = base.hoja("Actividades_Carga").celda(ref).estilo
+        sin_morado = modificar(ok, self.dir / "m1.xlsx", parte, lambda t: re.sub(rf'(<c r="{ref}") s="\d+"', rf'\1 s="{gris}"', t, count=1))
+        self.assertTrue(any("morada" in e for e in verificar(self.plantilla, sin_morado, *args)))
+        otro_formato = modificar(ok, self.dir / "m2.xlsx", "xl/styles.xml", lambda t: t.replace('fgColor theme="0"', 'fgColor theme="3"', 1))
+        self.assertTrue(any("styles.xml" in e for e in verificar(self.plantilla, otro_formato, *args)))
+
+    def test_estilos_ya_existentes_no_se_tocan(self):
+        with zipfile.ZipFile(self.plantilla) as zo, zipfile.ZipFile(self.dir / "morado.xlsx") as zs:
+            self.assertEqual(verificar_estilos_agregados(zo.read("xl/styles.xml").decode(), zs.read("xl/styles.xml").decode()), [])
+
+
+class CatalogoTest(unittest.TestCase):
+    def test_lee_las_listas_de_la_hoja_catalogos_y_devuelve_vacio_si_no_esta(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            conlista = fx.crear_plantilla(Path(tmp) / "p.xlsx")
+            sinlista = fx.crear_xlsx(Path(tmp) / "q.xlsx", [h for h in fx.hojas_plantilla() if h["nombre"] != "Catálogos"])
+            from corpus_org.consulta.vaciado.plantilla import Plantilla
+            p, q = Plantilla(Libro(conlista)), Plantilla(Libro(sinlista))
+            self.assertEqual(p.catalogo("Valor"), ["VA", "NVA-N", "NVA"])
+            self.assertEqual(p.catalogo("Acción")[:2], ["Eliminar", "Simplificar"])
+            self.assertEqual(p.catalogo("Inexistente"), [])
+            self.assertEqual(q.catalogo("Valor"), [])
+
+
 class VerificacionTest(VaciadoBase):
     @classmethod
     def setUpClass(cls):
@@ -380,7 +501,7 @@ class VerificacionTest(VaciadoBase):
 
     def test_detecta_partes_que_no_debian_tocarse(self):
         s = modificar(self.ok, self.dir / "t5.xlsx", "xl/styles.xml", lambda t: t.replace('fgColor rgb="FFFFFF00"', 'fgColor rgb="FF00FF00"'))
-        self.assertTrue(any("xl/styles.xml" in e for e in self.errores(s)))
+        self.assertTrue(any("styles.xml" in e for e in self.errores(s)))
 
     def test_vaciar_k4_borra_la_salida_si_la_verificacion_falla(self):
         destino = self.dir / "fallida.xlsx"
@@ -467,6 +588,120 @@ class PublicacionTest(VaciadoBase):
         self.assertIn("Verificación: correcta", r.stdout)
         self.assertNotIn("Traceback", r.stderr)
         self.assertEqual(Libro(salida).hoja("Control").valor("C11"), "CMP-001")
+
+
+class ChecklistTest(VaciadoBase):
+    """Checklist de completitud (Sí / Parcial / No / N/A), carga laboral y calidad 1–5 de un K4 antes de pasarlo a la plantilla."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.k4_leido = leer_k4(cls.k4)
+        cls.cl = evaluar(cls.k4_leido, "k4.xlsx")
+
+    def estado(self, prefijo):
+        return self.cl.criterio(prefijo).estado
+
+    def test_los_nueve_criterios_con_su_estado(self):
+        self.assertEqual([c.estado for c in self.cl.criterios], ["Sí", "Sí", "Parcial", "Sí", "Sí", "N/A", "Parcial", "Parcial", "Parcial"])
+        self.assertEqual(self.cl.criterio("Funciones").detalle, "2 funciones y 3 actividades (se esperan al menos 3 funciones)")
+        self.assertEqual(self.cl.criterio("Frecuencia y tiempo").detalle, "3 de 3 actividades con tiempo, volumen y período")
+        self.assertIn("experiencia", self.cl.criterio("Formación").detalle)
+        self.assertEqual(self.cl.criterio("Competencias").detalle, "1 sin nivel")
+        self.assertEqual(self.cl.criterio("Indicadores").detalle, "un solo indicador")
+
+    def test_porcentaje_ignora_los_na_y_el_veredicto_marca_las_reservas(self):
+        self.assertAlmostEqual(self.cl.porcentaje, (4 + 4 * 0.5) / 8)
+        self.assertEqual(self.cl.veredicto, "Con reservas")
+        self.assertIn("parcial: Funciones principales", self.cl.motivo_veredicto)
+
+    def test_las_horas_son_las_mismas_que_calcula_el_vaciado_y_la_alerta_usa_la_capacidad(self):
+        resultado, _, _ = self.vaciar("chk.xlsx")
+        self.assertAlmostEqual(self.cl.horas_mes, resultado.horas_mes, places=6)
+        self.assertAlmostEqual(resultado.checklist.horas_mes, resultado.horas_mes)
+        self.assertTrue(self.cl.alerta.startswith("Baja: subutilización"), self.cl.alerta)
+        self.assertEqual(alerta_de_carga(250, 190.64)[:5], "Alta:")
+        self.assertEqual(alerta_de_carga(200, 190.64)[:5], "Media")
+        self.assertEqual(alerta_de_carga(150, 190.64), "Sin alerta (79% de la capacidad)")
+        self.assertEqual(alerta_de_carga(0, 190.64), "Sin datos")
+
+    def test_calidad_estimada_con_sus_razones(self):
+        self.assertEqual((self.cl.coherencia, self.cl.especificidad, self.cl.promedio), (1, 1, 1.0))
+        self.assertIn("cargo operativo con 100% de funciones estratégicas", self.cl.detalle_calidad[0])
+        self.assertIn("0 de 5 funciones o actividades con detalle concreto", self.cl.detalle_calidad[1])
+
+    def test_pendientes_validar_y_na_no_cuentan_como_dato(self):
+        from types import SimpleNamespace
+        fila = SimpleNamespace(texto=lambda campo: {"a": "VALIDAR: nombre", "b": "N/D", "c": "Jefe", "d": "0"}.get(campo))
+        self.assertIsNone(checklist._dato(fila, "a"))
+        self.assertIsNone(checklist._dato(fila, "b"))
+        self.assertEqual((checklist._dato(fila, "c"), checklist._dato(fila, "d")), ("Jefe", "0"))
+
+    def test_un_formulario_vacio_no_esta_listo(self):
+        vacio = evaluar(K4(), "vacio.xlsx")
+        self.assertEqual((vacio.criterio("Datos generales").estado, vacio.criterio("Funciones").estado), ("No", "No"))
+        self.assertEqual(vacio.veredicto, "No listo")
+        self.assertIn("falta lo esencial", vacio.motivo_veredicto)
+
+    def test_cargo_directivo_con_funciones_operativas_baja_la_coherencia(self):
+        from corpus_org.consulta.vaciado.k4 import Fila
+        from corpus_org.consulta.vaciado.xlsx import Celda
+        def fila(h, **campos):
+            return Fila(h, 1, {k: Celda("A1", v) for k, v in campos.items()})
+        k4 = K4(tablas={"general": [fila("g", puesto="Director de Compras")],
+                        "responsabilidades": [fila("r", funcion="Digitar facturas", nivel="Bajo"), fila("r", funcion="Archivar documentos", nivel="Bajo"),
+                                              fila("r", funcion="Definir la estrategia anual", nivel="Alto")]})
+        nota, razones = checklist.coherencia(k4)
+        self.assertEqual(nota, 1)                      # 5 - 3 (cargo directivo con 67 % operativas) - 1 (responsabilidad baja en 67 %)
+        self.assertIn("directivo", razones[0])
+
+    def test_hoja_de_puntos_incluye_el_checklist(self):
+        resultado, _, _ = self.vaciar("chk2.xlsx")
+        campos = {(p["hoja"], p["campo"]): p for p in resultado.puntos}
+        self.assertEqual(campos[("Checklist", "Funciones principales")]["tipo"], "Dato faltante")
+        self.assertEqual(campos[("Checklist", "Completitud y calidad del formulario")]["tipo"], "Interpretación")
+        self.assertIn("Con reservas", campos[("Checklist", "Completitud y calidad del formulario")]["valor_formato"])
+        self.assertNotIn(("Checklist", "Datos generales (reporta a, área, supervisados)"), campos)          # los «Sí» no generan puntos
+
+
+class ComandoChecklistTest(VaciadoBase):
+    def correr(self, *argv):
+        flujo = io.StringIO()
+        with mock.patch.dict(os.environ, {"CORPUS_DATOS": str(self.dir / "sin_corpus")}):
+            codigo = consulta_cli.main(list(argv), uso="uso", flujo=flujo)
+        return codigo, flujo.getvalue()
+
+    def test_checklist_de_varios_formularios_en_una_tabla(self):
+        vacio = fx.crear_xlsx(self.dir / "vacio.xlsx", [{"nombre": "Instrucciones", "celdas": {"B3": "Nada"}}])
+        codigo, texto = self.correr("checklist", "--k4", str(self.k4), str(vacio))
+        self.assertEqual(codigo, 0, texto)
+        self.assertIn("| Formulario | Datos generales | Propósito | Funciones | Frecuencia y tiempo | Resp. y nivel de decisión | Relaciones |", texto)
+        self.assertIn("Veredicto |", texto)
+        self.assertIn("k4.xlsx | Sí | Sí | Parcial | Sí | Sí | N/A | Parcial | Parcial | Parcial | 75% |", texto)
+        self.assertIn("vacio.xlsx", texto)
+        self.assertIn("**Con reservas**", texto)
+        self.assertIn("**No listo**", texto)
+
+    def test_vaciar_leer_muestra_el_checklist(self):
+        codigo, texto = self.correr("vaciar", "--k4", str(self.k4), "--leer")
+        self.assertEqual(codigo, 0, texto)
+        self.assertIn("Calidad (estimación heurística)", texto)
+
+    def test_vaciar_incluye_el_checklist_y_exigir_listo_detiene_un_formulario_incompleto(self):
+        codigo, texto = self.correr("vaciar", "--k4", str(self.k4), "--plantilla", str(self.plantilla), "--salida", str(self.dir / "v.xlsx"), "--exigir-listo")
+        self.assertEqual(codigo, 0, texto)                         # «Con reservas» pasa; solo «No listo» se detiene
+        self.assertIn("Checklist del formulario: Con reservas", texto)
+        vacio = fx.crear_xlsx(self.dir / "vacio2.xlsx", [{"nombre": "Instrucciones", "celdas": {"B3": "Nada"}}])
+        destino = self.dir / "no_debe_existir.xlsx"
+        codigo, texto = self.correr("vaciar", "--k4", str(vacio), "--plantilla", str(self.plantilla), "--salida", str(destino), "--exigir-listo")
+        self.assertNotEqual(codigo, 0)
+        self.assertIn("no está listo", texto)
+        self.assertFalse(destino.exists())
+
+    def test_falta_el_archivo(self):
+        codigo, texto = self.correr("checklist", "--k4", str(self.dir / "no.xlsx"))
+        self.assertNotEqual(codigo, 0)
+        self.assertIn("No encuentro el K4", texto)
 
 
 class SkillMdTest(unittest.TestCase):

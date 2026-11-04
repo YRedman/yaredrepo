@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 
 from ...comun.texto import norm
 from . import calculo, valores
+from .checklist import NA, SI, evaluar
+from .estilos import MORADO, Estilos
 from .hoja_xml import CeldaConFormula
 from .k4 import K4
 from .paquete import Paquete
@@ -42,6 +44,9 @@ class Resultado:
     sin_horas: list = field(default_factory=list)        # actividades que la plantilla calcularia en 0 h
     desbordes: dict = field(default_factory=dict)        # hoja -> filas que no cupieron
     horas_por_actividad: list = field(default_factory=list)
+    colores: dict = field(default_factory=dict)          # (hoja, ref) -> color de letra escrito distinto del de la plantilla (morado)
+    propuestas: dict = field(default_factory=dict)       # hoja -> celdas propuestas por el agente, en morado
+    checklist: object = None                             # vaciado.checklist.Checklist del formulario
 
 
 def _txt(valor):
@@ -71,24 +76,38 @@ class Vaciado:
         self.fuentes_extra = list(fuentes_extra)
         self.r = Resultado()
         self._tablas = {}
+        self.estilos = Estilos(self.paquete.partes["xl/styles.xml"].decode("utf-8"))
+        self._filas_actividad = {}           # actividad normalizada -> fila de Actividades_Carga
+        self._filas_riesgo = {}              # actividad normalizada -> fila de Riesgos_Mejoras creada con lo que trae el K4
         self.codigo = None
         self.dias_mes = self.plantilla.dias_por_mes(calculo.DIAS_POR_MES)
         self.supuestos = {"meses": 0, "retrabajo": 0, "dedicacion_indirecta": 0, "bimestral": 0, "rangos": 0, "eventual": 0}
 
     # -- escritura ---------------------------------------------------------------------------------------------
 
-    def poner(self, hoja, ref, valor, estilo=None):
-        """Escribe un valor en la plantilla; las celdas con formula y los textos vacios no se tocan."""
+    def poner(self, hoja, ref, valor, estilo=None, morado=False):
+        """Escribe un valor en la plantilla; las celdas con formula y los textos vacios no se tocan.
+
+        ``morado``: lo propone el agente y el consultor debe validarlo a mano; la letra de la celda se pone en morado (el resto
+        del formato de la celda no cambia)."""
         if valor is None or valor == "":
             return False
+        h = self.paquete.hoja_xml(hoja)
+        forzar = False
+        if morado:
+            base = h.estilo(ref)
+            estilo, forzar = str(self.estilos.con_color(int(base) if base not in (None, "") else 0, MORADO)), True
         try:
-            if self.paquete.hoja_xml(hoja).escribir(ref, valor, estilo):
+            if h.escribir(ref, valor, estilo, forzar=forzar):
                 self.r.advertencias.append(f"{hoja}!{ref}: el texto superaba el límite de Excel y se recortó.")
         except CeldaConFormula:
             self.r.advertencias.append(f"{hoja}!{ref}: tiene fórmula; no se escribió.")
             return False
         self.r.escritas[(hoja, ref)] = valor
         self.r.por_hoja[hoja] = self.r.por_hoja.get(hoja, 0) + 1
+        if morado:
+            self.r.colores[(hoja, ref)] = MORADO
+            self.r.propuestas[hoja] = self.r.propuestas.get(hoja, 0) + 1
         return True
 
     def punto(self, hoja, campo, tipo, valor_formato="", que_validar="", valor_reunion="", fuente_reunion=""):
@@ -102,20 +121,32 @@ class Vaciado:
                                   "ultima": self.paquete.capacidad_de_tabla(hoja)}
         return self._tablas[hoja]
 
-    def fila_nueva(self, hoja, valores_por_encabezado, referencia=""):
-        """Agrega una fila a una tabla de la plantilla. Devuelve su numero o None si la tabla esta llena."""
+    def _reservar_fila(self, hoja, referencia=""):
+        """La siguiente fila libre de la tabla; None (y se anota el desborde) si la tabla esta llena."""
         t = self._tabla(hoja)
         fila = t["siguiente"]
         if fila > t["ultima"]:
-            self.r.desbordes.setdefault(hoja, []).append(referencia or valores_por_encabezado)
+            self.r.desbordes.setdefault(hoja, []).append(referencia)
             return None
         t["siguiente"] += 1
+        return fila
+
+    def poner_en_fila(self, hoja, fila, valores_por_encabezado, morado=False):
+        """Escribe, en la fila de una tabla, un valor por encabezado de columna."""
+        columnas = self._tabla(hoja)["columnas"]
         for encabezado, valor in valores_por_encabezado.items():
-            col = t["columnas"].get(clave(encabezado))
+            col = columnas.get(clave(encabezado))
             if col is None:
-                self.r.advertencias.append(f"{hoja}: la plantilla no tiene la columna «{encabezado}».")
+                if valor not in (None, ""):
+                    self.r.advertencias.append(f"{hoja}: la plantilla no tiene la columna «{encabezado}».")
                 continue
-            self.poner(hoja, f"{col}{fila}", valor)
+            self.poner(hoja, f"{col}{fila}", valor, morado=morado)
+
+    def fila_nueva(self, hoja, valores_por_encabezado, referencia=""):
+        """Agrega una fila a una tabla de la plantilla. Devuelve su numero o None si la tabla esta llena."""
+        fila = self._reservar_fila(hoja, referencia or valores_por_encabezado)
+        if fila is not None:
+            self.poner_en_fila(hoja, fila, valores_por_encabezado)
         return fila
 
     def _campo(self, hoja, rotulo, valor, referencia_k4=""):
@@ -144,9 +175,14 @@ class Vaciado:
         self._transicionales()
         self._entregables()
         self._complementos()
+        self._clasificacion()
+        self._hallazgos()
+        self._checklist()
         self._evidencias()
         self._supuestos()
         self._hoja_de_puntos()
+        if self.estilos.modificado:
+            self.paquete.reemplazar_parte("xl/styles.xml", self.estilos.texto())
         self.paquete.recalcular_al_abrir()
         self.paquete.guardar(destino)
         self.r.destino = str(destino)
@@ -402,6 +438,8 @@ class Vaciado:
             "Tipo proceso": tipo, "Frecuencia": periodo_final, "Eventos por frecuencia": eventos, "Meses/año activos": meses,
             "Tiempo unitario min": t, "% dedicación personal": dedicacion if t is not None else None, "Retrabajo %": retrabajo,
             "Fuente del dato": fuente, "Calidad dato": CALIDAD_K4, "Automatización": automatizacion}, fila.referencia("actividad"))
+        if n is not None:
+            self._filas_actividad.setdefault(norm(nombre or ""), n)
         if tipo_txt and not tipo:
             self.punto("Actividades_Carga", f"Tipo de proceso de {ref}", "Valor fuera de lista", tipo_txt, "El tipo no está en la lista (Core, Soporte, Gobierno/Control).")
         if automatizacion_txt and not automatizacion:
@@ -434,10 +472,12 @@ class Vaciado:
     def _riesgos_y_mejoras(self):
         for fila in self.k4.filas("actividades"):
             if fila.texto("riesgo") or fila.texto("causa"):
-                self.fila_nueva("Riesgos_Mejoras", {"Código puesto": self.codigo, "Actividad / proceso": fila.texto("actividad"),
-                                                     "Hallazgo / dolor": fila.texto("riesgo") or fila.texto("causa"),
-                                                     "Causa raíz": fila.texto("causa") if fila.texto("riesgo") else None,
-                                                     "Tipo oportunidad": "Riesgo de la actividad"}, fila.referencia("riesgo"))
+                n = self.fila_nueva("Riesgos_Mejoras", {"Código puesto": self.codigo, "Actividad / proceso": fila.texto("actividad"),
+                                                         "Hallazgo / dolor": fila.texto("riesgo") or fila.texto("causa"),
+                                                         "Causa raíz": fila.texto("causa") if fila.texto("riesgo") else None,
+                                                         "Tipo oportunidad": "Riesgo de la actividad"}, fila.referencia("riesgo"))
+                if n is not None:
+                    self._filas_riesgo.setdefault(norm(fila.texto("actividad") or ""), n)
         for fila in self.k4.filas("optimizacion"):
             self.fila_nueva("Riesgos_Mejoras", {"Código puesto": self.codigo, "Actividad / proceso": fila.texto("actividad"),
                                                  "Hallazgo / dolor": fila.texto("sugerencia"), "Beneficio esperado": fila.texto("ahorro"),
@@ -495,6 +535,8 @@ class Vaciado:
             "Frecuencia": periodo_final, "Eventos por frecuencia": eventos, "Meses/año activos": MESES_ACTIVOS_POR_DEFECTO,
             "Tiempo unitario min": tiempo, "% dedicación personal": 1.0 if tiempo is not None else None,
             "Fuente del dato": FUENTE_ENTREVISTA, "Calidad dato": CALIDAD_K4}, a.get("actividad"))
+        if n is not None:
+            self._filas_actividad.setdefault(norm(a.get("actividad") or ""), n)
         self.punto("Actividades_Carga", f"Actividad nueva: {(a.get('actividad') or '')[:70]}", "Interpretación", "",
                    a.get("motivo") or "Surgió en la entrevista y no estaba en el K4: confirmar que es una actividad del puesto y sus tiempos.",
                    _unir(a.get("descripcion"), nota, sep=" "), a.get("fuente", "Entrevista"))
@@ -502,6 +544,83 @@ class Vaciado:
         self.r.horas_mes += horas
         if n is not None and horas == 0:
             self.r.sin_horas.append(a.get("actividad"))
+
+    # -- propuestas del agente: letra morada, las valida el consultor a mano ---------------------------------------
+
+    def _de_catalogo(self, hoja, campo, valor, catalogo, respaldo, referencia):
+        """La opcion de una lista de la plantilla; si el valor propuesto no calza, no se escribe y va a Puntos a validar."""
+        if valor in (None, ""):
+            return None
+        opciones = self.plantilla.catalogo(catalogo) or respaldo
+        elegido = valores.de_lista(str(valor), opciones)
+        if elegido is None:
+            self.punto(hoja, f"{campo} de {referencia}", "Valor fuera de lista", str(valor),
+                       f"El valor propuesto no está en la lista de la plantilla ({', '.join(opciones)}).")
+        return elegido
+
+    def _clasificacion(self):
+        """Valor (VA / NVA-N / NVA), subproceso, cliente, responsabilidad vinculada y participantes de cada actividad."""
+        for item in self.complementos.get("clasificacion", []):
+            nombre = item.get("actividad")
+            ref = f"«{(nombre or '')[:60]}»"
+            fila = self._filas_actividad.get(norm(nombre or ""))
+            if fila is None:
+                self.punto("Actividades_Carga", f"Clasificación de {ref}", "Dato sin destino", "",
+                           "La actividad no está en Actividades_Carga: no se pudo escribir su clasificación.", str(item)[:300], "Agente")
+                continue
+            participantes = item.get("participantes")
+            if participantes not in (None, "") and (isinstance(participantes, bool) or not isinstance(participantes, (int, float)) or participantes <= 0):
+                self.punto("Actividades_Carga", f"Participantes de {ref}", "Valor fuera de lista", str(participantes), "Debe ser un número mayor que 0.")
+                participantes = None
+            self.poner_en_fila("Actividades_Carga", fila, {
+                "Valor": self._de_catalogo("Actividades_Carga", "Valor", item.get("valor"), "Valor", valores.VALORES_DE_ACTIVIDAD, ref),
+                "Subproceso": item.get("subproceso"),
+                "Cliente": self._de_catalogo("Actividades_Carga", "Cliente", item.get("cliente"), "Cliente", valores.CLIENTES, ref),
+                "Responsabilidad vinculada": item.get("responsabilidad"),
+                "Participantes por evento": participantes}, morado=True)
+
+    def _hallazgos(self):
+        """Hallazgos y oportunidades que propone el agente. Con ``complementa_k4`` se completa la fila que ya salio del riesgo del K4
+        (sin tocar lo que escribio el ocupante); si no, es una fila nueva."""
+        for item in self.complementos.get("hallazgos", []):
+            nombre = item.get("actividad")
+            ref = f"«{(nombre or '')[:60]}»"
+            h = "Riesgos_Mejoras"
+            campos = {
+                "Evidencia": item.get("evidencia"), "Causa raíz": item.get("causa_raiz"),
+                "Impacto": self._de_catalogo(h, "Impacto", item.get("impacto"), "Impacto", valores.NIVELES_DE_RIESGO, ref),
+                "Probabilidad": self._de_catalogo(h, "Probabilidad", item.get("probabilidad"), "Impacto", valores.NIVELES_DE_RIESGO, ref),
+                "Tipo oportunidad": item.get("tipo_oportunidad"),
+                "Acción sugerida": self._de_catalogo(h, "Acción sugerida", item.get("accion"), "Acción", valores.ACCIONES, ref),
+                "Beneficio esperado": item.get("beneficio"),
+                "Esfuerzo": self._de_catalogo(h, "Esfuerzo", item.get("esfuerzo"), "Escala", valores.ESCALA, ref),
+                "Prioridad": self._de_catalogo(h, "Prioridad", item.get("prioridad"), "Prioridad", valores.PRIORIDADES, ref)}
+            fila = self._filas_riesgo.get(norm(nombre or "")) if item.get("complementa_k4") else None
+            if fila is not None:
+                columnas = self._tabla(h)["columnas"]
+                campos = {k: v for k, v in campos.items() if (h, f"{columnas.get(clave(k))}{fila}") not in self.r.escritas}
+            else:
+                if not item.get("hallazgo"):
+                    self.punto(h, f"Hallazgo de {ref}", "Dato faltante", "", "Falta el texto del hallazgo: no se escribió la fila.")
+                    continue
+                fila = self._reservar_fila(h, nombre)
+                if fila is None:
+                    continue
+                self.poner_en_fila(h, fila, {"Código puesto": self.codigo})
+                campos = {"Actividad / proceso": nombre, "Hallazgo / dolor": item.get("hallazgo"), **campos}
+            self.poner_en_fila(h, fila, campos, morado=True)
+
+    # -- checklist de completitud y calidad ---------------------------------------------------------------------
+
+    def _checklist(self):
+        """Evalua el K4 (con las horas ya calculadas) y deja en Puntos a validar cada criterio incompleto y el resumen."""
+        c = self.r.checklist = evaluar(self.k4, self.nombre_k4, self.dias_mes, horas_mes=self.r.horas_mes)
+        for x in c.criterios:
+            if x.estado not in (SI, NA):
+                self.punto("Checklist", x.nombre, "Dato faltante", x.estado, x.detalle or "Completar en la entrevista o en el K4.")
+        self.punto("Checklist", "Completitud y calidad del formulario", "Interpretación", f"{c.porcentaje:.0%} · {c.veredicto}",
+                   f"{c.motivo_veredicto}. Calidad estimada (heurística) {c.promedio:.1f}/5: coherencia {c.coherencia}, especificidad {c.especificidad}. "
+                   f"Alerta de carga: {c.alerta}.")
 
     # -- supuestos y hoja de puntos ----------------------------------------------------------------------------
 
@@ -519,6 +638,9 @@ class Vaciado:
         if s["dedicacion_indirecta"]:
             self.punto("Actividades_Carga", "% dedicación personal", "Interpretación", f"{s['dedicacion_indirecta']} actividad(es)",
                        "Con participación indirecta, el % de dedicación se calculó como minutos indirectos ÷ tiempo de la actividad.")
+        for hoja, n in self.r.propuestas.items():
+            self.punto(hoja, "Propuestas del agente en letra morada", "Interpretación", f"{n} celda(s)",
+                       "Las propuso el agente a partir del K4, la entrevista y la minuta ([Inferido]): validarlas a mano y volver la letra a negro (o corregirlas).")
         self.punto("Actividades_Carga", "% dedicación personal", "Supuesto", "",
                    "Sin participación indirecta se usó 100 %: sin ese valor la plantilla calcula 0 horas.")
         self.punto("Capacidad", "Parámetros de capacidad", "Dato faltante", "",
@@ -575,7 +697,7 @@ def vaciar_k4(ruta_k4, ruta_plantilla, destino, complementos=None, fuentes=()):
     k4 = leer_k4(ruta_k4)
     v = Vaciado(k4, ruta_plantilla, complementos, Path(ruta_k4).name, fuentes)
     resultado = v.ejecutar(destino)
-    errores = verificar(ruta_plantilla, destino, resultado.escritas, resultado.horas_mes, v.dias_mes)
+    errores = verificar(ruta_plantilla, destino, resultado.escritas, resultado.horas_mes, v.dias_mes, resultado.colores)
     if errores:
         if os.path.exists(destino):
             os.unlink(destino)

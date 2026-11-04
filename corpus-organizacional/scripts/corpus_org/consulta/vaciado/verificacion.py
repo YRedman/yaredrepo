@@ -4,6 +4,7 @@ import re
 import zipfile
 
 from . import calculo
+from .estilos import MORADO, Estilos, sin_color_de_letra, verificar_estilos_agregados
 from .hoja_xml import RE_FILA, RE_ATRIBUTO, limpiar_texto
 from .xlsx import Libro
 
@@ -36,8 +37,10 @@ def _iguales(esperado, leido):
     return isinstance(leido, str) and leido == limpiar_texto(esperado)
 
 
-def verificar(origen, salida, esperadas, horas_esperadas=None, dias_mes=calculo.DIAS_POR_MES):
-    """Lista de errores (vacia si el archivo esta bien). ``esperadas``: {(hoja, ref): valor escrito}."""
+def verificar(origen, salida, esperadas, horas_esperadas=None, dias_mes=calculo.DIAS_POR_MES, colores=None):
+    """Lista de errores (vacia si el archivo esta bien). ``esperadas``: {(hoja, ref): valor escrito}; ``colores``: las celdas
+    cuya letra debe quedar en morado (propuestas del agente que el consultor valida a mano)."""
+    colores = colores or {}
     errores = []
     with zipfile.ZipFile(origen) as zo, zipfile.ZipFile(salida) as zs:
         if zo.namelist() != zs.namelist():
@@ -49,8 +52,12 @@ def verificar(origen, salida, esperadas, horas_esperadas=None, dias_mes=calculo.
                 continue
             if n.startswith("xl/worksheets/sheet") or n in permitidas or n.startswith("xl/tables/"):
                 continue
+            if n == "xl/styles.xml":
+                errores += verificar_estilos_agregados(o.decode("utf-8"), s.decode("utf-8"))
+                continue
             errores.append(f"Cambió la parte {n}, que no debía tocarse.")
         lo, ls = Libro(origen), Libro(salida)
+        estilos = (Estilos(zo.read("xl/styles.xml").decode("utf-8")), Estilos(zs.read("xl/styles.xml").decode("utf-8")))
         for h in lo.hojas:
             hs = ls.hoja(h.nombre)
             if hs is None:
@@ -63,7 +70,7 @@ def verificar(origen, salida, esperadas, horas_esperadas=None, dias_mes=calculo.
                 ao, as_ = _atributos_de_filas(to), _atributos_de_filas(ts)
                 if ao != as_:
                     errores.append(f"«{h.nombre}»: cambiaron las filas (alto, visibilidad u otros atributos).")
-            errores += _comparar_celdas(h, hs, esperadas)
+            errores += _comparar_celdas(h, hs, esperadas, colores, estilos)
         errores += _comparar_libro(zo, zs)
     if horas_esperadas is not None:
         leidas = _horas_leidas(ls, dias_mes)
@@ -72,7 +79,7 @@ def verificar(origen, salida, esperadas, horas_esperadas=None, dias_mes=calculo.
     return errores
 
 
-def _comparar_celdas(h, hs, esperadas):
+def _comparar_celdas(h, hs, esperadas, colores=None, estilos=None):
     errores = []
     for ref in sorted(set(h.celdas) | set(hs.celdas), key=lambda r: (len(r), r)):
         co, cs = h.celdas.get(ref), hs.celdas.get(ref)
@@ -90,13 +97,29 @@ def _comparar_celdas(h, hs, esperadas):
                 errores.append(f"{h.nombre}!{ref}: se esperaba «{str(esperado)[:40]}» y se leyó «{str(cs.valor if cs else None)[:40]}».")
             if h.nombre != HOJA_PUNTOS and co is not None and not (co.color_relleno or "").startswith(RELLENO_ENTRADA):
                 errores.append(f"{h.nombre}!{ref}: no es una celda de entrada (gris).")
-            if co is not None and cs is not None and co.estilo != cs.estilo:
+            if (h.nombre, ref) in (colores or {}):
+                errores += _comprobar_morado(h.nombre, ref, co, cs, estilos)
+            elif co is not None and cs is not None and co.estilo != cs.estilo:
                 errores.append(f"{h.nombre}!{ref}: cambió el formato de la celda.")
         else:
             vo, vs = (co.valor if co else None), (cs.valor if cs else None)
             if vo != vs and not (_vacio(vo) and _vacio(vs)):
                 errores.append(f"{h.nombre}!{ref}: cambió sin haberse pedido.")
     return errores
+
+
+def _comprobar_morado(hoja, ref, co, cs, estilos):
+    """Una propuesta del agente: letra morada y el resto del formato de la celda igual que en la plantilla."""
+    if cs is None or cs.color_letra != MORADO:
+        return [f"{hoja}!{ref}: la propuesta del agente no quedó en letra morada."]
+    if co is None or estilos is None:
+        return []
+    base, nuevo = estilos[0].formatos[co.estilo], estilos[1].formatos[cs.estilo]
+    fuente_base = estilos[0].fuentes[int(re.search(r'fontId="(\d+)"', base).group(1))]
+    fuente_nueva = estilos[1].fuentes[int(re.search(r'fontId="(\d+)"', nuevo).group(1))]
+    if sin_color_de_letra(base) != sin_color_de_letra(nuevo) or sin_color_de_letra(fuente_base) != sin_color_de_letra(fuente_nueva):
+        return [f"{hoja}!{ref}: cambió el formato de la celda más allá del color de la letra."]
+    return []
 
 
 def _vacio(v):

@@ -39,6 +39,13 @@ NIVELES = ["Básico", "Intermedio", "Avanzado", "Experto"]
 TIPOS_COMPETENCIA = ["Técnica", "Conductual", "Liderazgo", "Calidad/SGQ", "Digital", "Regulatoria"]
 TIPOS_PROCESO = ["Core", "Soporte", "Gobierno/Control"]
 AUTOMATIZACIONES = ["Manual", "Semiautomatizada", "Automatizada"]
+# listas de la hoja Catálogos de la plantilla (se leen de ella; estas son las de respaldo)
+VALORES_DE_ACTIVIDAD = ["VA", "NVA-N", "NVA"]
+CLIENTES = ["Interno", "Externo", "Mixto"]
+NIVELES_DE_RIESGO = ["Bajo", "Medio", "Alto"]
+ACCIONES = ["Eliminar", "Simplificar", "Estandarizar", "Automatizar", "Centralizar", "Redistribuir", "Mantener"]
+ESCALA = ["Muy bajo", "Bajo", "Medio", "Alto", "Muy alto"]
+PRIORIDADES = ["Baja", "Media", "Alta", "Crítica"]
 
 
 PREFIJO_VALIDAR = "VALIDAR"
