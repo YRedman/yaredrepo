@@ -48,6 +48,23 @@ class Plantilla:
         """Ultima fila de la tabla (de su ref 'B7:K18')."""
         return int(re.search(r"(\d+)$", parte_de_tabla_ref).group(1))
 
+    def catalogo(self, encabezado, hoja="Catálogos", fila_encabezado=6):
+        """Opciones de una lista de la hoja de catalogos (columna cuyo encabezado, en la fila 6, es ``encabezado``); [] si no esta."""
+        h = self.libro.hoja(hoja)
+        if h is None:
+            return []
+        for col, c in h.fila(fila_encabezado).items():
+            if isinstance(c.valor, str) and clave(c.valor) == clave(encabezado):
+                opciones = []
+                for n in range(fila_encabezado + 1, max(h.filas()) + 1):
+                    v = h.valor(f"{col}{n}")
+                    if isinstance(v, str) and v.strip():
+                        opciones.append(v.strip())
+                    elif opciones:
+                        break
+                return opciones
+        return []
+
     def dias_por_mes(self, defecto):
         c = self.libro.hoja("Capacidad").celda("C11") if self.libro.hoja("Capacidad") else None
         return float(c.valor) if c is not None and isinstance(c.valor, (int, float)) else defecto

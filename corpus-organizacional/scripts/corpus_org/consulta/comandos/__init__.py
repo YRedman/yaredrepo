@@ -5,6 +5,7 @@ from .briefing import Briefing
 from .buscar import Buscar
 from .cadena import Cadena
 from .catalogo import Catalogo
+from .checklist import Checklist
 from .citar import Citar
 from .doc import Documento
 from .donde import Donde
@@ -20,4 +21,4 @@ from .vaciar import Vaciar
 from .verificar import Verificar
 
 COMANDOS = {c.nombre: c for c in (Donde(), Catalogo(), IndiceArea(), Briefing(), Ficha(), Documento(), Buscar(), Relaciones(),
-                                   Participacion(), Gobierno(), Procesos(), Indicadores(), Normativa(), Cadena(), Citar(), Verificar(), Vaciar(), LlenarK4())}
+                                   Participacion(), Gobierno(), Procesos(), Indicadores(), Normativa(), Cadena(), Citar(), Verificar(), Vaciar(), LlenarK4(), Checklist())}

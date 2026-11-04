@@ -224,15 +224,22 @@ TABLAS = {
     "Competencias": ("tblCompetencias", 30, ["Código puesto*", "Tipo", "Competencia / conocimiento", "Nivel requerido", "Conducta / evidencia observable"]),
     "Actividades_Carga": ("tblActividadesCarga", 30, [
         "Código puesto*", "Proceso", "Actividad", "Descripción / inicio-fin", "Tipo proceso", "Frecuencia", "Eventos por frecuencia", "Meses/año activos",
-        "Tiempo unitario min", "Espera min", "% dedicación personal", "Retrabajo %", "Fuente del dato", "Calidad dato", "Automatización", "Horas/mes"]),
+        "Tiempo unitario min", "Espera min", "% dedicación personal", "Retrabajo %", "Fuente del dato", "Calidad dato", "Automatización", "Horas/mes",
+        "Subproceso", "Cliente", "Valor", "Responsabilidad vinculada", "Participantes por evento"]),
     "Interacciones": ("tblInteracciones", 30, ["Código puesto*", "Proceso / entregable", "Actor / área relacionada", "Tipo de relación", "Rol RACI*",
                                                "Entrada recibida", "Salida entregada", "Frecuencia"]),
     "Sistemas_Datos": ("tblSistemasDatos", 30, ["Código puesto*", "Sistema / herramienta", "Uso principal"]),
-    "Riesgos_Mejoras": ("tblRiesgosMejoras", 30, ["Código puesto*", "Actividad / proceso", "Hallazgo / dolor", "Causa raíz", "Beneficio esperado", "Tipo oportunidad"]),
+    "Riesgos_Mejoras": ("tblRiesgosMejoras", 30, ["Código puesto*", "Actividad / proceso", "Hallazgo / dolor", "Causa raíz", "Beneficio esperado", "Tipo oportunidad",
+                                                  "Evidencia", "Impacto", "Probabilidad", "Acción sugerida", "Esfuerzo", "Prioridad"]),
     "Evidencias": ("tblEvidencias", 9, ["Código puesto*", "Tipo", "Nombre / descripción"]),          # cabe poco: prueba el desborde
     "Puntos_a_validar": ("tblDiccionario13", 18, ["ID", "Hoja", "Actividad / Campo", "Tipo", "Valor Formato", "Valor Reunión", "Fuente Reunión",
                                                   "Qué Validar", "Estado"]),
 }
+
+
+CATALOGOS = {"Valor": ["VA", "NVA-N", "NVA"], "Cliente": ["Interno", "Externo", "Mixto"], "Impacto": ["Bajo", "Medio", "Alto"],
+             "Acción": ["Eliminar", "Simplificar", "Estandarizar", "Automatizar", "Centralizar", "Redistribuir", "Mantener"],
+             "Escala": ["Muy bajo", "Bajo", "Medio", "Alto", "Muy alto"], "Prioridad": ["Baja", "Media", "Alta", "Crítica"]}
 
 
 def hojas_plantilla():
@@ -256,6 +263,11 @@ def hojas_plantilla():
         hojas.append({"nombre": nombre, "celdas": celdas, "x14": nombre == "Actividades_Carga",
                       "tabla": (tabla, f"B7:{_columna(1 + len(encabezados))}{ultima}", encabezados)})
     hojas.append({"nombre": "Capacidad", "celdas": {"B11": "Días laborables por mes", "C11": 23.83, "B19": "Horas por FTE", "C19": 190.64}})
+    catalogos = {}
+    for j, (encabezado, opciones) in enumerate(CATALOGOS.items()):
+        catalogos[f"{_columna(1 + j)}6"] = (encabezado, ENCABEZADO)
+        catalogos.update({f"{_columna(1 + j)}{7 + i}": o for i, o in enumerate(opciones)})
+    hojas.append({"nombre": "Catálogos", "estado": "hidden", "celdas": catalogos})
     return hojas
 
 

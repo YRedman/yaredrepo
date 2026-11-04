@@ -6,7 +6,7 @@ description: >-
 
 # Corpus organizacional
 
-> Compatible con `convertir.py` v4.10 y `corpus.py` v4.10.
+> Compatible con `convertir.py` v4.11 y `corpus.py` v4.11.
 
 Este skill consulta exclusivamente el corpus publicado. Los documentos son la fuente de verdad; el índice sirve para localizar, contar y filtrar, pero los datos sustantivos se confirman en el Markdown original.
 
@@ -98,6 +98,7 @@ python scripts/corpus.py <comando> <argumentos>
 | `verificar` | Integridad (huellas), inventario, cobertura, corpus completo, peso y número de archivos por carpeta |
 | `vaciar --k4 <archivo.xlsx> [--plantilla <xlsx>] [--salida <xlsx>] [--complementos <json>] [--fuentes <nombres>] [--leer]` | Pasa un K4 completado a la plantilla metodológica de carga laboral y escribe la hoja de puntos a validar (no carga el corpus; ver 13.1) |
 | `llenar-k4 --base <K4_en_blanco.xlsx> (--estructura \| --datos <json> [--salida <xlsx>])` | Escribe los datos de la entrevista en una copia del K4 en blanco sin cambiar su estructura; borra el texto en rojo y deja los pendientes en morado (no carga el corpus; ver 13.2) |
+| `checklist --k4 <K4.xlsx>…` | Checklist de completitud (Sí/Parcial/No/N/A), horas al mes, alerta de carga y calidad 1–5 de uno o más K4, con veredicto Listo / Con reservas / No listo (no carga el corpus; ver 13.1) |
 
 ### Reglas de uso
 
@@ -215,9 +216,9 @@ Si piden ayuda para llenar el formulario de entrevistas (descripción de puesto 
 
 Para pasar un K4 **ya completado** (y, si los hay, la transcripción y la minuta) a la plantilla metodológica de carga laboral, usa `vaciar`: escribe solo las celdas de entrada, relee el archivo y lo compara con la plantilla (si algo no coincide, lo borra). Los datos salen solo del K4, la transcripción y la minuta, no del corpus.
 
-1. Localiza el K4 (primero `/mnt/data`). La plantilla está en `formularios/` del skill; si no, pídela y usa `--plantilla`.
+1. Localiza el K4 (primero `/mnt/data`). La plantilla está en `formularios/` del skill; si no, pídela y usa `--plantilla`. Antes de vaciar ejecuta `corpus.py checklist --k4 <K4>`: si el veredicto es **No listo** (falta lo esencial o completitud menor al 50 %), avisa y pregunta antes de seguir (`vaciar --exigir-listo` se detiene solo); con **Con reservas**, sigue e informa qué falta. La calidad 1–5 es una estimación heurística (palabras clave), no un juicio sobre la persona.
 2. `corpus.py vaciar --k4 <K4> --leer` muestra lo que se lee (actividades, hojas ocultas, filas ignoradas); revisa los avisos.
-3. Con transcripción o minuta, arma un JSON y pásalo con `--complementos` (nombra los archivos con `--fuentes`): `campos` (`hoja` Control o Perfil_Puesto, `campo` rótulo exacto, `valor`, `fuente`, `modo: "diferencia"` si K4 y reunión difieren), `actividades_nuevas` (`actividad`, `proceso`, `descripcion`, `periodo`, `volumen`, `tiempo_min`, `motivo`), `puntos` (`hoja`, `campo`, `tipo`, `valor_formato`, `valor_reunion`, `fuente_reunion`, `que_validar`; tipos: Dato sin destino, Valor fuera de lista, Diferencia K4/Reunión, Dato faltante, Supuesto, Interpretación, Recomendación) y `evidencias` (`nombre`, `tipo`).
+3. Con transcripción o minuta, arma un JSON y pásalo con `--complementos` (nombra los archivos con `--fuentes`): `campos` (`hoja` Control o Perfil_Puesto, `campo` rótulo exacto, `valor`, `fuente`, `modo: "diferencia"` si K4 y reunión difieren), `actividades_nuevas` (`actividad`, `proceso`, `descripcion`, `periodo`, `volumen`, `tiempo_min`, `motivo`), `puntos` (`hoja`, `campo`, `tipo`, `valor_formato`, `valor_reunion`, `fuente_reunion`, `que_validar`; tipos: Dato sin destino, Valor fuera de lista, Diferencia K4/Reunión, Dato faltante, Supuesto, Interpretación, Recomendación) `evidencias` (`nombre`, `tipo`), y lo que **propones** (letra morada para validar a mano): `clasificacion` (`actividad`, `valor` VA/NVA-N/NVA, `subproceso`, `cliente`, `responsabilidad`, `participantes`) y `hallazgos` (`actividad`, `hallazgo`, `evidencia`, `causa_raiz`, `impacto`, `probabilidad`, `tipo_oportunidad`, `accion`, `beneficio`, `esfuerzo`, `prioridad`, `complementa_k4`). Cómo describir actividades y hallazgos: la guía de carga laboral (`buscar "guía de carga laboral" --tipo GEN`).
 4. `corpus.py vaciar --k4 <K4> --salida <Metodologia_….xlsx> [--complementos <json>]`. Entrega el archivo y el resumen del script.
 
 Reglas que aplica el script: K4 > transcripción > minuta; si difieren, celda vacía y punto a validar. Lo que no tiene destino (reporte matricial, entregables, actividades transicionales) va a `Puntos_a_validar`; un valor fuera de la lista de la plantilla no se escribe (va al punto). Bimestral → `Anual` × 6 (mismas horas); retrabajo solo como fracción 0–1 (mayor que 1 queda vacío con punto); meses/año = 12 (supuesto; «Estacional» queda vacío con punto); sin participación indirecta, dedicación 100 %; «A demanda» → `Eventual`. El K4 no trae el rol RACI ni el resultado de cada responsabilidad: quedan como puntos. No se copian correo ni teléfono. Capacidad no se llena: el FTE y las horas son **preliminares**; pueden diferir del total del K4 (que usa 4,33 semanas por mes). No edites ese Excel por otros medios (se pierden las listas desplegables).

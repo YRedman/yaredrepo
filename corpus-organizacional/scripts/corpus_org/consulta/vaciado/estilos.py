@@ -92,3 +92,26 @@ class Estilos:
         x = RE_BLOQUE_XFS.search(texto)
         cabecera = RE_CUENTA.sub(f'count="{len(self.formatos)}"', x.group(1), count=1)
         return texto[:x.start()] + cabecera + x.group(2) + "".join(nuevos_formatos) + x.group(3) + texto[x.end():]
+
+
+def verificar_estilos_agregados(texto_base, texto_nuevo):
+    """Errores si styles.xml cambio en algo mas que fuentes y formatos agregados al final (lo anterior debe quedar igual)."""
+    fb, xb = fuentes_y_formatos(texto_base)
+    fn, xn = fuentes_y_formatos(texto_nuevo)
+    errores = []
+    if fn[:len(fb)] != fb or xn[:len(xb)] != xb:
+        errores.append("Cambiaron fuentes o formatos que ya existían en el archivo base.")
+    sin = lambda t: re.sub(r"<fonts\b.*?</fonts>|<cellXfs\b.*?</cellXfs>", "", t, flags=re.S)           # noqa: E731
+    if sin(texto_base) != sin(texto_nuevo):
+        errores.append("styles.xml cambió en algo más que fuentes y formatos agregados al final.")
+    for nombre, lista in (("fonts", fn), ("cellXfs", xn)):
+        m = re.search(rf'<{nombre}\b[^>]*?\bcount="(\d+)"', texto_nuevo)
+        if m is None or int(m.group(1)) != len(lista):
+            errores.append(f"styles.xml: la cantidad declarada en {nombre} no coincide con sus elementos.")
+    return errores
+
+
+def sin_color_de_letra(elemento):
+    """El texto de una fuente o de un formato sin su color ni los indices que cambian al agregar una fuente."""
+    t = RE_COLOR.sub("", elemento)
+    return re.sub(r'\s(?:fontId|applyFont)="[^"]*"', "", t)
