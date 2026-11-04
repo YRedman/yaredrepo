@@ -134,6 +134,21 @@ class HojaXml:
         self._separar()
         self.modificada = True
 
+    def agregar_dibujo_de_notas(self, rid):
+        """Enlaza el dibujo VML de las notas de la hoja (``<legacyDrawing>``), en el lugar que el esquema exige."""
+        def cambio(texto):
+            if "<legacyDrawing" in texto:
+                return texto
+            if "xmlns:r=" not in texto.split(">", 2)[1]:
+                texto = texto.replace("<worksheet ", '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ', 1)
+            etiqueta = f'<legacyDrawing r:id="{rid}"/>'
+            for ancla in ("<tableParts", "<extLst", "</worksheet>"):
+                i = texto.find(ancla)
+                if i >= 0:
+                    return texto[:i] + etiqueta + texto[i:]
+            return texto
+        self._editar_fuera_de_los_datos(cambio)
+
     def combinadas(self):
         return re.findall(r'<mergeCell\b[^>]*?\bref="([^"]+)"', self.texto())
 

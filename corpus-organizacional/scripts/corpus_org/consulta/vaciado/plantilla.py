@@ -19,6 +19,33 @@ class Plantilla:
 
     def __init__(self, libro):
         self.libro = libro
+        self._rangos_con_lista = {}
+
+    def _rangos_de_listas(self, hoja):
+        """[(col1, fila1, col2, fila2)] de las celdas con lista desplegable (clasica o x14) de una hoja."""
+        if hoja not in self._rangos_con_lista:
+            texto = self.libro._z[self.libro.hoja(hoja).parte].decode("utf-8")
+            sqrefs = re.findall(r"<x14:dataValidation\b[^>]*\btype=\"list\".*?<xm:sqref>([^<]*)</xm:sqref>", texto, re.S)
+            sqrefs += re.findall(r'<dataValidation\b[^>]*\btype="list"[^>]*\bsqref="([^"]*)"', texto)
+            sqrefs += re.findall(r'<dataValidation\b[^>]*\bsqref="([^"]*)"[^>]*\btype="list"', texto)
+            rangos = []
+            for sqref in sqrefs:
+                for ficha in sqref.split():
+                    a, _, b = ficha.partition(":")
+                    (c1, f1), (c2, f2) = partir_ref(a), partir_ref(b or a)
+                    rangos.append((columna_a_numero(c1), f1, columna_a_numero(c2), f2))
+            self._rangos_con_lista[hoja] = rangos
+        return self._rangos_con_lista[hoja]
+
+    def es_lista(self, hoja, ref):
+        """True si la celda tiene una lista desplegable (solo admite sus opciones)."""
+        col, fila = partir_ref(ref)
+        k = columna_a_numero(col)
+        return any(c1 <= k <= c2 and f1 <= fila <= f2 for c1, f1, c2, f2 in self._rangos_de_listas(hoja))
+
+    def es_fecha(self, hoja, ref):
+        c = self.libro.hoja(hoja).celda(ref)
+        return bool(c and c.es_fecha)
 
     def valor_de_rotulo(self, hoja, rotulo, direccion):
         """Referencia de la celda donde se escribe el valor del rotulo: 'derecha' (Control) o 'abajo' (Perfil_Puesto)."""

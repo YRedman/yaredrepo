@@ -282,6 +282,16 @@ fuente-corpus/
 
 Código: `comun/tipos.py`, `comun/estructura.py`, `conversion/inventario.py`, `conversion/publicacion.py`, `conversion/skills.py`, `consulta/ubicacion.py`, `consulta/extraccion.py`, `consulta/pertinencia.py`, `consulta/jerarquia.py`, `consulta/matriz.py`, `consulta/comandos/briefing.py` y `normativa.py`. La conversión y la verificación de fidelidad no cambian.
 
+## v4.13: `vaciar` no deja campos vacíos (Inferido / A validar con nota en la celda)
+
+La plantilla de PwC salía con muchas celdas de entrada vacías (Valor, tipo de proceso, cliente, subproceso, impacto, prioridad…). Ahora ninguna celda de entrada de las filas escritas queda vacía; solo las fechas, porque un texto en una celda de fecha rompe las fórmulas.
+
+- **Letra morada + nota en la celda.** Cada celda que el K4 no traía se escribe en morado y lleva una **nota de Excel** dentro del mismo archivo: **«Inferido: …»** si hay una regla o un dato detrás, o **«A validar: …»** si no hay base. Las notas se escriben en el XML (`notas.py`): se agregan a los comentarios que la hoja ya tiene (Actividades_Carga y Riesgos_Mejoras traen los suyos, con VML) o se crean las partes que Excel necesita (comentarios, dibujo VML, relaciones, tipo de contenido, `<legacyDrawing>`). Las notas de la plantilla no se tocan.
+- **Reglas** (`inferencia.py`, todas con la regla explicada en la nota): Valor VA / NVA-N / NVA y tipo de proceso por las palabras de la actividad; cliente interno / externo / mixto; responsabilidad vinculada y proceso relacionado por coincidencia de palabras; impacto por la parte de la carga mensual; probabilidad por el retrabajo; acción, esfuerzo y prioridad derivados; frecuencia y nivel aproximados cuando el K4 escribe algo fuera de la lista («Mensual / a demanda» → Mensual, «Alto» → Avanzado); tipo de competencia por su nombre; pesos de las responsabilidades repartidos por igual; participantes = 1; espera = 0.
+- **«A validar».** Sin base para proponer (subproceso, resultado o entregable, indicadores, causa raíz, beneficio, datos de los sistemas, rótulos del perfil…), se escribe «A validar: …» en las celdas de texto. Las listas desplegables solo admiten sus opciones: ahí se pone un valor provisional con la nota, y si no hay ninguno razonable la celda se anota en `Puntos_a_validar`. Sin código de puesto válido, «A validar: código del puesto» en cada tabla.
+- **Verificación.** Además de lo anterior, las partes nuevas solo pueden ser las de las notas; lo que la plantilla ya traía (comentarios, relaciones, tipos de contenido) debe seguir igual; y la nota de cada celda morada debe ser exactamente la esperada.
+- El resumen cuenta cuántas celdas son «Inferido» y cuántas «A validar». Código: `inferencia.py`, `completado.py`, `notas.py`, `plantilla.es_lista`. Pruebas: `NotasDeCeldaTest`, `SinCamposVaciosTest` e `InferenciaTest` en `tests/test_vaciado.py`.
+
 ## v4.12: limpieza de código (sin cambios en los resultados)
 
 Se auditó el código con `vulture`, un detector propio de definiciones sin uso (`scripts/` frente a `tests/`) y una revisión de buenas prácticas (excepciones desnudas, argumentos mutables, `import *`, `open` sin codificación, funciones muy largas). El código ya cumplía casi todo; esto es lo que se quitó o corrigió:

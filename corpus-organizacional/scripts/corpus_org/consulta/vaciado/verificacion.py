@@ -4,6 +4,7 @@ import re
 import zipfile
 
 from . import calculo
+from .notas import LIMITE_NOTA
 from .estilos import MORADO, Estilos, sin_color_de_letra, verificar_estilos_agregados
 from .hoja_xml import RE_FILA, RE_ATRIBUTO, limpiar_texto
 from .xlsx import Libro
@@ -11,12 +12,16 @@ from .xlsx import Libro
 HOJA_PUNTOS = "Puntos_a_validar"
 RELLENO_ENTRADA = "theme0/-"            # gris claro de las celdas de entrada de la plantilla
 TOLERANCIA = 1e-9
+RE_PARTE_DE_NOTAS = re.compile(r"^xl/(?:comments\d+\.xml|drawings/vmlDrawing\d+\.vml|worksheets/_rels/sheet\d+\.xml\.rels)$")
+RE_PARTE_CON_NOTAS = re.compile(r"^(?:xl/comments\d+\.xml|xl/drawings/vmlDrawing\d+\.vml|xl/worksheets/_rels/sheet\d+\.xml\.rels|\[Content_Types\]\.xml)$")
 
 
 def _esqueleto(texto, quitar_validaciones_nuevas=False):
     """El XML de la hoja sin sus datos: lo demas (estructura, formatos, listas, tablas) no debe cambiar."""
     t = re.sub(r"<sheetData\b.*?</sheetData>|<sheetData\b[^>]*/>", "<sheetData/>", texto, flags=re.S)
     t = re.sub(r'<dimension ref="[^"]*"/>', "", t)
+    t = re.sub(r"<legacyDrawing\b[^>]*/>", "", t)                      # el dibujo de las notas se agrega si la hoja no tenia
+    t = re.sub(r'\sxmlns:r="[^"]*"', "", t, count=1)
     if quitar_validaciones_nuevas:
         t = re.sub(r"<dataValidations count=.*?</dataValidations>", "", t, flags=re.S)
     return t
@@ -37,20 +42,25 @@ def _iguales(esperado, leido):
     return isinstance(leido, str) and leido == limpiar_texto(esperado)
 
 
-def verificar(origen, salida, esperadas, horas_esperadas=None, dias_mes=calculo.DIAS_POR_MES, colores=None):
+def verificar(origen, salida, esperadas, horas_esperadas=None, dias_mes=calculo.DIAS_POR_MES, colores=None, notas=None):
     """Lista de errores (vacia si el archivo esta bien). ``esperadas``: {(hoja, ref): valor escrito}; ``colores``: las celdas
-    cuya letra debe quedar en morado (propuestas del agente que el consultor valida a mano)."""
-    colores = colores or {}
+    cuya letra debe quedar en morado (propuestas del agente que el consultor valida a mano); ``notas``: {(hoja, ref): texto} de
+    las notas «Inferido» / «A validar» que deben quedar en esas celdas."""
+    colores, notas = colores or {}, notas or {}
     errores = []
     with zipfile.ZipFile(origen) as zo, zipfile.ZipFile(salida) as zs:
-        if zo.namelist() != zs.namelist():
-            return ["El archivo de salida tiene partes distintas a la plantilla."]
+        nombres_o, nombres_s = zo.namelist(), zs.namelist()
+        if nombres_s[:len(nombres_o)] != nombres_o or any(not RE_PARTE_DE_NOTAS.match(n) for n in nombres_s[len(nombres_o):]):
+            return ["El archivo de salida tiene partes distintas a la plantilla (solo pueden agregarse las de las notas)."]
         permitidas = {"xl/workbook.xml"}
         for n in zo.namelist():
             o, s = zo.read(n), zs.read(n)
             if o == s:
                 continue
             if n.startswith("xl/worksheets/sheet") or n in permitidas or n.startswith("xl/tables/"):
+                continue
+            if RE_PARTE_CON_NOTAS.match(n):
+                errores += _verificar_parte_de_notas(n, o.decode("utf-8"), s.decode("utf-8"))
                 continue
             if n == "xl/styles.xml":
                 errores += verificar_estilos_agregados(o.decode("utf-8"), s.decode("utf-8"))
@@ -70,7 +80,7 @@ def verificar(origen, salida, esperadas, horas_esperadas=None, dias_mes=calculo.
                 ao, as_ = _atributos_de_filas(to), _atributos_de_filas(ts)
                 if ao != as_:
                     errores.append(f"«{h.nombre}»: cambiaron las filas (alto, visibilidad u otros atributos).")
-            errores += _comparar_celdas(h, hs, esperadas, colores, estilos)
+            errores += _comparar_celdas(h, hs, esperadas, colores, estilos, notas)
         errores += _comparar_libro(zo, zs)
     if horas_esperadas is not None:
         leidas = _horas_leidas(ls, dias_mes)
@@ -79,11 +89,27 @@ def verificar(origen, salida, esperadas, horas_esperadas=None, dias_mes=calculo.
     return errores
 
 
-def _comparar_celdas(h, hs, esperadas, colores=None, estilos=None):
+def _verificar_parte_de_notas(nombre, original, nuevo):
+    """Lo que ya traia la parte (comentarios, relaciones, tipos de contenido) debe seguir igual; solo se agrega."""
+    patron = {"xl/comments": r"<comment\b[^>]*?\bref=\"[A-Z]+\d+\".*?</comment>", "xl/drawings": r"<v:shape\b.*?</v:shape>",
+              "xl/worksheets": r"<Relationship\b[^>]*/>", "[Content_Types].xml": r"<(?:Default|Override)\b[^>]*/>"}
+    clave_patron = next(k for k in patron if nombre.startswith(k))
+    faltan = [x for x in re.findall(patron[clave_patron], original, re.S) if x not in nuevo]
+    return [f"{nombre}: se perdió o cambió contenido que ya tenía la plantilla ({len(faltan)} elementos)."] if faltan else []
+
+
+def _comparar_celdas(h, hs, esperadas, colores=None, estilos=None, notas=None):
     errores = []
     for ref in sorted(set(h.celdas) | set(hs.celdas), key=lambda r: (len(r), r)):
         co, cs = h.celdas.get(ref), hs.celdas.get(ref)
         esperado = esperadas.get((h.nombre, ref))
+        nota_esperada = (notas or {}).get((h.nombre, ref))
+        nota_o, nota_s = (co.nota if co else ""), (cs.nota if cs else "")
+        if nota_esperada is not None:
+            if nota_s != limpiar_texto(nota_esperada)[:LIMITE_NOTA].strip():
+                errores.append(f"{h.nombre}!{ref}: la nota de la celda no es la esperada.")
+        elif nota_o != nota_s:
+            errores.append(f"{h.nombre}!{ref}: cambió una nota que no se había pedido.")
         formula_o, formula_s = (co.formula if co else ""), (cs.formula if cs else "")
         if formula_o != formula_s:
             errores.append(f"{h.nombre}!{ref}: cambió una fórmula.")

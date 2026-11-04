@@ -166,6 +166,33 @@ def frecuencia(valor):
     return _SINONIMOS_FRECUENCIA.get(t), None
 
 
+def frecuencia_aproximada(texto):
+    """Frecuencia de la plantilla que mas se parece a un texto libre («Mensual / a demanda» → Mensual, «Continua» → Diaria); None si no hay."""
+    if sin_dato(texto) or not isinstance(texto, str):
+        return None
+    t = norm(_texto(texto))
+    encontrados = [(m.start(), valor) for clave, valor in _SINONIMOS_FRECUENCIA.items() if valor != "Bimestral"
+                   for m in re.finditer(rf"\b{re.escape(clave)}\b", t)]
+    if encontrados:
+        return min(encontrados)[1]
+    if re.search(r"continu|permanent|siempre", t):
+        return "Diaria"
+    if re.search(r"demanda|evento|ocasional|eventual", t):
+        return "Eventual"
+    return None
+
+
+def nivel_aproximado(texto):
+    """Nivel de la plantilla que mas se parece a un texto libre («Intermedio-avanzado» → Avanzado, «Alto» → Avanzado); None si no hay."""
+    if sin_dato(texto) or not isinstance(texto, str):
+        return None
+    t = norm(_texto(texto))
+    sinonimos = (("experto", "Experto"), ("avanzad", "Avanzado"), ("alto", "Avanzado"), ("intermedi", "Intermedio"), ("medio", "Intermedio"),
+                 ("basic", "Básico"), ("bajo", "Básico"))
+    encontrados = [NIVELES.index(nivel) for raiz, nivel in sinonimos if raiz in t]
+    return NIVELES[max(encontrados)] if encontrados else None
+
+
 def periodo_para_plantilla(periodo, eventos):
     """Convierte un periodo que la plantilla no tiene en uno equivalente. Bimestral: 6 veces al ano.
 

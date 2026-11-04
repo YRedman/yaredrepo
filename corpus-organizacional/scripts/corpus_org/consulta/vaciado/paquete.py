@@ -85,6 +85,12 @@ class Paquete:
             xml = re.sub(r"<calcPr\b", '<calcPr fullCalcOnLoad="1"', xml, count=1)
         self._cambios["xl/workbook.xml"] = xml.encode("utf-8")
 
+    def agregar_parte(self, nombre, datos):
+        """Agrega una parte nueva al final del paquete (p. ej. los comentarios de una hoja que no tenia)."""
+        self.orden.append(nombre)
+        self.partes[nombre] = b""
+        self.reemplazar_parte(nombre, datos)
+
     def reemplazar_parte(self, nombre, datos):
         """Cambia el contenido de una parte del paquete (p. ej. xl/styles.xml con formatos agregados al final)."""
         self._cambios[nombre] = datos if isinstance(datos, bytes) else datos.encode("utf-8")

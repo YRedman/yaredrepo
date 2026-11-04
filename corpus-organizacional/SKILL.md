@@ -6,7 +6,7 @@ description: >-
 
 # Corpus organizacional
 
-> Compatible con `convertir.py` v4.12 y `corpus.py` v4.12.
+> Compatible con `convertir.py` v4.13 y `corpus.py` v4.13.
 
 Este skill consulta exclusivamente el corpus publicado. Los documentos son la fuente de verdad; el índice sirve para localizar, contar y filtrar, pero los datos sustantivos se confirman en el Markdown original.
 
@@ -221,7 +221,7 @@ Para pasar un K4 **ya completado** (y, si los hay, la transcripción y la minuta
 3. Con transcripción o minuta, arma un JSON y pásalo con `--complementos` (nombra los archivos con `--fuentes`): `campos` (`hoja` Control o Perfil_Puesto, `campo` rótulo exacto, `valor`, `fuente`, `modo: "diferencia"` si K4 y reunión difieren), `actividades_nuevas` (`actividad`, `proceso`, `descripcion`, `periodo`, `volumen`, `tiempo_min`, `motivo`), `puntos` (`hoja`, `campo`, `tipo`, `valor_formato`, `valor_reunion`, `fuente_reunion`, `que_validar`; tipos: Dato sin destino, Valor fuera de lista, Diferencia K4/Reunión, Dato faltante, Supuesto, Interpretación, Recomendación) `evidencias` (`nombre`, `tipo`), y lo que **propones** (letra morada para validar a mano): `clasificacion` (`actividad`, `valor` VA/NVA-N/NVA, `subproceso`, `cliente`, `responsabilidad`, `participantes`) y `hallazgos` (`actividad`, `hallazgo`, `evidencia`, `causa_raiz`, `impacto`, `probabilidad`, `tipo_oportunidad`, `accion`, `beneficio`, `esfuerzo`, `prioridad`, `complementa_k4`). Cómo describir actividades y hallazgos: la guía de carga laboral (`buscar "guía de carga laboral" --tipo GEN`).
 4. `corpus.py vaciar --k4 <K4> --salida <Metodologia_….xlsx> [--complementos <json>]`. Entrega el archivo y el resumen del script.
 
-Reglas que aplica el script: K4 > transcripción > minuta; si difieren, celda vacía y punto a validar. Lo que no tiene destino (reporte matricial, entregables, actividades transicionales) va a `Puntos_a_validar`; un valor fuera de la lista de la plantilla no se escribe (va al punto). Bimestral → `Anual` × 6 (mismas horas); retrabajo solo como fracción 0–1 (mayor que 1 queda vacío con punto); meses/año = 12 (supuesto; «Estacional» queda vacío con punto); sin participación indirecta, dedicación 100 %; «A demanda» → `Eventual`. El K4 no trae el rol RACI ni el resultado de cada responsabilidad: quedan como puntos. No se copian correo ni teléfono. Capacidad no se llena: el FTE y las horas son **preliminares**; pueden diferir del total del K4 (que usa 4,33 semanas por mes). No edites ese Excel por otros medios (se pierden las listas desplegables).
+Reglas que aplica el script: K4 > transcripción > minuta; si difieren, celda vacía y punto a validar. Lo que no tiene destino (reporte matricial, entregables, transicionales) va a `Puntos_a_validar`; un valor fuera de lista no se escribe (va al punto). Bimestral → `Anual` × 6; retrabajo solo como fracción 0–1; meses/año = 12; sin participación indirecta, dedicación 100 %; «A demanda» → `Eventual`. No se copian correo ni teléfono. Capacidad no se llena: FTE y horas **preliminares** (el K4 usa 4,33 semanas por mes). **Ninguna celda de entrada queda vacía** (salvo las fechas): lo que el K4 no trae se completa en letra morada con una nota en la celda, «Inferido: …» si hay una regla (Valor VA/NVA-N/NVA, tipo de proceso, cliente, impacto, prioridad…) o «A validar: …» si no hay base (texto «A validar: …» o un valor provisional en las listas). Informa cuántas son de cada clase. No edites ese Excel por otros medios.
 
 ### 13.2 Completar el archivo K4 con `llenar-k4`
 

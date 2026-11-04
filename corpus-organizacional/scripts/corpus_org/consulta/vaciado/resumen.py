@@ -41,7 +41,11 @@ def texto_resultado(resultado, k4, nombre_k4, plantilla, celdas_verificadas):
     if r.sin_horas:
         lineas.append(f"Actividades que la plantilla calcula en 0 h: {', '.join(n[:50] for n in r.sin_horas)}")
     if r.propuestas:
-        lineas.append("Propuestas del agente en letra morada (validar a mano): " + " · ".join(f"{h} {n}" for h, n in r.propuestas.items()))
+        inferidas = sum(1 for t in r.notas.values() if t.startswith("Inferido"))
+        lineas.append("Celdas en letra morada con nota (validar a mano): " + " · ".join(f"{h} {n}" for h, n in r.propuestas.items())
+                      + f" — Inferido: {inferidas} · A validar: {len(r.notas) - inferidas}")
+    if r.sin_completar:
+        lineas.append(f"AVISO: {len(r.sin_completar)} celda(s) con lista desplegable quedaron vacías (no hay base para elegir una opción).")
     tipos = collections.Counter(p["tipo"] for p in r.puntos)
     lineas.append(f"Puntos a validar: {len(r.puntos)} (" + ", ".join(f"{t}: {n}" for t, n in tipos.most_common()) + ")")
     if r.checklist is not None:

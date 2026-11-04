@@ -78,7 +78,7 @@ def _col_de(ref):
     return n
 
 
-def _hoja_xml(celdas, tabla=None, x14=False, combinadas=(), validaciones=(), alturas=None):
+def _hoja_xml(celdas, tabla=None, x14=False, combinadas=(), validaciones=(), alturas=None, legacy=False):
     """celdas: {ref: valor | (valor, estilo)}."""
     filas = {}
     for ref, v in celdas.items():
@@ -93,7 +93,7 @@ def _hoja_xml(celdas, tabla=None, x14=False, combinadas=(), validaciones=(), alt
     refs = list(celdas)
     dimension = f'<dimension ref="A1:{_columna(max(_col_de(r) for r in refs))}{max(_fila_de(r) for r in refs)}"/>' if refs else ""
     merges = f'<mergeCells count="{len(combinadas)}">' + "".join(f'<mergeCell ref="{m}"/>' for m in combinadas) + "</mergeCells>" if combinadas else ""
-    partes = '<tableParts count="1"><tablePart r:id="rId1"/></tableParts>' if tabla else ""
+    partes = ('<legacyDrawing r:id="rId3"/>' if legacy else "") + ('<tableParts count="1"><tablePart r:id="rId1"/></tableParts>' if tabla else "")
     return (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet {NS}>{dimension}<sheetViews><sheetView workbookViewId="0"/>'
             f'</sheetViews><sheetFormatPr defaultRowHeight="15"/><sheetData>{cuerpo}</sheetData>{merges}{listas}'
             f'<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>{partes}{X14 if x14 else ""}</worksheet>')
@@ -118,7 +118,7 @@ def crear_xlsx(ruta, hojas):
         rels_libro.append(f'<Relationship Id="rId{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i}.xml"/>')
         tipos.append(f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>')
         partes[f"xl/worksheets/sheet{i}.xml"] = _hoja_xml(h["celdas"], h.get("tabla"), h.get("x14", False), h.get("combinadas", ()),
-                                                          h.get("validaciones", ()), h.get("alturas"))
+                                                          h.get("validaciones", ()), h.get("alturas"), bool(h.get("notas")))
         rels = []
         if h.get("tabla"):
             n_tabla += 1
@@ -132,12 +132,23 @@ def crear_xlsx(ruta, hojas):
                                             f'<commentList>{comentarios}</commentList></comments>')
             tipos.append(f'<Override PartName="/xl/comments{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"/>')
             rels.append(f'<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments{i}.xml"/>')
+            formas = "".join(
+                f'<v:shape id="_x0000_s{i * 1024 + 1 + k}" type="#_x0000_t202" style="position:absolute;width:100pt;height:50pt" fillcolor="infoBackground [80]">'
+                f'<x:ClientData ObjectType="Note"><x:Row>{_fila_de(r) - 1}</x:Row><x:Column>{_col_de(r) - 1}</x:Column></x:ClientData></v:shape>'
+                for k, r in enumerate(h["notas"]))
+            partes[f"xl/drawings/vmlDrawing{i}.vml"] = (
+                '<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">'
+                f'<o:shapelayout v:ext="edit"><o:idmap v:ext="edit" data="{i}"/></o:shapelayout>'
+                '<v:shapetype id="_x0000_t202" coordsize="21600,21600" o:spt="202" path="m,l,21600r21600,l21600,xe"/>' + formas + "</xml>")
+            rels.append(f'<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="../drawings/vmlDrawing{i}.vml"/>')
         if rels:
             partes[f"xl/worksheets/_rels/sheet{i}.xml.rels"] = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
                                                                 + "".join(rels) + "</Relationships>")
     contenido = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
                  '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
                  '<Default Extension="xml" ContentType="application/xml"/>' + "".join(tipos) + "</Types>")
+    if any(h.get("notas") for h in hojas):
+        contenido = contenido.replace("<Default Extension=\"xml\"", '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/><Default Extension="xml"', 1)
     with zipfile.ZipFile(ruta, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("[Content_Types].xml", contenido)
         z.writestr("_rels/.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
@@ -259,7 +270,8 @@ def hojas_plantilla():
                 else:
                     celdas[f"{_columna(2 + j)}{fila}"] = (None, ENTRADA)
         hojas.append({"nombre": nombre, "celdas": celdas, "x14": nombre == "Actividades_Carga",
-                      "tabla": (tabla, f"B7:{_columna(1 + len(encabezados))}{ultima}", encabezados)})
+                      "tabla": (tabla, f"B7:{_columna(1 + len(encabezados))}{ultima}", encabezados),
+                      "notas": {"H7": "Nota de la plantilla: eventos por frecuencia"} if nombre == "Actividades_Carga" else None})
     hojas.append({"nombre": "Capacidad", "celdas": {"B11": "Días laborables por mes", "C11": 23.83, "B19": "Horas por FTE", "C19": 190.64}})
     catalogos = {}
     for j, (encabezado, opciones) in enumerate(CATALOGOS.items()):
